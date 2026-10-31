@@ -93,18 +93,49 @@ on a Mac.
 1. Pick a spot on the floor that fits the length of your body. Put the phone face-up
    under your chest/sternum (or chin) with the top of the phone toward your head, so the
    front camera can see your face.
-2. Tap **Start**. Get into the plank (top) position during the 3-second countdown, then
-   hold still for about 2 seconds while it calibrates your "top" distance. If it can't
-   see your face, it tells you why and keeps retrying.
+2. Tap **Start** and get into the plank (top) position. **Guided calibration** shows the
+   live face mesh with a checklist and tells you (on screen and by voice) what to fix:
+   * **Face**: found / not found.
+   * **Distance**: your top distance must be 25–80 cm ("too close" / "too far").
+   * **Centered**: your face must be within ~12° of the camera axis. It says "shift
+     left/right/forward/back" based on your face's offset from the camera.
+   * **Head angle**: pitch within 25° and yaw within 20° ("look straight down at the phone").
+   * **Steady**: once all checks pass, a ring fills over 2 s while you hold still. If your
+     distance wobbles (std dev > 1.5 cm), you lose the face or a check fails, it restarts and
+     says why.
+
+   When the ring completes, the median of those 2 s becomes your **top distance** (the same
+   median/MAD calibration as before). It shows "Top locked: N cm" and counts down 3 s. Tap
+   **Redo calibration** during the countdown (or before your first rep) to do it again.
 3. Do pushups. A rep counts when you go down at least 30% of the way from your top
    distance toward the phone and come back up. It speaks the count (plus "good"/"shallow"
    if the rep wasn't full) and buzzes.
-4. While you work, the **live chart** scrolls through the last 12 s of face distance.
+4. While you work, use the **Chart | Face** toggle above the chart to switch between the live
+   chart and the live face view (see below). Switching never affects counting. The **live chart** scrolls through the last 12 s of face distance.
    It shows your top line, the Good/Full depth thresholds (dashed) and a dot for each
    rep, coloured by quality. The badge shows the last rep's depth %, down/up time and the
    time since the previous rep.
 5. Tap **End set** to open the **Set analysis** screen. Sessions are saved in **History**
    (on the device, AsyncStorage). Tap any past set to open its analysis again.
+
+### Face view (TrueDepth measurements)
+
+The face view is a native SceneKit view (`FaceMeshView` in `modules/pushup-sensors`). It
+renders the **same ARKit session** that counts reps (it starts no second camera session), and
+does **not** show the camera image:
+
+* your face as a live **ARKit face mesh** (`ARSCNFaceGeometry` wireframe) on a dark
+  background, updated at camera rate (30 fps);
+* the **face ↔ phone distance** in cm (big number, the same value rep counting uses);
+* the **closest point** of the mesh to the phone (the "lowest point"), marked with an orange dot
+  and labelled with its own distance;
+* **pitch / yaw / roll** in degrees (hidden in the small in-workout view);
+* the **tracking state** (Tracking / Face lost / Camera starting).
+
+The mesh and its numbers are computed and drawn natively. They do not cross the JS bridge;
+only the existing ~30 Hz distance event (now with offset and angles) goes to JS. If the phone
+gets hot, the view drops to 15 fps (serious) or 5 fps (critical) and says so. On a phone
+without Face ID it shows a message instead.
 
 ### Set analysis
 
@@ -156,7 +187,11 @@ modules/pushup-sensors (Swift)          src/core (pure TypeScript, unit-tested)
   * `startFaceDistance(maxHz)` / `stopFaceDistance()`: run an `ARSession` with
     `ARFaceTrackingConfiguration` (no camera preview is shown). On each frame, take the
     distance between the face anchor and the camera, throttled to about 30 Hz. Emit
-    `onFaceDistance {distance, tracked, timestamp}`, and `onFaceTrackingError`.
+    `onFaceDistance {distance, tracked, timestamp, offsetX?, offsetY?, pitch?, yaw?, roll?}`
+    (offset from the camera axis in m and head angles in degrees, when tracked) and
+    `onFaceTrackingError`. The session lives in a shared `FaceSessionHub`; a watchdog
+    restarts it if frames stop for > 2 s while the app is active.
+  * `<FaceMeshView showAngles />`: the native face view (iOS), bound to that same session.
   * `isFaceTrackingSupported()`: `ARFaceTrackingConfiguration.isSupported`. If it returns
     false, or the camera is denied, the app says it can't count.
   * `startProximity()` / `stopProximity()`: emit `onProximityChange`. This is optional.
@@ -183,6 +218,11 @@ modules/pushup-sensors (Swift)          src/core (pure TypeScript, unit-tested)
     * `descentMs` = bottom − start
     * `ascentMs` = completion − bottom
     * `intervalMs` = completion − previous completion
+* **Guided calibration** (`src/core/guidance.ts`, unit-tested): `evaluatePose` checks
+  face / distance / centering / head angle and picks one hint; `HoldTracker` fills the 2 s
+  hold only while the distance std dev stays ≤ 1.5 cm (it restarts on movement, a lost face, a
+  bad pose or a data gap); `CalibrationGuide` runs the existing `Calibrator` (median of the
+  2 s hold) once the hold completes.
 * **Charts** (`src/components/charts.tsx`, `react-native-svg`): `DistanceChart` (distance
   line with gaps, threshold lines, rep markers), `LiveDistanceChart` (redraws at 12 fps from
   a ref buffer, so sensor events don't re-render the screen) and `RepChart` (line/bar per rep).
@@ -242,7 +282,7 @@ Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
 ## 6. Development
 
 ```bash
-npm test             # Jest (jest-expo): detector, analysis, trace, scoring, calibration, history/settings
+npm test             # Jest (jest-expo): detector, analysis, trace, scoring, calibration, guidance, history/settings
 npm run typecheck    # tsc --noEmit
 npx expo-doctor
 ```
@@ -251,9 +291,10 @@ Layout:
 
 ```
 App.tsx                       state-based navigation + settings
-src/core/                     types, scoring, calibration, RepDetector, TraceRecorder, analysis, summary (pure TS)
+src/core/                     types, scoring, calibration, guidance, RepDetector, TraceRecorder, analysis, summary (pure TS)
 src/session/useSession.ts     sensors → detector, live chart buffer, trace, speech, haptics, keep-awake, history
 src/components/charts.tsx     SVG charts (live distance, full-set distance, per-rep line/bar)
+src/components/calibration.tsx  calibration checklist + hold-still progress ring
 src/screens/                  Start, Session (live chart), Summary (set analysis), History
 src/storage/                  AsyncStorage history (+trace) and settings (with migration)
 modules/pushup-sensors/       local Expo Module (ios/*.swift, android/*.kt, src/*.ts)
@@ -273,4 +314,9 @@ __tests__/                    Jest tests
   uploaded.
 * Settings from older versions are migrated: the removed "Depth-only counting" toggle is
   dropped. Older saved sets still open, but without a distance trace.
+* **Version 1.1.0 needs a new build.** The face view is new native code, so the
+  runtime version changed (it follows the app version). 1.0.x builds will not get this as an
+  OTA update. Install the new preview build.
+* The left/right centering hint comes from ARKit's camera axes and has not been checked on
+  every device yet. If it seems reversed, tell us.
 * Expo Go is not supported (custom native module). Use a development or preview build.

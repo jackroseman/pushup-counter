@@ -2,3 +2,4 @@
 // and on native platforms to PushupSensorsModule.ts
 export { default } from './src/PushupSensorsModule';
 export * from './src/PushupSensors.types';
+export { FaceMeshView } from './src/FaceMeshView';

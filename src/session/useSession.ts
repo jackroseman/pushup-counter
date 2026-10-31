@@ -4,20 +4,37 @@ import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Calibrator, Rep, RepDetector, RepQuality, TraceRecorder, qualityLabel, summarize } from '../core';
+import {
+  CalibrationGuide,
+  Calibration,
+  GuideSnapshot,
+  GuidanceHint,
+  HINT_MESSAGES,
+  Rep,
+  RepDetector,
+  RepQuality,
+  TraceRecorder,
+  qualityLabel,
+  summarize,
+} from '../core';
 import { HistoryStore, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported } from '../sensors';
 
 const KEEP_AWAKE_TAG = 'pushup-session';
+/** Countdown after calibration locks in (the user can redo it during this time). */
 const COUNTDOWN_SECONDS = 3;
-const CALIBRATION_MS = 2000;
+/** Guidance UI refresh rate (the guide itself sees every sample). */
+const GUIDE_UI_MS = 100;
+/** Spoken hints: only once a hint has persisted this long, and not more often than SPEAK_GAP_MS. */
+const HINT_SPEAK_AFTER_MS = 1500;
+const SPEAK_GAP_MS = 4000;
 const FACE_HZ = 30;
 /** How much history the live chart keeps. */
 export const LIVE_WINDOW_MS = 12_000;
 const FACE_LOST_WARNING_MS = 2500;
 
-export type SessionPhase = 'starting' | 'calibrating' | 'active' | 'finished' | 'unavailable';
+export type SessionPhase = 'starting' | 'calibrating' | 'locked' | 'active' | 'finished' | 'unavailable';
 
 export interface SessionState {
   phase: SessionPhase;
@@ -28,6 +45,10 @@ export interface SessionState {
   calibratedTop: number | null;
   faceVisible: boolean;
   proximityAvailable: boolean;
+  /** Live calibration guidance (checks, hold progress); null outside calibration. */
+  guide: GuideSnapshot | null;
+  /** Seconds left before counting starts after calibration locked (phase 'locked'). */
+  countdown: number | null;
 }
 
 /** Mutable buffer read by the live chart at its own frame rate (no React re-render per sample). */
@@ -38,7 +59,6 @@ export interface LiveData {
   top: number | null;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function say(text: string) {
   Speech.speak(text, { rate: 1.05, useApplicationAudioSession: true });
@@ -48,7 +68,15 @@ export const historyStore = new HistoryStore(AsyncStorage);
 
 export function useSession(settings: Settings) {
   const detector = useRef(new RepDetector());
-  const calibrator = useRef<Calibrator | null>(null);
+  const guide = useRef<CalibrationGuide | null>(null);
+  const lastGuidePush = useRef(0);
+  const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hintState = useRef<{ hint: GuidanceHint; since: number; spokenHint: GuidanceHint; lastSpoke: number }>({
+    hint: null,
+    since: 0,
+    spokenHint: null,
+    lastSpoke: 0,
+  });
   const trace = useRef<TraceRecorder | null>(null);
   const startedAt = useRef(Date.now());
   const calibratedTop = useRef<number | null>(null);
@@ -68,6 +96,8 @@ export function useSession(settings: Settings) {
     calibratedTop: null,
     faceVisible: false,
     proximityAvailable: true,
+    guide: null,
+    countdown: null,
   });
   const patch = useCallback((p: Partial<SessionState>) => setState((s) => ({ ...s, ...p })), []);
 
@@ -87,6 +117,77 @@ export function useSession(settings: Settings) {
     [patch]
   );
 
+  const clearCountdown = () => {
+    if (countdownTimer.current) clearInterval(countdownTimer.current);
+    countdownTimer.current = null;
+  };
+
+  const goActive = useCallback(() => {
+    clearCountdown();
+    if (cancelled.current) return;
+    startedAt.current = Date.now();
+    trace.current = new TraceRecorder(startedAt.current);
+    active.current = true;
+    patch({ phase: 'active', countdown: null, guide: null, status: 'Go!' });
+    say('Go');
+  }, [patch]);
+
+  const onLocked = useCallback(
+    (calibration: Calibration, snap: GuideSnapshot) => {
+      guide.current = null;
+      calibratedTop.current = calibration.topDistance;
+      detector.current.setCalibration(calibration);
+      live.current.top = calibration.topDistance;
+      const cm = Math.round(calibration.topDistance * 100);
+      patch({
+        phase: 'locked',
+        calibratedTop: calibration.topDistance,
+        guide: snap,
+        countdown: COUNTDOWN_SECONDS,
+        status: `Top locked at ${cm} cm`,
+      });
+      say(`Locked at ${cm} centimeters`);
+      let left = COUNTDOWN_SECONDS;
+      clearCountdown();
+      countdownTimer.current = setInterval(() => {
+        left -= 1;
+        if (left <= 0) goActive();
+        else patch({ countdown: left });
+      }, 1000);
+    },
+    [goActive, patch]
+  );
+
+  /** (Re)starts guided calibration: pose checks gate a 2 s hold-still, then the median locks in. */
+  const startCalibration = useCallback(() => {
+    clearCountdown();
+    active.current = false;
+    detector.current = new RepDetector();
+    trace.current = null;
+    calibratedTop.current = null;
+    live.current.top = null;
+    live.current.reps = [];
+    hintState.current = { hint: null, since: 0, spokenHint: null, lastSpoke: 0 };
+    guide.current = new CalibrationGuide();
+    patch({
+      phase: 'calibrating',
+      count: 0,
+      lastRep: null,
+      calibratedTop: null,
+      countdown: null,
+      guide: guide.current.add({ t: Date.now(), tracked: false, distance: 0 }),
+      status: 'Get into the top position, face over the phone',
+    });
+    say('Get into the top position, face over the phone');
+  }, [patch]);
+
+  /** Redo calibration: allowed while locked, or once counting started but before any rep. */
+  const recalibrate = useCallback(() => {
+    if (cancelled.current) return;
+    if (detector.current.reps.length > 0) return;
+    startCalibration();
+  }, [startCalibration]);
+
   useEffect(() => {
     cancelled.current = false;
     const subs = [
@@ -97,7 +198,44 @@ export function useSession(settings: Settings) {
       PushupSensors.addListener('onFaceDistance', (e) => {
         const d = e.tracked && e.distance > 0 ? e.distance : null;
         if (d !== null) lastTrackedAt.current = e.timestamp;
-        if (calibrator.current) calibrator.current.add(e.distance, e.tracked);
+        const g = guide.current;
+        if (g && !cancelled.current) {
+          const snap = g.add({
+            t: e.timestamp,
+            tracked: e.tracked,
+            distance: e.distance,
+            offsetX: e.offsetX,
+            offsetY: e.offsetY,
+            pitch: e.pitch,
+            yaw: e.yaw,
+            roll: e.roll,
+          });
+          if (snap.result) {
+            onLocked(snap.result.calibration, snap);
+          } else {
+            if (e.timestamp - lastGuidePush.current >= GUIDE_UI_MS) {
+              lastGuidePush.current = e.timestamp;
+              setState((s) => (s.phase === 'calibrating' ? { ...s, guide: snap } : s));
+            }
+            // Spoken coaching for a hint that persists (the user may not be able to read the screen).
+            const h = hintState.current;
+            const hint = snap.pose.hint;
+            if (hint !== h.hint) {
+              h.hint = hint;
+              h.since = e.timestamp;
+            } else if (
+              hint &&
+              hint !== h.spokenHint &&
+              e.timestamp - h.since > HINT_SPEAK_AFTER_MS &&
+              e.timestamp - h.lastSpoke > SPEAK_GAP_MS
+            ) {
+              h.spokenHint = hint;
+              h.lastSpoke = e.timestamp;
+              say(HINT_MESSAGES[hint].split(':')[0]);
+            }
+            if (!hint && h.spokenHint) h.spokenHint = null;
+          }
+        }
 
         let rep: Rep | null = null;
         if (active.current) {
@@ -148,49 +286,8 @@ export function useSession(settings: Settings) {
       if (cancelled.current) return;
       patch({ proximityAvailable: proximityOk });
 
-      // Calibration: user holds the top (arms extended) position over the phone. Retries until it works.
-      patch({ phase: 'calibrating', status: 'Get into the top position, face over the phone' });
-      say('Get into the top position');
-      for (let attempt = 0; ; attempt++) {
-        for (let i = COUNTDOWN_SECONDS; i > 0; i--) {
-          if (cancelled.current) return;
-          patch({ status: `${attempt ? 'Try again: hold' : 'Hold'} the top position… ${i}` });
-          await sleep(1000);
-        }
-        if (cancelled.current) return;
-        patch({ status: 'Calibrating… hold still' });
-        calibrator.current = new Calibrator();
-        await sleep(CALIBRATION_MS);
-        const result = calibrator.current.finish();
-        calibrator.current = null;
-        if (cancelled.current) return;
-        if (result.ok) {
-          calibratedTop.current = result.calibration.topDistance;
-          detector.current.setCalibration(result.calibration);
-          live.current.top = result.calibration.topDistance;
-          patch({
-            calibratedTop: result.calibration.topDistance,
-            status: `Calibrated: top at ${(result.calibration.topDistance * 100).toFixed(0)} cm`,
-          });
-          break;
-        }
-        const why =
-          result.reason === 'not-enough-samples'
-            ? "Couldn't see your face. Keep your face over the phone."
-            : result.reason === 'out-of-range'
-              ? 'Your face was too close or too far. Arms straight, phone under your chest.'
-              : 'You moved during calibration. Hold still at the top.';
-        patch({ status: why });
-        say('Hold still at the top');
-        await sleep(1500);
-      }
-
-      if (cancelled.current) return;
-      startedAt.current = Date.now();
-      trace.current = new TraceRecorder(startedAt.current);
-      active.current = true;
-      patch({ phase: 'active' });
-      say('Go');
+      // Guided calibration (see CalibrationGuide); locking in starts a short countdown, then counting.
+      startCalibration();
     })();
 
     // Warn when the face has been out of view for a while during the set.
@@ -208,18 +305,22 @@ export function useSession(settings: Settings) {
     return () => {
       cancelled.current = true;
       active.current = false;
+      guide.current = null;
+      clearCountdown();
       clearInterval(warn);
       subs.forEach((s) => s.remove());
       PushupSensors.stopProximity().catch(() => {});
       PushupSensors.stopFaceDistance().catch(() => {});
       deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
-  }, [onRep, patch]);
+  }, [onRep, onLocked, startCalibration, patch]);
 
   /** Ends the session, persists it (if it has reps) and returns the record. */
   const finish = useCallback(async (): Promise<SessionRecord> => {
     cancelled.current = true;
     active.current = false;
+    guide.current = null;
+    clearCountdown();
     await PushupSensors.stopProximity().catch(() => {});
     await PushupSensors.stopFaceDistance().catch(() => {});
     const endedAt = Date.now();
@@ -241,5 +342,5 @@ export function useSession(settings: Settings) {
     return record;
   }, [patch]);
 
-  return { state, finish, live };
+  return { state, finish, live, recalibrate };
 }

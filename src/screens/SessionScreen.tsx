@@ -1,7 +1,9 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { FaceMeshView } from '../../modules/pushup-sensors';
 import { Button } from '../components/ui';
 import { LiveDistanceChart } from '../components/charts';
+import { CalibrationPanel } from '../components/calibration';
 import { qualityLabel } from '../core';
 import { LIVE_WINDOW_MS, useSession } from '../session/useSession';
 import { SessionRecord } from '../storage/history';
@@ -17,7 +19,8 @@ export function SessionScreen({
   onFinished: (record: SessionRecord) => void;
   onCancel: () => void;
 }) {
-  const { state, finish, live } = useSession(settings);
+  const { state, finish, live, recalibrate } = useSession(settings);
+  const [liveView, setLiveView] = useState<'chart' | 'face'>('chart');
   const last = state.lastRep;
 
   if (state.phase === 'unavailable') {
@@ -32,6 +35,28 @@ export function SessionScreen({
     );
   }
 
+  if (state.phase === 'calibrating' || state.phase === 'locked') {
+    const locked = state.phase === 'locked' && state.calibratedTop !== null;
+    return (
+      <View style={styles.container}>
+        <Text style={styles.status}>{state.status}</Text>
+        <View style={styles.faceBox}>
+          <FaceMeshView style={StyleSheet.absoluteFill} showAngles />
+          {locked ? (
+            <View style={styles.lockedOverlay} pointerEvents="none">
+              <Text style={styles.lockedLabel}>TOP LOCKED</Text>
+              <Text style={styles.lockedValue}>{Math.round(state.calibratedTop! * 100)} cm</Text>
+              <Text style={styles.lockedSub}>Starting in {state.countdown ?? 0}…</Text>
+            </View>
+          ) : null}
+        </View>
+        {locked ? null : <CalibrationPanel guide={state.guide} />}
+        {locked ? <Button title="Redo calibration" kind="secondary" onPress={recalibrate} /> : null}
+        <Button title="Cancel" kind="secondary" onPress={onCancel} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.status}>{state.status}</Text>
@@ -40,7 +65,7 @@ export function SessionScreen({
         <Text style={styles.count} accessibilityLabel={`${state.count} pushups`}>
           {state.count}
         </Text>
-        <Text style={styles.countLabel}>{state.phase === 'calibrating' ? 'calibrating' : 'pushups'}</Text>
+        <Text style={styles.countLabel}>pushups</Text>
 
         {last ? (
           <View style={[styles.badge, { backgroundColor: colors.quality[last.quality] }]}>
@@ -58,18 +83,46 @@ export function SessionScreen({
         ) : null}
       </View>
 
-      <Text style={styles.chartTitle}>Face distance (last {Math.round(LIVE_WINDOW_MS / 1000)} s)</Text>
-      <LiveDistanceChart source={live} windowMs={LIVE_WINDOW_MS} fps={12} height={170} />
+      <View style={styles.liveHeader}>
+        <Text style={styles.chartTitle}>
+          {liveView === 'chart' ? `Face distance (last ${Math.round(LIVE_WINDOW_MS / 1000)} s)` : 'Face (TrueDepth)'}
+        </Text>
+        <View style={styles.segment}>
+          {(['chart', 'face'] as const).map((v) => (
+            <Pressable
+              key={v}
+              onPress={() => setLiveView(v)}
+              style={[styles.segmentItem, liveView === v && styles.segmentItemOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: liveView === v }}
+            >
+              <Text style={[styles.segmentText, liveView === v && styles.segmentTextOn]}>
+                {v === 'chart' ? 'Chart' : 'Face'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      {liveView === 'chart' ? (
+        <LiveDistanceChart source={live} windowMs={LIVE_WINDOW_MS} fps={12} height={170} />
+      ) : (
+        <FaceMeshView style={styles.faceSmall} showAngles={false} />
+      )}
 
       <View style={styles.indicators}>
         <Indicator label="Face" ok={state.faceVisible} />
         <Indicator label="Calibrated" ok={state.calibratedTop !== null} />
       </View>
 
-      {state.phase === 'starting' || state.phase === 'calibrating' ? (
+      {state.phase === 'starting' ? (
         <Button title="Cancel" kind="secondary" onPress={onCancel} />
       ) : (
-        <Button title="End set" kind="danger" onPress={async () => onFinished(await finish())} />
+        <>
+          {state.phase === 'active' && state.count === 0 ? (
+            <Button title="Redo calibration" kind="secondary" onPress={recalibrate} />
+          ) : null}
+          <Button title="End set" kind="danger" onPress={async () => onFinished(await finish())} />
+        </>
       )}
     </View>
   );
@@ -93,7 +146,25 @@ const styles = StyleSheet.create({
   badge: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 999, alignItems: 'center' },
   badgeText: { color: '#111', fontSize: 20, fontWeight: '800' },
   badgeSub: { color: '#111', fontSize: 13, marginTop: 2 },
-  chartTitle: { color: colors.muted, fontSize: 13, marginBottom: 6 },
+  chartTitle: { color: colors.muted, fontSize: 13 },
+  liveHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  segment: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 10, padding: 2 },
+  segmentItem: { paddingVertical: 5, paddingHorizontal: 14, borderRadius: 8 },
+  segmentItemOn: { backgroundColor: colors.accent },
+  segmentText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
+  segmentTextOn: { color: '#111' },
+  faceSmall: { height: 170, borderRadius: 16, overflow: 'hidden' },
+  faceBox: { flex: 1, borderRadius: 20, overflow: 'hidden', backgroundColor: '#05070D', minHeight: 260 },
+  lockedOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 24,
+    alignItems: 'center',
+  },
+  lockedLabel: { color: colors.quality.full, fontSize: 14, fontWeight: '800', letterSpacing: 2 },
+  lockedValue: { color: colors.text, fontSize: 56, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  lockedSub: { color: colors.muted, fontSize: 16 },
   indicators: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
   indicator: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
   dot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },

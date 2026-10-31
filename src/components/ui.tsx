@@ -26,10 +26,12 @@ export function Button({
   );
 }
 
-export function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value, small, color }: { label: string; value: string; small?: boolean; color?: string }) {
   return (
     <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
+      <Text style={[styles.statValue, small && styles.statValueSmall, color ? { color } : null]} numberOfLines={2} adjustsFontSizeToFit>
+        {value}
+      </Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -40,5 +42,6 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 18, fontWeight: '700' },
   stat: { flex: 1, backgroundColor: colors.card, borderRadius: 14, padding: 14, margin: 4, alignItems: 'center' },
   statValue: { color: colors.text, fontSize: 26, fontWeight: '800' },
+  statValueSmall: { fontSize: 18 },
   statLabel: { color: colors.muted, fontSize: 13, marginTop: 4, textAlign: 'center' },
 });

@@ -1,9 +1,11 @@
 # Pushup Counter (Expo / React Native, iOS-first)
 
-Put your iPhone face-up on the floor under your chest and do pushups. The app counts
-each rep with the **proximity sensor** (the one that blanks the screen during calls), and
-uses the **TrueDepth / Face ID camera (ARKit)** to measure how far your face comes
-toward the phone, so it can score every rep as **Full**, **Good** or **Shallow**.
+Put your iPhone face-up on the floor under your chest and do pushups. The app uses the
+**TrueDepth / Face ID camera (ARKit)** to measure how far your face is from the phone,
+and **counts every rep from that depth alone**. You don't need to touch the phone. Each rep
+is scored **Full**, **Good** or **Shallow**. A live chart plots the distance while you
+work. When you finish, an analysis screen shows your tempo (time between reps over the
+set), depth per rep, and other metrics. All of it is saved with the set.
 
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict)
 * Custom native code lives in a local Expo Module (`modules/pushup-sensors`, Swift + Kotlin).
@@ -20,8 +22,8 @@ Requirements:
   You need it to sign builds and install them on a physical iPhone. A free Apple ID
   can't be used with EAS for device builds.
 * An Expo account (free): https://expo.dev/signup
-* A **Face ID iPhone** (iPhone X or newer, not an SE) for depth scoring. Counting
-  alone works on any iPhone that has a proximity sensor.
+* A **Face ID iPhone** (iPhone X or newer, not an SE). Counting needs the TrueDepth
+  camera. On other phones the app explains that it can't count.
 * Node 20+.
 
 Steps:
@@ -92,65 +94,131 @@ on a Mac.
    under your chest/sternum (or chin) with the top of the phone toward your head, so the
    front camera can see your face.
 2. Tap **Start**. Get into the plank (top) position during the 3-second countdown, then
-   hold still for about 2 seconds while it calibrates your "top" distance.
-3. Do pushups. Touch your chest (or get your face within a few cm) to the phone each rep.
-   It speaks the count (plus "good"/"shallow" if the rep wasn't full) and buzzes.
-4. Tap **End set** for a summary. Sessions are saved in **History** (on the device, AsyncStorage).
+   hold still for about 2 seconds while it calibrates your "top" distance. If it can't
+   see your face, it tells you why and keeps retrying.
+3. Do pushups. A rep counts when you go down at least 30% of the way from your top
+   distance toward the phone and come back up. It speaks the count (plus "good"/"shallow"
+   if the rep wasn't full) and buzzes.
+4. While you work, the **live chart** scrolls through the last 12 s of face distance.
+   It shows your top line, the Good/Full depth thresholds (dashed) and a dot for each
+   rep, coloured by quality. The badge shows the last rep's depth %, down/up time and the
+   time since the previous rep.
+5. Tap **End set** to open the **Set analysis** screen. Sessions are saved in **History**
+   (on the device, AsyncStorage). Tap any past set to open its analysis again.
 
-Settings on the start screen:
+### Set analysis
 
-* **Depth-only counting**: count reps from the face distance alone, without needing to
-  trigger the proximity sensor. This is useful if you don't want to touch the phone. It
-  needs a successful calibration.
-* **Speak quality**: say "good"/"shallow" after the count.
-* **Haptics**.
+* **Metrics:**
+  * total reps, set duration and active time
+  * reps/min
+  * average and median time between reps
+  * **tempo trend**: mean interval of the last third of reps vs the first third, e.g.
+    "Slowed down 35%" (beyond ±10% counts as slowing / speeding up)
+  * average depth % and depth consistency (standard deviation: under 6 points is very
+    consistent, under 12 is consistent, otherwise variable)
+  * depth change, first third → last third
+  * Full/Good/Shallow counts
+  * average descent and ascent time
+  * fastest and slowest rep
+  * a few plain-language tips
+* **Charts:**
+  * **Time between reps** vs rep number, with an average line. This is the fatigue / pacing chart.
+  * **Depth per rep** as bars coloured by quality, with the Full (70%) and Good (45%) lines.
+  * **Whole-set face distance**, with rep markers and thresholds.
+* **Rep table**: quality, depth %, down/up seconds and the gap before each rep.
+
+Saved with each set (`SessionRecord`, version 2):
+
+* the reps, each with timestamps (`startedAt`, `bottomAt`, `timestamp`), depth and depth
+  ratio, quality, `descentMs`, `ascentMs` and `intervalMs`
+* a distance **trace** downsampled to 10 Hz: `[msSinceStart, meters | null]`, where null
+  means the face wasn't tracked. It is capped at 3000 points; longer sets get coarser
+  resolution.
+
+Metrics are recomputed from that data whenever a set is opened (`src/core/analysis.ts`),
+so improvements to the analysis also apply to old sets. Sets saved by earlier versions
+(without timing or a trace) still show their interval chart and metrics.
+
+Settings on the start screen: **Speak quality** (say "good"/"shallow" after the count)
+and **Haptics**.
 
 ## 4. How it works
 
 ```
 modules/pushup-sensors (Swift)          src/core (pure TypeScript, unit-tested)
-  UIDevice proximity  --{near,ts}-->      RepDetector  --> Rep {quality, depthRatio, ...}
-  ARKit face anchor  --{distance m,       Calibrator   --> top distance (median of 2 s)
-    tracked, ts} @≤30 Hz-->               scoring      --> Full / Good / Shallow
+  ARKit face anchor  --{distance m,       RepDetector  --> Rep {quality, depthRatio, timing}
+    tracked, ts} @≤30 Hz-->               Calibrator   --> top distance (median of 2 s)
+  UIDevice proximity --{near,ts}-->       TraceRecorder--> 10 Hz distance trace
+    (supporting signal only)              analysis     --> SetAnalysis (tempo, depth, ...)
 ```
 
-* **Native module** (`modules/pushup-sensors`, created with `create-expo-module --local`):
-  * `startProximity()` / `stopProximity()`: turn on `UIDevice.isProximityMonitoringEnabled`
-    and emit `onProximityChange {near, timestamp}`.
+* **Native module** (`modules/pushup-sensors`):
   * `startFaceDistance(maxHz)` / `stopFaceDistance()`: run an `ARSession` with
     `ARFaceTrackingConfiguration` (no camera preview is shown). On each frame, take the
-    distance between the face anchor and the camera position, throttled to about 30 Hz.
-    Emit `onFaceDistance {distance, tracked, timestamp}`, and `onFaceTrackingError` if
-    something goes wrong.
-  * `isFaceTrackingSupported()`: `ARFaceTrackingConfiguration.isSupported`.
-  * `enablePlaybackAudioSession()`: sets the audio session to `.playback`, so counts
-    can be heard with the silent switch on and your music is ducked.
-  * Android: proximity through `SensorManager` (`TYPE_PROXIMITY`). Face tracking is not
-    implemented and reports unsupported.
-* **Rep detection** (`src/core/repDetector.ts`):
-  * A rep is counted on the proximity **near → far** transition (you pushed back up).
-  * Debounce: a "near" shorter than 80 ms is treated as noise. A rep completed less than
-    400 ms after the previous one is ignored.
-  * While the rep is happening, the detector tracks the smoothed (3-sample median)
-    minimum face distance. Depth ratio = `(top − bottom) / (top − floor)`, where
-    `floor` = 8 cm, and the result is clamped to 0–1.
+    distance between the face anchor and the camera, throttled to about 30 Hz. Emit
+    `onFaceDistance {distance, tracked, timestamp}`, and `onFaceTrackingError`.
+  * `isFaceTrackingSupported()`: `ARFaceTrackingConfiguration.isSupported`. If it returns
+    false, or the camera is denied, the app says it can't count.
+  * `startProximity()` / `stopProximity()`: emit `onProximityChange`. This is optional.
+  * `enablePlaybackAudioSession()`: counts can be heard with the silent switch on.
+* **Rep detection** (`src/core/repDetector.ts`) is a depth state machine:
+  * **Distances:** samples are smoothed with a 3-sample median.
+    `ratio = (top − d) / (top − floor)`, where `floor` = 8 cm.
+  * **Phases:**
+    * **top**: ratio ≤ 0.20.
+    * **down**: you leave the top zone. The moment you leave the top is the rep start.
+    * **bottom reached**: ratio ≥ 0.30.
+    * **counted**: you return to the top zone. A dip that never reaches 0.30 is
+      discarded. Reps closer than 400 ms apart are ignored.
+  * **Scoring** by the deepest tracked ratio:
     * ≥ 0.70: **Full**
     * ≥ 0.45: **Good**
-    * Anything less: **Shallow**
-  * **Proximity ⇒ full**: if the proximity sensor fired, your chest reached the phone,
-    so the rep counts as Full. Also, ARKit often loses the face when it is very close; a
-    rep where the face was lost at the bottom is treated as having reached full depth.
-  * The depth score mainly matters for **depth-only** mode. In that mode, a rep is
-    counted when you start in the top zone, go down past 30% of your range, and come back
-    to the top zone (within 20% of the top). A proximity rep in the same cycle prevents
-    double counting.
-* **UI**: Start → Session (big counter, last-rep quality badge, sensor indicators) →
-  Summary → History. `expo-keep-awake` keeps the device from auto-locking during a set.
+    * otherwise: **Shallow**
+  * **Proximity only supports counting, it never counts a rep.** A chest touch (near for
+    ≥ 80 ms) during a cycle marks the rep as Full. It also covers ARKit losing your face
+    when you're very close: losing the face at the bottom plus a touch gives a Full rep.
+    Losing it without a touch is scored by the last depth tracked before losing it. While
+    the sensor still reads near, the detector waits for it to clear before completing.
+  * **Timing per rep:**
+    * `descentMs` = bottom − start
+    * `ascentMs` = completion − bottom
+    * `intervalMs` = completion − previous completion
+* **Charts** (`src/components/charts.tsx`, `react-native-svg`): `DistanceChart` (distance
+  line with gaps, threshold lines, rep markers), `LiveDistanceChart` (redraws at 12 fps from
+  a ref buffer, so sensor events don't re-render the screen) and `RepChart` (line/bar per rep).
 
-## 5. Development
+## 5. Over-the-air updates (EAS Update)
+
+The project is configured for EAS Update:
+
+* `updates.url` is set to the project's `u.expo.dev` URL.
+* `runtimeVersion: {policy: "appVersion"}`.
+* The app checks for updates on launch (`ON_LOAD`).
+* Each build profile has a channel: `development`, `preview` and `production`.
+
+Builds made from the `preview` profile pick up updates published to the `preview`
+channel:
 
 ```bash
-npm test             # Jest (jest-expo preset): detector, scoring, calibration, history
+eas update --channel preview --message "Describe the change" --non-interactive
+```
+
+The update downloads the next time the app launches and is applied on the launch after
+that. Fully close and reopen the app twice.
+
+* **JS/TS and asset changes** (screens, charts, analysis, detector tuning) can be shipped
+  OTA.
+* **Native changes need a new build.** That means `modules/`, new native dependencies,
+  `app.json` native config, or bumping `version`, which changes the runtime version:
+
+  ```bash
+  eas build -p ios --profile preview
+  ```
+
+## 6. Development
+
+```bash
+npm test             # Jest (jest-expo): detector, analysis, trace, scoring, calibration, history/settings
 npm run typecheck    # tsc --noEmit
 npx expo-doctor
 ```
@@ -159,29 +227,26 @@ Layout:
 
 ```
 App.tsx                       state-based navigation + settings
-src/core/                     types, scoring, calibration, RepDetector, summary (pure TS)
-src/session/useSession.ts     wires the sensors, detector, speech, haptics, keep-awake and history
-src/screens/                  Start, Session, Summary, History
-src/storage/                  AsyncStorage history + settings
+src/core/                     types, scoring, calibration, RepDetector, TraceRecorder, analysis, summary (pure TS)
+src/session/useSession.ts     sensors → detector, live chart buffer, trace, speech, haptics, keep-awake, history
+src/components/charts.tsx     SVG charts (live distance, full-set distance, per-rep line/bar)
+src/screens/                  Start, Session (live chart), Summary (set analysis), History
+src/storage/                  AsyncStorage history (+trace) and settings (with migration)
 modules/pushup-sensors/       local Expo Module (ios/*.swift, android/*.kt, src/*.ts)
 __tests__/                    Jest tests
 ```
 
-## 6. Limitations / known caveats
+## 7. Limitations / known caveats
 
-* **Needs a real device.** The simulator has no proximity sensor and no TrueDepth camera.
-  Depth scoring needs a **Face ID iPhone**. Other phones only count (the app shows
-  a "Depth scoring unavailable" note).
-* **The screen turns off while the proximity sensor reads "near".** iOS forces this and
-  apps can't override it. The app keeps running and still speaks and buzzes, which is
-  why there is audio and haptic feedback. The screen comes back on when you push up.
-* It hasn't been confirmed whether ARKit keeps getting camera frames during the moments
-  the screen is blanked by proximity. If it doesn't, those reps will simply count as Full
-  through proximity.
-* ARKit face tracking is designed for faces roughly 20 cm–1 m away. Very close to the
-  phone, it often loses the face (which is handled as described above). Lighting, beards,
-  hats and glasses can all affect it.
+* **Needs a Face ID iPhone and a real device.** The simulator, older iPhones and Android
+  phones can't count; the app explains this instead of showing Start.
+* ARKit face tracking is designed for faces roughly 20 cm–1 m away, and very close to the
+  phone it often loses the face (handled as described above). Lighting, beards, hats and
+  glasses can all affect it. Keep your face over the phone.
+* If your chest triggers the proximity sensor, iOS blanks the screen until you push up.
+  The app keeps counting through audio and haptics.
 * The camera is used only on the device to estimate distance. No images are saved or
   uploaded.
-* Android support is limited to proximity counting, and hasn't been tested.
-* Expo Go is not supported (custom native module). Use the dev build.
+* Settings from older versions are migrated: the removed "Depth-only counting" toggle is
+  dropped. Older saved sets still open, but without a distance trace.
+* Expo Go is not supported (custom native module). Use a development or preview build.

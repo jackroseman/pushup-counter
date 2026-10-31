@@ -1,4 +1,4 @@
-import { Rep, SessionSummary } from '../core';
+import { Rep, SessionSummary, TracePoint } from '../core';
 
 export interface SessionRecord {
   id: string;
@@ -8,6 +8,10 @@ export interface SessionRecord {
   reps: Rep[];
   calibratedTopDistance: number | null;
   depthTracking: boolean;
+  /** 2 = depth-only counting with timing + trace. Missing on sets saved by older versions. */
+  version?: number;
+  /** Downsampled (~10 Hz) face-distance trace: [ms since startedAt, meters | null]. */
+  trace?: TracePoint[];
 }
 
 /** Minimal async key-value interface (AsyncStorage satisfies it) so this is testable. */

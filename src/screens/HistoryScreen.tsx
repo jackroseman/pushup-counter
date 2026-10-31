@@ -3,6 +3,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native
 import { Button } from '../components/ui';
 import { historyStore } from '../session/useSession';
 import { SessionRecord } from '../storage/history';
+import { analyzeSet } from '../core';
 import { colors } from '../theme';
 
 export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) => void; onBack: () => void }) {
@@ -28,6 +29,7 @@ export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) =
             <View style={{ flex: 1 }}>
               <Text style={styles.itemTitle}>{item.summary.totalReps} pushups</Text>
               <Text style={styles.itemSub}>{new Date(item.startedAt).toLocaleString()}</Text>
+              <Text style={styles.itemSub}>{historyLine(item)}</Text>
             </View>
             <Text style={styles.itemPct}>{item.summary.percentFull}% full</Text>
           </Pressable>
@@ -60,3 +62,13 @@ const styles = StyleSheet.create({
   itemSub: { color: colors.muted, fontSize: 13, marginTop: 2 },
   itemPct: { color: colors.quality.full, fontSize: 16, fontWeight: '700' },
 });
+
+/** One-line tempo/depth recap for the history list. */
+function historyLine(r: SessionRecord): string {
+  const a = analyzeSet(r.reps, r.startedAt, r.endedAt);
+  const parts: string[] = [];
+  if (a.avgIntervalSec !== null) parts.push(`${a.avgIntervalSec.toFixed(1)} s/rep`);
+  if (a.avgDepthPct !== null) parts.push(`${a.avgDepthPct}% depth`);
+  parts.push('Tap for analysis ›');
+  return parts.join(' · ');
+}

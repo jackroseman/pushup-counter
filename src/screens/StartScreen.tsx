@@ -6,11 +6,11 @@ import { colors } from '../theme';
 import { faceTrackingSupported } from '../sensors';
 
 const STEPS = [
-  'Turn the volume up. Reps are spoken out loud because the screen turns off while your chest covers the phone.',
+  'Turn the volume up. Reps are spoken out loud.',
   'Place the iPhone face-up on the floor, screen toward you, under your upper chest.',
   'Get in the top position (arms straight) with your face over the phone.',
   'Tap Start. Hold still for the short calibration countdown, then go.',
-  'Each time your chest touches the phone and rises again, that is one rep.',
+  'Reps are counted from how far your face comes down toward the phone. No need to touch it.',
 ];
 
 export function StartScreen({
@@ -28,7 +28,7 @@ export function StartScreen({
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Pushup Counter</Text>
-      <Text style={styles.subtitle}>Chest-to-phone rep counting with depth scoring</Text>
+      <Text style={styles.subtitle}>Depth-based rep counting, scoring and tempo analysis</Text>
 
       <View style={styles.card}>
         {STEPS.map((s, i) => (
@@ -40,18 +40,11 @@ export function StartScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.note}>
+        <Text style={[styles.note, !depth && styles.warn]}>
           {depth
-            ? 'Depth scoring: TrueDepth camera available ✓'
-            : 'Depth scoring unavailable on this device. Reps are still counted with the proximity sensor.'}
+            ? 'TrueDepth (Face ID) camera available ✓'
+            : "This iPhone has no TrueDepth (Face ID) camera. Pushup Counter measures your depth with it to count reps, so it can't count on this device."}
         </Text>
-        <Row
-          label="Count reps by depth alone"
-          hint="Counts reps that get low enough even when your chest doesn't touch the phone."
-          value={settings.depthOnlyCounting}
-          onChange={(v) => onChangeSettings({ ...settings, depthOnlyCounting: v })}
-          disabled={!depth}
-        />
         <Row
           label="Speak rep quality"
           hint='Says "7, shallow" for reps that aren’t full depth.'
@@ -61,7 +54,7 @@ export function StartScreen({
         <Row label="Haptics" value={settings.haptics} onChange={(v) => onChangeSettings({ ...settings, haptics: v })} />
       </View>
 
-      <Button title="Start" onPress={onStart} />
+      {depth ? <Button title="Start" onPress={onStart} /> : null}
       <Button title="History" kind="secondary" onPress={onHistory} />
     </ScrollView>
   );
@@ -100,6 +93,7 @@ const styles = StyleSheet.create({
   stepNum: { color: colors.accent, fontWeight: '800', fontSize: 16, width: 22 },
   stepText: { color: colors.text, fontSize: 15, flex: 1, lineHeight: 21 },
   note: { color: colors.muted, fontSize: 14, marginBottom: 8 },
+  warn: { color: colors.danger, fontSize: 15, lineHeight: 21 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
   rowLabel: { color: colors.text, fontSize: 16, fontWeight: '600' },
   rowHint: { color: colors.muted, fontSize: 13, marginTop: 2 },

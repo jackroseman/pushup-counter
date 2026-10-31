@@ -54,6 +54,17 @@ describe('HistoryStore', () => {
     expect(await store.load()).toEqual([]);
   });
 
+  it('round-trips v2 records with a trace and rep timing', async () => {
+    const kv = new MemoryKV();
+    const store = new HistoryStore(kv);
+    const r = { ...record('v2', 2), version: 2, trace: [[0, 0.5], [100, null], [200, 0.31]] as [number, number | null][] };
+    r.reps[1] = { ...r.reps[1], descentMs: 600, ascentMs: 500, intervalMs: 1400, startedAt: 10, bottomAt: 610 };
+    await store.add(r);
+    const [loaded] = await new HistoryStore(kv).load();
+    expect(loaded.trace).toEqual([[0, 0.5], [100, null], [200, 0.31]]);
+    expect(loaded.reps[1].intervalMs).toBe(1400);
+  });
+
   it('survives corrupt storage', async () => {
     const kv = new MemoryKV();
     kv.data.set(HISTORY_KEY, '{not json');
@@ -65,7 +76,21 @@ describe('settings', () => {
   it('defaults and saves', async () => {
     const kv = new MemoryKV();
     expect(await loadSettings(kv)).toEqual(DEFAULT_SETTINGS);
-    await saveSettings(kv, { ...DEFAULT_SETTINGS, depthOnlyCounting: true });
-    expect((await loadSettings(kv)).depthOnlyCounting).toBe(true);
+    await saveSettings(kv, { ...DEFAULT_SETTINGS, haptics: false });
+    expect((await loadSettings(kv)).haptics).toBe(false);
+  });
+
+  it('migrates old settings: drops the removed depthOnlyCounting toggle, keeps the rest', async () => {
+    const kv = new MemoryKV();
+    kv.data.set('pushupcounter.settings.v1', JSON.stringify({ depthOnlyCounting: true, speakQuality: false, haptics: 'yes' }));
+    const s = await loadSettings(kv);
+    expect(s).toEqual({ speakQuality: false, haptics: true });
+    expect('depthOnlyCounting' in s).toBe(false);
+  });
+
+  it('survives corrupt settings', async () => {
+    const kv = new MemoryKV();
+    kv.data.set('pushupcounter.settings.v1', 'nope{');
+    expect(await loadSettings(kv)).toEqual(DEFAULT_SETTINGS);
   });
 });

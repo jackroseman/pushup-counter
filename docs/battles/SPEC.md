@@ -29,17 +29,51 @@ The creator also picks the **winning metric**, computed from the same raw reps:
 
 | metric | what wins | notes |
 |---|---|---|
-| **Rep count** (default) | Most valid reps. | "Valid" = plausible and at least the battle's minimum quality (default **Good**). |
+| **Rep count** (default; the only metric for timed) | Most good reps. | See "Which reps count" below. |
 | **Depth consistency** | Most even depth across reps: `100 − 4 × std-dev(depth %)`, floored at 0. | Same std-dev as the analysis screen ("very consistent" < 6 pts). |
-| **Tempo** | Steadiest rhythm: `100 × (1 − coefficient of variation of rep time)`. | Rewards an even cadence, not speed. *Open question: see §11.* |
-| **Form score** | `0.5 × avg depth % + 0.3 × consistency + 0.2 × tempo`. | Rewards deep, even, steady reps. Weights are an open question. |
+| **Tempo** | Most consistent rhythm: `100 × (1 − CV)`, floored at 0, where CV = std-dev ÷ mean of the time between consecutive good reps. | **Consistency, not speed.** CV is scale-free: a steady 1 s rhythm and a steady 3 s rhythm both score 100. |
+| **Form score** | `0.5 × avg depth % + 0.3 × consistency + 0.2 × tempo`. | Rewards deep, even, steady reps. Weights are still an open question (§11). |
 
-For every metric except rep count, an entry needs at least **5 valid reps**
-(`min_reps_for_ranking`) to be ranked, so nobody wins "consistency" with 1 perfect rep.
-Ties break on more valid reps, then the earlier finish.
+**Which reps count (decided).** Only **Good-or-better** reps ever count in a battle; no
+Shallow reps. This maps onto the app's existing rep classification
+(`src/core/detector.ts`, `DEFAULT_CONFIG`), where depth ratio is how far you went from your
+calibrated top towards the floor:
 
-Every battle stores a `scoring_version`. If a formula changes later, old battles keep the
-formula they were played under.
+| app quality | depth ratio | counts in solo | counts in a battle |
+|---|---|---|---|
+| **Full** | ≥ 0.70 (`fullRatio`), or the proximity sensor touched | yes | **yes** |
+| **Good** | 0.45 – 0.70 (`goodRatio`) | yes | **yes** |
+| **Shallow** | 0.30 – 0.45 (`minCountRatio`) | yes | **no** |
+| not counted | < 0.30 | no | no |
+
+Full is a stricter subset of Good depth, so "Good" in battle rules means *Good or Full*. A
+rep must also pass every plausibility check (§7) to count. `battles.min_quality` defaults
+to `good` and the database rejects anything lower (`check (min_quality >= 'good')`); `full`
+remains possible as a stricter house rule. The analysis charts still show the Shallow reps,
+greyed out ("shallow, didn't count").
+
+**Tempo is about consistency, never speed.** It is measured only on the intervals between
+consecutive good reps *within one set* (a Shallow rep in between makes that gap longer, which
+hurts consistency). At least 3 good reps (2 intervals) are needed, else tempo is
+"n/a". Reps/min is shown as a stat but never decides a battle.
+
+**Ranking and ties.** Entries rank by the metric, then by more good reps, then by better
+tempo consistency. If all three are equal, it's a **draw** (shared rank 1, no winner). Finish
+time never breaks ties, because speed doesn't matter.
+
+* **Timed battles** always use the rep-count metric (enforced in the database): **most good
+  reps inside the time wins; tempo consistency breaks ties.** Going fast only helps by
+  getting more good reps in.
+* For every metric except rep count, an entry needs at least **5 good reps**
+  (`min_reps_for_ranking`) to be ranked, so nobody wins "consistency" with 1 perfect rep.
+* With several attempts, your best attempt counts (same ordering).
+
+**Results are locked when the battle ends (decided).** When a battle completes, the server
+writes a frozen copy of the final standings (`battle_results`) in the same step that marks
+it completed. From then on the results screen, W/L record and stats read that frozen copy.
+Later changes to anti-cheat rules, scoring formulas, or moderation flags do not change a
+finished battle. Every battle also stores a `scoring_version`, so a battle that is still
+running when a formula changes keeps the formula it started with.
 
 ## 2. Solo sets keep working
 
@@ -81,8 +115,9 @@ What the invitee sees:
   * Tapping it opens the battle's invite screen.
   * Push is a nudge only. The invite also shows in the in-app inbox, so nothing is lost if
     push is off.
-* The invite screen shows: who invited you, mode, format, metric, deadline, and (async,
-  optional) the creator's score.
+* The invite screen shows: who invited you, mode, format, metric, deadline, and (async)
+  the scores already posted, for example "Sunny did 32". Always shown, no toggle (decided):
+  you see your opponent's score before your own attempt.
   * Buttons: **Accept** / **Decline**.
 * **Expiry**: an invite expires at `invite_expires_at`:
   * async: default 24 h, never after the battle deadline
@@ -97,14 +132,17 @@ participants). In async mode the creator may do their attempt *before* anyone ac
 
 1. The creator creates the battle and optionally does their set right away.
 2. Invitees accept → the battle becomes **active**.
+   * Everyone can see the scores already posted before doing their own attempt ("Beat 32").
+     There is no hidden-score option.
 3. Each participant does their attempt(s) before `ends_at`:
    * default 1 attempt (`attempts_allowed`)
    * multi-day: unlimited sets inside the window
 4. Reminder pushes go out at 50 % of the time left and again 2 h before the deadline (only
    to people who haven't submitted).
 5. The battle **completes** when everyone accepted has used their attempts, or when the
-   deadline passes. A server job (`finalize_battles`, every minute) flips the status.
-   Results are computed, not stored.
+   deadline passes. A server job (`finalize_battles`, every minute) flips the status and,
+   in the same transaction, **locks the results** (copies the final standings into
+   `battle_results`). Until then the standings shown are provisional and computed live.
 6. Everyone gets a push: "You won / Bob won, 32 vs 28". The push opens the results screen.
 
 Late uploads: a set recorded offline before the deadline still counts if the server
@@ -160,16 +198,17 @@ Lobby (both join) → each calibrates → Ready → server sets start time → 3
 ## 6. Results screen
 
 * **Header**: winner, the metric, and each player's value (for example "Form 88 vs 81").
-  Tie-breakers are shown if used.
+  Tie-breakers are shown if used ("Tied on 40 reps; Bob wins on tempo 92 vs 85"), or
+  "Draw". A small lock icon shows that the result is final.
 * **Comparison charts** (one colour per player, built from data the app already records):
   * **Cumulative reps over time**: the race view (x = seconds since start, y = reps). This
     works for live, timed and max reps. Multi-day shows reps per day instead.
   * **Depth per rep**: bars per rep index, coloured Full / Good / Shallow (the same as the
     existing analysis screen).
-  * **Tempo**: time per rep vs rep index (shows who faded).
+  * **Tempo**: time between good reps vs rep index (an even line = consistent rhythm).
   * **Distance trace overlay** (optional, from the stored ~10 Hz trace).
-* **Stat table**: valid reps, counted reps, avg depth %, consistency, reps/min, avg
-  down/up time.
+* **Stat table**: good reps, counted reps (incl. Shallow), avg depth %, consistency, tempo
+  consistency, reps/min (info only, never scored), avg down/up time.
 * Reps that didn't count are shown greyed out with the reason ("shallow", "too fast",
   "after time").
 * Actions: **Rematch** (same rules, same people), **Share** (image card), **Report**.
@@ -215,9 +254,11 @@ and the reason is shown):
 * Statistical outlier flags (for example a personal best jumping 3×).
 * Report → review queue.
 
-Because results are computed at query time, any new check applies to all future standings
-immediately, and past battles can be re-scored under a new `scoring_version` if we choose
-to (open question).
+Because live standings are computed at query time, a new check applies immediately to every
+battle that is still running. **Finished battles are never re-scored** (decided): their
+results are locked in `battle_results`. If a reviewer later finds cheating in a finished
+battle, that is a manual, explicit moderation action (out of scope for v1), not an
+automatic recalculation.
 
 ## 8. Screens
 
@@ -319,17 +360,18 @@ tokens are disabled when Expo returns `DeviceNotRegistered`.
 
 ## 11. Open questions for Sunny
 
-1. **Default minimum quality**: should battles count only **Good + Full** reps (current
-   default), or every rep the counter counts (Shallow too)?
-2. **"Tempo" metric**: steady rhythm (current proposal), or raw speed (reps/min, which
-   overlaps with timed battles)?
+1. ~~**Default minimum quality**~~ **Resolved:** only Good-or-better reps count in
+   battles (Good + Full; never Shallow). Enforced in the schema. See §1 "Which reps count".
+2. ~~**"Tempo" metric**~~ **Resolved:** tempo means consistency (low variance of the time
+   between reps), never speed. In timed battles, most good reps wins and tempo consistency
+   breaks ties. See §1.
 3. **Form-score weights**: 50 % depth / 30 % consistency / 20 % tempo OK?
-4. **Show the opponent's score before your async attempt?** ("Beat 32" is motivating, but
-   it changes strategy.) Proposal: show it, with a creator toggle.
+4. ~~**Show the opponent's score before your async attempt?**~~ **Resolved:** yes, always
+   shown (no toggle). See §3 and §4.
 5. **Group size**: async up to 8, live exactly 2 for v1. OK?
 6. **Friends' stats**: should friends see your totals/streaks, or only battle results?
-7. **Re-scoring**: freeze results at completion forever, or allow re-scoring old battles if
-   anti-cheat rules improve? (The schema supports both via `scoring_version`.)
+7. ~~**Re-scoring**~~ **Resolved:** results are locked when the battle ends and are never
+   re-scored. See §1 and §7, and ARCHITECTURE §2 "Locked results".
 8. **Account for solo**: keep solo fully anonymous/offline (proposal), or nudge sign-in to
    back up history?
 9. **Navigation**: adopt React Navigation in the same native batch (recommended), or keep

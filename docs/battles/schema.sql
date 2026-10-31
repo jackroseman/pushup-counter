@@ -7,11 +7,17 @@
 -- Principles
 --   * Tables hold RAW facts only: what the phone measured (distances, ms timings, flags),
 --     what users did (invites, accepts, sets) and the rules a battle was created with.
---   * NOTHING derived is stored: no depth ratio, no quality, no rep count, no score, no
+--   * NOTHING derived is stored (one exception, next bullet): no depth ratio, no quality, no rep count, no score, no
 --     winner. Those live in views/functions below and are computed at query time, so a
 --     formula change or a new metric is a view change, not a data migration.
---   * Battle scoring is versioned (battles.scoring_version) so finished battles keep the
---     result they were decided with even after formulas evolve.
+--   * ONE deliberate exception: `battle_results`. When a battle completes, finalize_battles()
+--     writes a frozen snapshot of the standings. Results are LOCKED once a battle is over
+--     (product decision): later anti-cheat rules, moderation flags or formula changes must
+--     not change who won. Pinning a formula version alone can't guarantee that, because the
+--     inputs to the formula (plausibility rules, flags, detector math) can change too. The
+--     snapshot is written once, never updated, and never recomputed.
+--   * Battle scoring is versioned (battles.scoring_version) so a battle that is still in
+--     progress during a formula rollout keeps the rules it started with.
 --   * If query-time metrics ever get slow, cache them in MATERIALIZED VIEWS (or summary
 --     tables refreshed by triggers/cron) keyed by set_id / battle_id. The views below are
 --     the definition of truth; any cache is a disposable copy of them.
@@ -108,7 +114,10 @@ create table public.battles (
 
   -- Rules (chosen at creation; facts, not derived)
   duration_s            integer,                         -- timed only (presets 60 / 120)
-  min_quality           public.rep_quality not null default 'good', -- weakest rep that scores
+  -- Weakest rep that scores. Product rule: only Good-or-better reps ever count in a battle
+  -- (Good = depth ratio >= good_ratio 0.45, Full = >= full_ratio 0.70, a stricter subset).
+  -- 'full' is allowed as a stricter house rule; 'shallow' is not allowed.
+  min_quality           public.rep_quality not null default 'good' check (min_quality >= 'good'),
   min_reps_for_ranking  smallint not null default 5 check (min_reps_for_ranking between 1 and 100),
   attempts_allowed      smallint not null default 1 check (attempts_allowed between 1 and 5),
   max_participants      smallint not null default 2 check (max_participants between 2 and 8),
@@ -124,6 +133,8 @@ create table public.battles (
 
   check (format <> 'timed' or duration_s between 30 and 600),
   check (format =  'timed' or duration_s is null),
+  -- Timed battles always rank by good reps (then tempo consistency); no other metric.
+  check (format <> 'timed' or metric = 'rep_count'),
   check (mode <> 'live' or (format in ('max_reps', 'timed') and max_participants = 2 and ends_at is null)),
   check (format <> 'multi_day' or (mode = 'async' and starts_at is not null and ends_at is not null
                                    and ends_at - starts_at between interval '1 day' and interval '14 days')),
@@ -521,7 +532,8 @@ begin
 end $$;
 
 -- Periodic housekeeping (pg_cron every minute, and called by submit-set for instant
--- results). Only flips statuses; results themselves are computed by battle_standings.
+-- results). Flips statuses and, on completion, LOCKS the result: the standings computed at
+-- that moment are copied into battle_results and are final.
 create or replace function public.finalize_battles()
 returns integer language plpgsql security definer set search_path = public as $$
 declare n int := 0; r record; done boolean; entrants int;
@@ -556,11 +568,58 @@ begin
          set status = case when entrants >= 2 then 'completed'::public.battle_status else 'expired'::public.battle_status end,
              finished_at = now()
        where id = r.id;
+      if entrants >= 2 then
+        -- Same transaction as the status flip: no window where a battle is completed but
+        -- unlocked. battle_standings_live is the query-time computation.
+        insert into public.battle_results (battle_id, user_id, participant_status, best_set_id,
+               valid_reps, avg_depth_pct, tempo_score, metric_value, rank, is_winner,
+               metric, scoring_version, attempts_used)
+        select l.battle_id, l.user_id, l.participant_status, l.best_set_id,
+               l.valid_reps, l.avg_depth_pct, l.tempo_score, l.metric_value, l.rank,
+               -- sole rank 1 wins; a shared rank 1 is a draw (no winner)
+               (l.metric_value is not null and l.rank = 1
+                and (select count(*) from public.battle_standings_live d
+                      where d.battle_id = r.id and d.rank = 1) = 1),
+               r.metric, r.scoring_version, l.attempts_used
+          from public.battle_standings_live l
+         where l.battle_id = r.id;
+      end if;
       n := n + 1;
     end if;
   end loop;
   return n;
 end $$;
+
+-- =====================================================================================
+-- Locked results (the one stored derived table; see header). Written only by
+-- finalize_battles() in the same transaction that marks the battle completed.
+-- =====================================================================================
+create table public.battle_results (
+  battle_id          uuid not null references public.battles (id) on delete cascade,
+  user_id            uuid not null references public.profiles (id) on delete cascade,
+  participant_status public.invite_status not null,          -- accepted / forfeited at the end
+  best_set_id        uuid references public.sets (id) on delete set null,  -- for charts
+  valid_reps         integer not null,
+  avg_depth_pct      integer,
+  tempo_score        numeric(5, 1),
+  metric_value       numeric,                                -- null = unranked
+  rank               integer not null,
+  is_winner          boolean not null,
+  metric             public.battle_metric not null,          -- copied for self-contained history
+  scoring_version    smallint not null,
+  attempts_used      integer not null,
+  locked_at          timestamptz not null default now(),
+  primary key (battle_id, user_id)
+);
+create index battle_results_user_idx on public.battle_results (user_id);
+
+create or replace function public.tg_battle_results_immutable()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'battle results are locked';
+end $$;
+create trigger battle_results_immutable before update on public.battle_results
+  for each row execute function public.tg_battle_results_immutable();
 
 -- =====================================================================================
 -- Metrics: computed at query time. NOTHING below is stored.
@@ -714,20 +773,34 @@ left join agg a          on a.set_id = s.id
 left join tempo t        on t.set_id = s.id
 left join depth_thirds d on d.set_id = s.id;
 
+-- Tempo = CONSISTENCY of rhythm, never speed. Input: the intervals between consecutive
+-- valid (Good-or-better) reps within one set. Score = 100 * (1 - coefficient of variation),
+-- floored at 0. CV = stddev / mean is scale-free: 20 reps at a steady 1.0 s and 20 reps at
+-- a steady 3.0 s both score 100. Needs >= 2 intervals (3 valid reps), else NULL.
+create or replace function public.tempo_score(p_interval_count bigint, p_avg_interval_ms numeric,
+                                              p_interval_std_ms numeric)
+returns numeric language sql immutable as $$
+  select case when p_interval_count >= 2 and p_avg_interval_ms > 0
+              then round(greatest(0, 100 * (1 - p_interval_std_ms / p_avg_interval_ms)), 1) end;
+$$;
+
 -- Battle score for one entry, by metric and scoring version. Higher is always better.
---   rep_count          = valid reps
+--   rep_count          = valid (Good-or-better, plausible) reps
 --   depth_consistency  = 100 - 4 * stddev(depth %)       (std 6 -> 76, 12 -> 52, 25 -> 0)
---   tempo              = 100 * (1 - CV of rep intervals)  (rhythm / steadiness)
+--   tempo              = tempo_score() above (rhythm consistency; speed doesn't matter)
 --   form_score         = 0.5 * avg depth % + 0.3 * depth_consistency + 0.2 * tempo
 -- Non rep_count metrics need >= min_reps_for_ranking valid reps, else NULL (unranked).
+-- Ranking (battle_standings_live): metric_value, then valid reps, then tempo_score; still
+-- equal = a draw. Timed battles are always rep_count, so they rank by good reps first and
+-- tempo consistency second.
 create or replace function public.battle_metric_value(
   p_metric public.battle_metric, p_version smallint, p_min_reps smallint,
   p_valid_reps bigint, p_avg_depth_pct numeric, p_depth_std_pct numeric,
-  p_avg_interval_ms numeric, p_interval_std_ms numeric)
+  p_interval_count bigint, p_avg_interval_ms numeric, p_interval_std_ms numeric)
 returns numeric language sql immutable as $$
   with c as (
-    select greatest(0, 100 - 4 * p_depth_std_pct)                                   as consistency,
-           greatest(0, 100 * (1 - p_interval_std_ms / nullif(p_avg_interval_ms, 0))) as tempo
+    select greatest(0, 100 - 4 * p_depth_std_pct)                                      as consistency,
+           coalesce(public.tempo_score(p_interval_count, p_avg_interval_ms, p_interval_std_ms), 0) as tempo
   )
   select case
     when p_version <> 1 then null      -- add new versions as new branches; never edit v1
@@ -744,7 +817,11 @@ $$;
 -- live start sync (set must start within 30 s of the server start).
 create view public.battle_entries with (security_invoker = true) as
 with valid as (
-  select rm.*, b.format
+  -- lag() runs after WHERE, so valid_interval_ms is the gap to the previous VALID rep in the
+  -- same set (a shallow rep in between makes the gap longer: it hurts tempo, as it should).
+  select rm.*, b.format,
+         rm.completed_ms - lag(rm.completed_ms) over (partition by rm.set_id order by rm.rep_index)
+           as valid_interval_ms
   from public.rep_metrics rm
   join public.battles b on b.id = rm.battle_id
   where rm.implausible_reason is null
@@ -764,41 +841,57 @@ select e.battle_id, e.user_id, e.entry_set_id,
        count(v.rep_index)     as valid_reps,
        avg(v.depth_pct)       as avg_depth_pct,
        stddev_pop(v.depth_pct) as depth_std_pct,
-       avg(v.interval_ms)     as avg_interval_ms,
-       stddev_pop(v.interval_ms) as interval_std_ms
+       count(v.valid_interval_ms)      as interval_count,
+       avg(v.valid_interval_ms)        as avg_interval_ms,
+       stddev_pop(v.valid_interval_ms) as interval_std_ms
 from entry_sets e
 left join valid v on v.set_id = e.id
 group by e.battle_id, e.user_id, e.entry_set_id;
 
--- Live leaderboard / final result per battle participant. Provisional while active;
--- is_winner only once the battle is completed. Ties share rank 1 (draw).
-create view public.battle_standings with (security_invoker = true) as
+-- Query-time leaderboard per battle participant (scoring v1). Used directly while a
+-- battle is pending/active, and by finalize_battles() to produce the locked snapshot.
+create view public.battle_standings_live with (security_invoker = true) as
 with scored as (
-  select be.*, b.metric,
+  select be.*,
          public.battle_metric_value(b.metric, b.scoring_version, b.min_reps_for_ranking,
-             be.valid_reps, be.avg_depth_pct, be.depth_std_pct, be.avg_interval_ms, be.interval_std_ms) as metric_value
+             be.valid_reps, be.avg_depth_pct, be.depth_std_pct,
+             be.interval_count, be.avg_interval_ms, be.interval_std_ms) as metric_value,
+         public.tempo_score(be.interval_count, be.avg_interval_ms, be.interval_std_ms) as tempo_score
   from public.battle_entries be join public.battles b on b.id = be.battle_id
-), best as (   -- best attempt per participant
+), best as (   -- best attempt per participant (same ordering as the ranking)
   select distinct on (battle_id, user_id) *
   from scored
-  order by battle_id, user_id, metric_value desc nulls last, valid_reps desc, finished_at asc
+  order by battle_id, user_id, metric_value desc nulls last, valid_reps desc,
+           tempo_score desc nulls last, finished_at asc
 )
 select p.battle_id, p.user_id, p.status as participant_status, b.status as battle_status, b.metric,
        x.entry_set_id as best_set_id,
-       coalesce(x.valid_reps, 0) as valid_reps,
+       coalesce(x.valid_reps, 0)::integer as valid_reps,
        round(x.avg_depth_pct)::integer as avg_depth_pct,
+       x.tempo_score,
        x.metric_value,
-       x.finished_at,
-       (select count(*) from public.sets s where s.battle_id = p.battle_id and s.user_id = p.user_id) as attempts_used,
-       rank() over (partition by p.battle_id
-                    order by x.metric_value desc nulls last, x.valid_reps desc nulls last, x.finished_at asc nulls last) as rank,
-       (b.status = 'completed' and x.metric_value is not null
-        and rank() over (partition by p.battle_id
-                         order by x.metric_value desc nulls last, x.valid_reps desc nulls last, x.finished_at asc nulls last) = 1) as is_winner
+       (select count(*) from public.sets s where s.battle_id = p.battle_id and s.user_id = p.user_id)::integer as attempts_used,
+       (rank() over (partition by p.battle_id
+                     order by x.metric_value desc nulls last, x.valid_reps desc nulls last,
+                              x.tempo_score desc nulls last))::integer as rank
 from public.battle_participants p
 join public.battles b on b.id = p.battle_id
 left join best x on x.battle_id = p.battle_id and x.user_id = p.user_id
 where p.status in ('accepted', 'forfeited');
+
+-- What the app reads. Completed battles: the LOCKED snapshot, never recomputed.
+-- Anything else: provisional live standings (is_winner always false until locked).
+create view public.battle_standings with (security_invoker = true) as
+select r.battle_id, r.user_id, r.participant_status, 'completed'::public.battle_status as battle_status,
+       r.metric, r.best_set_id, r.valid_reps, r.avg_depth_pct, r.tempo_score, r.metric_value,
+       r.attempts_used, r.rank, r.is_winner, true as locked, r.locked_at
+from public.battle_results r
+union all
+select l.battle_id, l.user_id, l.participant_status, l.battle_status,
+       l.metric, l.best_set_id, l.valid_reps, l.avg_depth_pct, l.tempo_score, l.metric_value,
+       l.attempts_used, l.rank, false as is_winner, false as locked, null::timestamptz as locked_at
+from public.battle_standings_live l
+where l.battle_status <> 'completed';
 
 -- Lifetime stats per user (rows for other users only reflect sets you're allowed to see,
 -- i.e. shared battles; the app queries its own row).
@@ -820,7 +913,10 @@ with days as (
   select user_id,
          count(*) filter (where battle_status = 'completed')                    as battles_played,
          count(*) filter (where battle_status = 'completed' and is_winner)      as battles_won,
-         count(*) filter (where battle_status = 'completed' and not is_winner)  as battles_lost
+         count(*) filter (where battle_status = 'completed' and not is_winner
+                            and rank = 1 and metric_value is not null)          as battles_drawn,
+         count(*) filter (where battle_status = 'completed' and not is_winner
+                            and not (rank = 1 and metric_value is not null))    as battles_lost
   from public.battle_standings group by user_id
 )
 select p.id as user_id, p.username,
@@ -834,6 +930,7 @@ select p.id as user_id, p.username,
                   order by s.last_day desc limit 1), 0) as current_streak_days,
        coalesce(b.battles_played, 0) as battles_played,
        coalesce(b.battles_won, 0)    as battles_won,
+       coalesce(b.battles_drawn, 0)  as battles_drawn,
        coalesce(b.battles_lost, 0)   as battles_lost
 from public.profiles p
 left join totals  t on t.user_id = p.id
@@ -854,6 +951,7 @@ alter table public.sets                enable row level security;
 alter table public.reps                enable row level security;
 alter table public.set_traces          enable row level security;
 alter table public.set_flags           enable row level security;
+alter table public.battle_results      enable row level security;
 
 -- profiles: anyone signed in can look people up by username (public fields only);
 -- you create/edit only your own.
@@ -912,6 +1010,11 @@ create policy participants_self_update on public.battle_participants for update 
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 -- detector configs: readable; written only via ensure_detector_config().
+-- battle_results: members read; nobody writes through the API (finalize_battles is
+-- SECURITY DEFINER). No insert/update/delete policies on purpose.
+create policy battle_results_read on public.battle_results for select to authenticated
+  using (public.is_battle_member(battle_id));
+
 create policy detector_configs_read on public.detector_configs for select to authenticated using (true);
 
 -- sets: you see your own sets, plus every set in a battle you're part of.
@@ -965,13 +1068,17 @@ grant execute on function public.submit_set(jsonb), public.cancel_battle(uuid),
                           public.server_now(), public.is_battle_member(uuid),
                           public.are_friends(uuid, uuid), public.can_join_battle_channel(text),
                           public.depth_ratio(double precision, double precision, double precision),
+                          public.tempo_score(bigint, numeric, numeric),
                           public.battle_metric_value(public.battle_metric, smallint, smallint, bigint,
-                                                     numeric, numeric, numeric, numeric)
+                                                     numeric, numeric, bigint, numeric, numeric)
   to authenticated, service_role;
 grant execute on function public.ensure_detector_config(jsonb) to authenticated, service_role;
 grant execute on function public.finalize_battles() to service_role;
 grant select on public.rep_metrics, public.set_metrics, public.battle_entries,
-                public.battle_standings, public.user_stats to authenticated;
+                public.battle_standings_live, public.battle_standings, public.user_stats to authenticated;
+-- Locked results: read-only for users (written only by finalize_battles()).
+revoke insert, update, delete, truncate on public.battle_results from authenticated, anon;
+grant select on public.battle_results to authenticated;
 -- Sets: no UPDATE grant at all (immutable).
 revoke update on public.sets, public.reps, public.set_traces from authenticated;
 

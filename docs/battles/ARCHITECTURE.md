@@ -31,13 +31,16 @@
   (depth %, quality, tempo, scores, standings, stats) in SQL views at query time.
 * That gives one source of truth: there is no "battle score" column that can drift from the
   reps behind it.
+* **One deliberate exception**: when a battle completes, its final standings are frozen into
+  `battle_results`, because results are locked once a battle is over (see "Locked results"
+  below).
 
 ## 2. Supabase pieces
 
 | piece | use |
 |---|---|
 | **Auth** | **Sign in with Apple** (native via `expo-apple-authentication` → `supabase.auth.signInWithIdToken({ provider: 'apple' })`). There are no passwords. A `profiles` row holds the public `@username`. Email/magic link could be added later for Android. |
-| **Postgres** | The normalized schema in `schema.sql`: `profiles`, `devices`, `push_tokens`, `friendships`, `battles`, `battle_invite_links`, `battle_participants`, `detector_configs`, `sets` (nullable `battle_id`), `reps`, `set_traces`, `set_flags`. Row Level Security is on for every table. Derived data comes from views: `rep_metrics` → `set_metrics`, `battle_entries` → `battle_standings`, `user_stats`. |
+| **Postgres** | The normalized schema in `schema.sql`: `profiles`, `devices`, `push_tokens`, `friendships`, `battles`, `battle_invite_links`, `battle_participants`, `detector_configs`, `sets` (nullable `battle_id`), `reps`, `set_traces`, `set_flags`, plus `battle_results` (locked final standings, written only by `finalize_battles()`). Row Level Security is on for every table. Derived data comes from views: `rep_metrics` → `set_metrics`, `battle_entries` → `battle_standings_live` → `battle_standings` (locked rows for completed battles, live rows otherwise), `user_stats`. |
 | **Realtime** | Private **broadcast + presence** channels `battle:<uuid>` for live battles. Access is controlled by RLS on `realtime.messages`: only participants of that battle may read/write. The client joins with `{ config: { private: true } }`, and "Allow public access" is turned off in the Realtime settings. Postgres-changes subscriptions are not needed: the battles screen refetches on push/focus. |
 | **Edge Functions** | `submit-set`: validates and inserts battle sets (the hard anti-cheat checks), then calls `submit_set` as the service role. Solo sets use the RPC directly under RLS. `redeem-invite`: token → participant row (+ friendship). `notify`: called by DB webhooks, cron and other functions; it looks up tokens and sends via the Expo Push API. `finalize`: optional HTTP wrapper; the work itself is the SQL function `finalize_battles()` on `pg_cron`. `delete-account`: deletes the auth user (cascades to all their data). |
 | **Cron** | `pg_cron`: `finalize_battles()` every minute; reminder pushes every 15 min. |
@@ -47,6 +50,28 @@ computed on the backend at query time. At this scale (a set is about 50 reps and
 row), the views stay cheap. If they ever get slow, the same SQL can back a
 **materialized view** or a cache table refreshed at battle completion, without changing
 the API (noted in `schema.sql`).
+
+Why **locked results** (`battle_results`), the one stored derived table: the product rule is
+that a result is final once the battle ends. Two options were considered:
+
+* **Pin `scoring_version` and keep queries deterministic** (no stored results). Rejected:
+  the version pins the *formula*, but a result also depends on its *inputs*: plausibility
+  rules in `rep_metrics`, `set_flags` exclusions, detector-math fixes, and view edits. Any of
+  those would silently change old winners, and keeping every old rule alive forever as
+  versioned code is fragile.
+* **Snapshot at finalize** (chosen). `finalize_battles()` marks the battle `completed` and,
+  in the same transaction, inserts the standings computed at that moment (rank, winner,
+  good reps, tempo score, metric value, best set, scoring version, `locked_at`) into
+  `battle_results`. There is never a moment where a battle is completed but unlocked.
+  `battle_standings` serves these rows for completed battles, and `user_stats` W/L/D reads
+  them, so nothing downstream recomputes a finished battle. Clients can only read their own
+  battles' rows (RLS, no write grants), and an `UPDATE` trigger rejects changes even from
+  the service role. Raw sets/reps stay, so the charts still render; only the verdict is
+  frozen. `scoring_version` is still kept so a battle *in progress* during a formula rollout
+  keeps the formula it started with.
+
+The cost is a small table (one row per participant per finished battle), and the rows are
+written once and never updated, so the usual "derived data drifts" problem doesn't apply.
 
 Why **store the detector config** (`detector_configs`): quality (Full/Good/Shallow) is
 derived from raw distances plus the thresholds the phone used. Storing the thresholds once
@@ -79,7 +104,8 @@ The depth-ratio and quality rules exist in TypeScript (`src/core/scoring.ts`,
 4. A DB webhook → `notify` sends "Bob did 28".
 
 **Results**
-* `select * from battle_standings where battle_id = …`
+* `select * from battle_standings where battle_id = …` (`locked = true` once the battle
+  is completed; provisional before that).
 * Plus `rep_metrics` for the charts (per-rep depth/tempo) and `set_traces` for the trace
   overlay.
 

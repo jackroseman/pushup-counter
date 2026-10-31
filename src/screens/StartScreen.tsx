@@ -4,6 +4,7 @@ import { Button } from '../components/ui';
 import { Settings } from '../storage/settings';
 import { colors } from '../theme';
 import { faceTrackingSupported } from '../sensors';
+import { SignInCard } from '../components/SignInCard';
 
 const STEPS = [
   'Turn the volume up. Reps are spoken out loud.',
@@ -15,11 +16,13 @@ const STEPS = [
 
 export function StartScreen({
   settings,
+  savedSets,
   onChangeSettings,
   onStart,
   onHistory,
 }: {
   settings: Settings;
+  savedSets: number;
   onChangeSettings: (s: Settings) => void;
   onStart: () => void;
   onHistory: () => void;
@@ -56,6 +59,7 @@ export function StartScreen({
 
       {depth ? <Button title="Start" onPress={onStart} /> : null}
       <Button title="History" kind="secondary" onPress={onHistory} />
+      <SignInCard savedSets={savedSets} />
     </ScrollView>
   );
 }

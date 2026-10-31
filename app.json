@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Pushup Counter",
+    "slug": "push-up-counter",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.jackroseman.pushupcounter",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Pushup Counter uses the front TrueDepth camera to measure how far your face is from the phone so it can score the depth of each pushup. No images are stored or uploaded.",
+        "UIRequiredDeviceCapabilities": [
+          "arm64"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.jackroseman.pushupcounter",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F1A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
+    ],
+    "owner": "jackroseman33s-team",
+    "extra": {
+      "eas": {
+        "projectId": "b599a01c-6494-47d4-8558-9caa1d292cb2"
+      }
+    }
+  }
+}

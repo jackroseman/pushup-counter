@@ -1,0 +1,60 @@
+# CD for the dev client ("Pushup Dev"). Runs only after a merge (a push to dev), never on PR events.
+# Ship every push to dev:
+#   test -> fingerprint -> is there already a development (dev client) iOS build with this native fingerprint?
+#     yes -> JS-only change: publish an OTA update to the "development" channel
+#     no  -> native change: make a new iOS development client build
+# Pattern from https://docs.expo.dev/eas/workflows/examples/deploy-to-production/
+name: Deploy development
+
+on:
+  push:
+    branches: ['dev']
+
+concurrency:
+  group: deploy-development-${{ github.ref }}
+
+jobs:
+  test:
+    name: Jest + TypeScript
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Unit tests
+        run: npx jest --ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  fingerprint:
+    name: Fingerprint
+    needs: [test]
+    type: fingerprint
+    environment: development # same environment as the "development" build profile
+
+  get_ios_build:
+    name: Check for a compatible iOS build
+    needs: [fingerprint]
+    type: get-build
+    params:
+      platform: ios
+      profile: development
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      wait_for_in_progress: true
+
+  build_ios:
+    name: Build iOS (native change)
+    needs: [get_ios_build]
+    if: ${{ !needs.get_ios_build.outputs.build_id }}
+    type: build
+    params:
+      platform: ios
+      profile: development
+
+  publish_ios_update:
+    name: Publish OTA update (JS-only change)
+    needs: [get_ios_build]
+    if: ${{ needs.get_ios_build.outputs.build_id }}
+    type: update
+    environment: development
+    params:
+      channel: development
+      platform: ios

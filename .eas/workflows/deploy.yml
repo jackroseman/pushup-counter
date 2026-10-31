@@ -1,3 +1,4 @@
+# CD for the preview app. Runs only after a merge (a push to main), never on PR events.
 # Ship every push to main:
 #   test -> fingerprint -> is there already a preview iOS build with this native fingerprint?
 #     yes -> JS-only change: publish an OTA update to the "preview" channel

@@ -11,6 +11,9 @@ set), depth per rep, and other metrics. All of it is saved with the set.
 > PRs and required CI checks, CD (OTA vs native builds), the dev client with hot reload, and
 > rollbacks.
 
+> **Planned: push-up battles.** Design docs (not built yet): [spec](docs/battles/SPEC.md),
+> [architecture & phases](docs/battles/ARCHITECTURE.md), [draft DB schema](docs/battles/schema.sql).
+
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict)
 * Custom native code lives in a local Expo Module (`modules/pushup-sensors`, Swift + Kotlin).
   Because of that, **Expo Go will not work**. You need a *development build*, made with

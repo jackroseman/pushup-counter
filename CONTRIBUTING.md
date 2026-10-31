@@ -10,7 +10,7 @@ git switch dev && git pull
 git switch -c feat/short-description        # branch off dev
 npm run dev:tunnel                          # or scripts/dev-server.sh: hot reload on the phone
 # ...code; commit small, conventional commits...
-npm run ci                                  # jest + tsc, the same checks CI runs
+npm run ci                                  # jest + db tests + tsc, the same checks CI runs
 git push -u origin feat/short-description
 gh pr create --base dev --fill              # PR into dev; CI must be green to merge
 ```
@@ -71,13 +71,14 @@ branches:
 
 | job                        | what it does                                              | required |
 |----------------------------|-----------------------------------------------------------|----------|
-| `checks`                   | `npm ci`, `jest --ci`, `tsc --noEmit`, `expo export --platform ios` (bundle smoke test) | **yes**: PRs that fail are blocked |
+| `checks`                   | `npm ci`, `jest --ci`, `npm run test:db` (migrations + RLS tests on PGlite), `tsc --noEmit`, `expo export --platform ios` (bundle smoke test) | **yes**: PRs that fail are blocked |
 | `expo-doctor (advisory)`   | `npx expo-doctor` (dependency/config health)              | no (network-dependent) |
 
 Run the same checks locally before pushing:
 
 ```bash
-npm run ci           # jest --ci && tsc --noEmit
+npm run ci           # jest --ci && npm run test:db && tsc --noEmit
+npm run test:db      # only the database tests (supabase/tests, in-process Postgres)
 npm run doctor       # expo-doctor
 ```
 
@@ -101,6 +102,29 @@ build of that profile with this fingerprint?
 
 Watch runs at expo.dev → project → Workflows, or with `eas workflow:runs`.
 Validate a workflow before pushing: `eas workflow:validate .eas/workflows/deploy-dev.yml`.
+
+### Backend (Supabase)
+
+| branch | GitHub environment | Supabase project | EAS environments using it |
+|--------|--------------------|------------------|---------------------------|
+| `dev`  | `staging`          | `pushup-battles-staging` | `development` |
+| `main` | `production`       | `pushup-battles-prod`    | `preview`, `production` |
+
+* Schema changes are **migrations** in `supabase/migrations/` (`<UTC timestamp>_<name>.sql`).
+  Never edit a migration that has been merged; add a new one. Create one with
+  `npx supabase migration new <name>`.
+* Test them: add steps to `supabase/tests/cases.mjs` and run `npm run test:db`. Migrations
+  ending in `_cron.sql` need pg_cron and are skipped by the tests.
+* `.github/workflows/supabase-deploy.yml` runs `supabase db push` **only on a push to `dev`
+  (staging) or `main` (prod)** when `supabase/migrations/` changes, never on PRs. The
+  `production` environment only accepts `main`, and `staging` only `dev`.
+* Tunable defaults (form-score weights, battle sizes, friend visibility, the sign-in
+  prompt, invite links) live in the `public.app_settings` table, not in code. Change them
+  with a migration (or SQL on the dashboard for a quick experiment); the app reads them at
+  launch and falls back to `src/backend/appSettings.ts` defaults offline.
+* Database changes and app changes ship separately. Keep migrations backwards compatible
+  with the app version that is already installed (add columns/functions first, remove
+  them in a later release).
 
 ## 6. OTA update vs full build, and bumping `version`
 
@@ -180,6 +204,20 @@ switches the name/bundle id in `app.config.ts`. Without it you get the normal
 
 ## 10. Secrets
 
-Never commit tokens, Apple passwords or `.env` files. EAS credentials live on EAS. CI
-needs no secrets. EAS environment variables (`eas env:list`) hold build-time config such as
-`APP_VARIANT`.
+Never commit tokens, database passwords, Apple passwords or `.env` files. EAS credentials
+live on EAS.
+
+* **CI (`ci.yml`) needs no secrets** and PR runs never get any.
+* **`supabase-deploy.yml`** uses GitHub secrets:
+  * `SUPABASE_ACCESS_TOKEN` (repository secret): a personal access token from
+    supabase.com/dashboard/account/tokens. Without it the deploy job is skipped with a warning.
+  * `SUPABASE_PROJECT_REF` (environment secret on `staging` and `production`).
+  * `SUPABASE_DB_PASSWORD` (optional environment secret). Without it the CLI logs in
+    with a short-lived role created from the access token.
+* **EAS environment variables** (`eas env:list --environment <env>`) hold build-time config:
+  `APP_VARIANT`, `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The
+  `EXPO_PUBLIC_*` values are compiled into the app and are public by design (the Supabase
+  *publishable* key; row-level security protects the data). Never put the service-role /
+  secret key in an `EXPO_PUBLIC_` variable or in the app.
+* Without the Supabase variables (e.g. a plain local `npx expo start`), the app runs in
+  offline solo mode and hides sign-in.

@@ -1,0 +1,14 @@
+create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
+create schema extensions; grant usage on schema extensions to anon, authenticated, service_role; set search_path = "$user", public, extensions;
+create schema auth; create schema realtime;
+create table auth.users (id uuid primary key);
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create table realtime.messages (id bigserial primary key, topic text, extension text, payload jsonb);
+alter table realtime.messages enable row level security;
+create function realtime.topic() returns text language sql stable as $$ select nullif(current_setting('realtime.topic', true), '') $$;
+grant usage on schema auth, realtime, public to anon, authenticated, service_role;
+grant execute on all functions in schema auth to authenticated, service_role;
+grant execute on all functions in schema realtime to authenticated;
+grant select, insert on realtime.messages to authenticated;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;

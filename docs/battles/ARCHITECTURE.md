@@ -169,17 +169,21 @@ The depth-ratio and quality rules exist in TypeScript (`src/core/scoring.ts`,
 
 ### Supabase projects
 
-| env | Supabase project | app build that talks to it |
-|---|---|---|
-| staging | `pushup-staging` | `development` + `preview` profiles (branch `dev` / `main` today) |
-| production | `pushup-prod` | `production` profile (TestFlight / App Store) |
+| env | Supabase project (ref) | app build that talks to it | migrations deployed from |
+|---|---|---|---|
+| staging | `pushup-battles-staging` (`qkfdkeoijboazztnliob`) | EAS env `development` (Pushup Dev, branch `dev`) | push to `dev` |
+| production | `pushup-battles-prod` (`qjvmkqajlvpzfyynbetn`) | EAS envs `preview` + `production` (branch `main`, TestFlight / App Store) | push to `main` |
+
+Both are free-plan projects in `us-east-1`, created in phase 1. Project refs aren't secret
+(they are in the public URL).
 
 * Two projects = the free plan's limit of 2 active projects.
 * Free projects **pause after ~1 week of inactivity**. Staging probably will. Unpausing is a
   click; production will have traffic. (Pro is an open question.)
 * The client config is **public by design**: `EXPO_PUBLIC_SUPABASE_URL` and the
   anon/publishable key are stored as **EAS environment variables** per environment
-  (`development`, `preview`, `production`) and read in `app.config.ts`/at runtime.
+  (`development`, `preview`, `production`) and read at runtime (`src/backend/config.ts`).
+  Without them the app runs in offline solo mode.
 * The service-role key is used **only** inside Edge Functions (Supabase sets it
   automatically). It never goes in the app or the repo.
 
@@ -187,38 +191,34 @@ The depth-ratio and quality rules exist in TypeScript (`src/core/scoring.ts`,
 
 ```
 supabase/
-  config.toml
-  migrations/2026xxxxxxxxxx_battles.sql     ← from docs/battles/schema.sql
+  migrations/20261031191027_battles_initial.sql    ← from docs/battles/schema.sql + app_settings
+  migrations/20261031191033_battles_cron.sql       ← pg_cron: finalize-battles every minute
+  migrations/20261031191149_battles_hardening.sql  ← advisor fixes (private schema, grants, FK indexes)
   functions/
     _shared/   (supabase client, auth helper, validation imported from src/core)
     submit-set/  redeem-invite/  notify/  finalize/  delete-account/
-  tests/       (pgTAP: RLS + state-machine + metrics tests)
+  tests/       (node:test on PGlite: RLS + state-machine + metrics + settings tests; `npm run test:db`)
 ```
 
 ### GitHub Actions (CI, on PRs: no secrets needed)
 
-* The existing `checks` job stays as it is.
-* New job **`db`**:
-  1. Start a local Supabase with `supabase start`, or a plain Postgres service with the
-     auth/realtime stubs used to validate this draft.
-  2. Apply the migrations.
-  3. Run the pgTAP tests (RLS, state machines, metric formulas vs. TS fixtures) and
-     `deno check` the functions.
-* Make `db` required once it's stable.
+* The required `checks` job now also runs `npm run test:db`: the migrations (except
+  `*_cron.sql`) are applied to an in-process Postgres (PGlite) with small auth/realtime
+  stubs, then RLS, state-machine, metric and settings tests run (`supabase/tests/`).
+  Edge Function checks (`deno check`) join when functions land.
 
 ### GitHub Actions (CD for the backend, after merge)
 
-* New workflow `supabase-deploy.yml`:
-  * Runs on push to `dev` → staging and to `main` → production (or production on a tag /
-    manual approval through a GitHub Environment).
-  * Steps:
-    1. `supabase link --project-ref $REF`
-    2. `supabase db push` (migrations)
-    3. `supabase functions deploy`
-* Needs GitHub **environment secrets**: `SUPABASE_ACCESS_TOKEN`,
-  `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF` (per environment).
-* ⚠️ This changes the CONTRIBUTING rule "CI needs no secrets". PR CI still needs none; only
-  the post-merge deploy job does. Update CONTRIBUTING §10 when this lands.
+* Workflow `supabase-deploy.yml` (phase 1):
+  * Runs on push to `dev` → environment `staging`, and to `main` → environment
+    `production`, when `supabase/migrations/` changes. Never on PRs. Each GitHub
+    environment only accepts its own branch.
+  * Steps: `supabase link --project-ref $SUPABASE_PROJECT_REF`, `supabase db push --dry-run`,
+    `supabase db push`. `supabase functions deploy` joins when functions land.
+* Secrets: `SUPABASE_ACCESS_TOKEN` (repo secret; the job skips with a warning until it
+  exists), `SUPABASE_PROJECT_REF` (per environment), optional `SUPABASE_DB_PASSWORD`
+  (the CLI otherwise uses a temporary login role derived from the token).
+* PR CI still needs no secrets (CONTRIBUTING §10).
 * The backend deploy stays in **GitHub Actions**, not EAS Workflows. EAS Workflows keep
   doing what they do now (fingerprint → OTA or build), and their free-plan minutes are kept
   for the app.
@@ -307,8 +307,9 @@ Things to check before that build so we don't need another:
 | phase | scope | ships as | exit criteria |
 |---|---|---|---|
 | **0. Design** | this PR: spec, schema draft, architecture | docs | Sunny approves the decisions / answers the open questions |
-| **1. Backend foundation** | Create the staging + prod Supabase projects (with Sunny), `supabase/` dir, migration from `schema.sql`, pgTAP tests, CI `db` job, `supabase-deploy.yml`, GitHub environment secrets, Realtime public access off | backend only | migrations apply cleanly in CI and on staging; RLS tests green |
-| **2. Native batch + identity** | All native deps from §8, version 1.2.0, Sign in with Apple, username picker, profile, solo set sync (upload queue + backfill), account deletion, push token registration | **3 builds** (dev, preview, TestFlight internal) | sign in on a device, sets show in Supabase staging, a test push arrives |
+| **1. Backend foundation** ✅ (PR `feat/battles-phase-1`) | Staging + prod Supabase projects, `supabase/` migrations (applied to both, advisors fixed), DB tests in CI `checks`, `supabase-deploy.yml`, GitHub environments `staging`/`production`, EAS env vars, server-side `app_settings` | backend only | migrations apply cleanly in CI and on staging; RLS tests green |
+| **2a. Native batch** ✅ (same PR) | All native deps from §8, `expo install --check` fixes, version 1.2.0, URL scheme, Sign in with Apple + push entitlements, React Navigation, Supabase client, optional sign-in prompt after solo sets | **3 builds** (dev, preview, TestFlight internal) once merged | dev build signs in with Apple against staging |
+| **2b. Identity** | Username picker, profile, solo set sync (upload queue + backfill), account deletion, push token registration | OTA | sets show in Supabase staging, a test push arrives |
 | **3. Friends + async battles** | Friends, invite links + universal links (domain + AASA live), push notifications, async max-reps/timed, battles home/detail/invite/results (basic) | OTA | two testers complete an async battle end to end from a push |
 | **4. Live battles** | Lobby, presence, synced countdown, rep broadcast, reconnect, checkpointing, waiting screen | OTA | 10 live battles on poor networks with no wrong results |
 | **5. Polish & hardening** | Multi-day battles, all 4 metrics, comparison charts, stats/streaks, report/block, outlier flags, App Attest (needs a native change: fold into the next build that's needed anyway), external TestFlight | OTA (+ any native change batched) | Beta App Review passed |

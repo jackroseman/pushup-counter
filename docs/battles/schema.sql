@@ -1,8 +1,10 @@
 -- =====================================================================================
--- Push-up battles: DRAFT Supabase Postgres migration (design doc, not applied anywhere)
+-- Push-up battles: Supabase Postgres schema (design doc)
 -- =====================================================================================
 -- Companion to docs/battles/SPEC.md and docs/battles/ARCHITECTURE.md.
--- In Phase 1 this file becomes supabase/migrations/<timestamp>_battles.sql.
+-- SOURCE OF TRUTH: supabase/migrations/. This file was the phase-0 draft; it became
+-- 20261031191027_battles_initial.sql (+ app_settings), _cron.sql and _hardening.sql. Read
+-- it for the commentary; change the schema only with a new migration.
 --
 -- Principles
 --   * Tables hold RAW facts only: what the phone measured (distances, ms timings, flags),

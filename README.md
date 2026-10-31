@@ -215,6 +215,30 @@ that. Fully close and reopen the app twice.
   eas build -p ios --profile preview
   ```
 
+### CI/CD: every push to `main` ships automatically (EAS Workflows)
+
+`.eas/workflows/deploy.yml` runs on every push to `main` of the GitHub repo. The repo is
+linked to the Expo project under expo.dev → project → GitHub. Steps:
+
+1. **Tests**: `npx jest --ci` and `npx tsc --noEmit`. If either fails, nothing ships.
+2. **Fingerprint**: hashes the project's native characteristics (environment `preview`).
+3. **Get build**: looks for an existing iOS `preview` build with that fingerprint. It
+   waits for one that is still in progress.
+4. **If a build exists** (JS-only change): `eas update` to channel `preview` (iOS),
+   using the commit message as the update message.
+5. **If none exists** (native change): a new iOS `preview` ad-hoc build. Install it from
+   the build page.
+
+Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
+`eas workflow:validate .eas/workflows/deploy.yml`.
+
+> **Runtime version note:** the app uses `runtimeVersion: {policy: "appVersion"}`.
+> The workflow decides between build and update by fingerprint, so it detects native
+> changes either way. However, updates are delivered by runtime version (`1.0.0`).
+> **When you make a native change, bump `version` in `app.json` in the same commit.**
+> Otherwise, later OTA updates would also go to older installed builds that don't have
+> the new native code.
+
 ## 6. Development
 
 ```bash

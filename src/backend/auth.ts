@@ -1,5 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { supabase } from './supabase';
+
+/** Name from Apple's first sign-in, used to prefill profile setup. */
+export const PENDING_DISPLAY_NAME_KEY = 'pendingDisplayName.v1';
 
 export async function isAppleSignInAvailable(): Promise<boolean> {
   try {
@@ -21,6 +25,9 @@ export async function signInWithApple(): Promise<SignInResult> {
     if (!credential.identityToken) return { ok: false, cancelled: false, message: 'Apple did not return a token.' };
     const { error } = await supabase.auth.signInWithIdToken({ provider: 'apple', token: credential.identityToken });
     if (error) return { ok: false, cancelled: false, message: error.message };
+    // Apple shares the name only on the first sign-in: keep it to prefill the profile.
+    const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean).join(' ').trim();
+    if (name) await AsyncStorage.setItem(PENDING_DISPLAY_NAME_KEY, name).catch(() => {});
     return { ok: true };
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;

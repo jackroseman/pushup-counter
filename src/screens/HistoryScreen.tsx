@@ -40,7 +40,7 @@ export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) =
           title="Clear history"
           kind="secondary"
           onPress={() =>
-            Alert.alert('Clear history?', 'This deletes every saved set.', [
+            Alert.alert('Clear history?', 'This deletes every set saved on this phone. Sets already backed up to your account are kept.', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Clear', style: 'destructive', onPress: () => historyStore.clear().then(() => setItems([])) },
             ])

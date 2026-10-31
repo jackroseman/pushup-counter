@@ -105,3 +105,44 @@ steps.push(
   ['hardening: helpers are not in the public schema', `select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('are_friends','is_battle_member','can_join_battle_channel');`],
 );
 checks['hardening: helpers are not in the public schema'] = (r) => ok(r[0][0].count === 0, 'helpers still public');
+
+// ---- Phase 2b: identity ----
+const D='dddddddd-dddd-4ddd-8ddd-dddddddddddd', E='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const TOKEN='ExponentPushToken[abc123]';
+steps.push(
+  ['identity: setup D and E', `insert into auth.users values ('${D}'),('${E}'); ${as(D)} insert into profiles(id,username,display_name,time_zone) values ('${D}','dana','Dana','America/New_York'); reset role; ${as(E)} insert into profiles(id,username) values ('${E}','erin'); reset role;`],
+  ['identity: username_available', `${as(D)} select username_available('dana') taken, username_available('new_name') free, username_available('No Caps') bad, username_available('ab') short, username_available(null) nul; reset role;`],
+  ['identity: anon cannot call username_available (expect ERR)', `set role anon; select username_available('x_y_z'); reset role;`],
+  ['identity: duplicate username, any case (expect ERR)', `${as(E)} update profiles set username='DANA' where id='${E}'; reset role;`],
+  ['identity: user updates own profile', `${as(D)} update profiles set display_name='Dana R', time_zone='Europe/Paris' where id='${D}'; select display_name, time_zone from profiles where id='${D}'; reset role;`],
+  ['identity: user cannot update another profile (0 rows)', `${as(E)} update profiles set display_name='hacked' where id='${D}'; reset role; select display_name from profiles where id='${D}';`],
+  ['identity: register_device is idempotent', `${as(D)} select register_device('install-0001','iPhone17,1','26.1') = register_device('install-0001','iPhone17,1','26.2') same; select count(*), max(os_version) os from devices; reset role;`],
+  ['identity: register_device requires sign-in (expect ERR)', `set role authenticated; select set_config('request.jwt.claim.sub','',false); select register_device('install-0001'); reset role;`],
+  ['identity: register_push_token', `${as(D)} select register_push_token((select id from devices where installation_id='install-0001'), '${TOKEN}'); select count(*) from push_tokens; reset role;`],
+  ['identity: cannot register a token for someone else device (expect ERR)', `${as(E)} select register_push_token((select id from devices where user_id='${D}' limit 1), '${TOKEN}'); reset role;`],
+  ['identity: E cannot see D devices or tokens', `${as(E)} select count(*) from devices; select count(*) from push_tokens; reset role;`],
+  ['identity: same phone, other account -> token moves', `${as(E)} select register_push_token(register_device('install-0001','iPhone17,1','26.2'), '${TOKEN}'); reset role; select d.user_id = '${E}'::uuid moved, count(*) over () n from push_tokens t join devices d on d.id = t.device_id;`],
+  ['identity: invalid token format (expect ERR)', `${as(E)} select register_push_token((select id from devices where user_id='${E}'), 'not-a-token'); reset role;`],
+  ['identity: solo sync upload (v2 + legacy v1)', `${as(D)} select submit_set(${q(rec('1730000000000',5,1500,[0.15]))}) is not null; select submit_set(${q({id:'1690000000000',startedAt:1690000000000,endedAt:1690000060000,reps:[{index:1,timestamp:1690000005000,quality:'good',source:'proximity',bottomDistance:null,topDistance:null,faceLostAtBottom:false}],calibratedTopDistance:null,depthTracking:false})}) is not null; select client_set_id, data_version from sets where user_id='${D}' order by 1; reset role;`],
+  ['identity: D creates a battle with E; E deletes account', `${as(D)} insert into friendships(user_low,user_high,requested_by) values (least('${D}'::uuid,'${E}'::uuid),greatest('${D}'::uuid,'${E}'::uuid),'${D}'); reset role; ${as(E)} update friendships set status='accepted', responded_at=now(); select submit_set(${q(rec('e-solo',4,1500,[0.15]))}); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${E}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); insert into battle_participants(battle_id,user_id,invited_by) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${D}','${E}'); reset role; ${as(D)} update battle_participants set status='accepted' where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and user_id='${D}'; reset role; select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('del-e',10,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:E})}) is not null; select public.submit_set(${q({...rec('del-d',12,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:D})}) is not null; reset role; select finalize_battles(); ${as(E)} select delete_my_account(); reset role; select (select count(*) from auth.users where id='${E}') users, (select count(*) from profiles where id='${E}') profiles, (select count(*) from devices where user_id='${E}') devices, (select count(*) from push_tokens) tokens, (select count(*) from friendships where '${E}' in (user_low,user_high)) friends, (select count(*) from battle_participants where user_id='${E}') parts, (select count(*) from sets where user_id='${E}') e_sets, (select count(*) from battles where id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and created_by is null) orphan_battles, (select count(*) from battle_results where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e') results, (select count(*) from battle_participants where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and invited_by is null) uninvited;`],
+  ['identity: delete_my_account requires sign-in (expect ERR)', `set role authenticated; select set_config('request.jwt.claim.sub','',false); select delete_my_account(); reset role;`],
+  ['identity: anon cannot delete accounts (expect ERR)', `set role anon; select delete_my_account(); reset role;`],
+  ['identity: D account and sets untouched', `select count(*) from sets where user_id='${D}';`],
+  ['identity: users still cannot null invited_by directly (expect ERR)', `${as(B)} update battle_participants set invited_by=null where user_id='${B}' and invited_by is not null; reset role;`],
+  ['identity: results still locked for direct updates (expect ERR)', `set role service_role; update battle_results set best_set_id=null where best_set_id is not null; reset role;`],
+);
+Object.assign(checks, {
+  'identity: username_available': (r) => ok(r[0][0].taken === false && r[0][0].free === true && r[0][0].bad === false && r[0][0].short === false && r[0][0].nul === false, 'username_available ' + JSON.stringify(r[0])),
+  'identity: user updates own profile': (r) => ok(r[0][0].display_name === 'Dana R' && r[0][0].time_zone === 'Europe/Paris', 'profile update'),
+  'identity: user cannot update another profile (0 rows)': (r) => ok(r[0][0].display_name === 'Dana R', 'profile hijack'),
+  'identity: register_device is idempotent': (r) => ok(r[0][0].same === true && r[1][0].count === 1 && r[1][0].os === '26.2', 'device upsert'),
+  'identity: register_push_token': (r) => ok(r[1][0].count === 1, 'token'),
+  'identity: E cannot see D devices or tokens': (r) => ok(r[0][0].count === 0 && r[1][0].count === 0, 'device RLS'),
+  'identity: same phone, other account -> token moves': (r) => { const x = r[r.length - 1]; ok(x.length === 1 && x[0].moved === true, 'token move ' + JSON.stringify(x)); },
+  'identity: solo sync upload (v2 + legacy v1)': (r) => ok(r[2].length === 2 && r[2][0].data_version === 1 && r[2][1].data_version === 2, 'sync ' + JSON.stringify(r[2])),
+  'identity: D creates a battle with E; E deletes account': (r) => {
+    const x = r[r.length - 1][0];
+    ok(x.users === 0 && x.profiles === 0 && x.devices === 0 && x.tokens === 0 && x.friends === 0 && x.parts === 0 && x.e_sets === 0 && x.orphan_battles === 1 && x.results === 1 && x.uninvited === 1, 'delete ' + JSON.stringify(x));
+  },
+  'identity: D account and sets untouched': (r) => ok(r[0][0].count === 3, 'D sets'),
+});

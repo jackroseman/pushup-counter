@@ -7,6 +7,10 @@ is scored **Full**, **Good** or **Shallow**. A live chart plots the distance whi
 work. When you finish, an analysis screen shows your tempo (time between reps over the
 set), depth per rep, and other metrics. All of it is saved with the set.
 
+> **Contributing?** Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch model (`dev` → `main`),
+> PRs and required CI checks, CD (OTA vs native builds), the dev client with hot reload, and
+> rollbacks.
+
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict)
 * Custom native code lives in a local Expo Module (`modules/pushup-sensors`, Swift + Kotlin).
   Because of that, **Expo Go will not work**. You need a *development build*, made with
@@ -255,7 +259,15 @@ that. Fully close and reopen the app twice.
   eas build -p ios --profile preview
   ```
 
-### CI/CD: every push to `main` ships automatically (EAS Workflows)
+### CI/CD
+
+* **CI** (GitHub Actions, `.github/workflows/ci.yml`): the `checks` job runs jest, tsc and
+  an `expo export` bundle test on every PR commit. It is required to merge into `main`.
+* **CD** (EAS Workflows): a push to `dev` deploys to the **development** channel (Pushup Dev
+  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys to **preview**
+  (`deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Every push to `main` ships automatically (EAS Workflows)
 
 `.eas/workflows/deploy.yml` runs on every push to `main` of the GitHub repo. The repo is
 linked to the Expo project under expo.dev → project → GitHub. Steps:
@@ -280,6 +292,14 @@ Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
 > the new native code.
 
 ## 6. Development
+
+Hot reload on your iPhone with the **Pushup Dev** dev client (details in
+[CONTRIBUTING.md §7](CONTRIBUTING.md#7-local-development-dev-client--hot-reload)):
+
+```bash
+scripts/dev-server.sh        # starts Metro + tunnel in the background, prints URL + deep link
+npm run dev                  # or in the foreground, same Wi-Fi: expo start --dev-client
+```
 
 ```bash
 npm test             # Jest (jest-expo): detector, analysis, trace, scoring, calibration, guidance, history/settings

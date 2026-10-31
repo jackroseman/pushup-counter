@@ -1,0 +1,59 @@
+# CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev and feature
+# branches. The "checks" job is the REQUIRED status check in branch protection: keep its
+# name stable (renaming it means updating the protection rules).
+# Deploys are NOT done here: EAS Workflows (.eas/workflows/) deploy after a merge.
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests (jest)
+        run: npx jest --ci
+
+      - name: Type check (tsc)
+        run: npx tsc --noEmit
+
+      - name: Bundle smoke test (expo export, iOS)
+        run: npx expo export --platform ios --output-dir ${{ runner.temp }}/expo-export
+
+  doctor:
+    # Advisory only (talks to the network, can be flaky): not a required check.
+    name: expo-doctor (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx expo-doctor

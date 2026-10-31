@@ -1,42 +1,53 @@
 import { depthRatio, median, qualityForRatio } from './scoring';
-import { Calibration, DEFAULT_CONFIG, DetectorConfig, Rep, RepQuality, RepSource } from './types';
+import { Calibration, DEFAULT_CONFIG, DetectorConfig, Rep, RepQuality } from './types';
 
 /**
- * Pure rep-detection state machine. Feed it proximity and face-distance samples
- * (with ms timestamps); it returns a Rep whenever one completes.
+ * Pure rep-detection state machine driven by face distance (ARKit, ~30 Hz). Feed it face and
+ * proximity samples with ms timestamps; onFaceDistance returns a Rep whenever one completes.
  *
- * Counting:
- *  - Proximity path (primary): near -> far = one rep (chest touched the phone, then rose).
- *    Near periods shorter than minNearDurationMs are ignored as glitches, and a rep can't
- *    complete within minRepIntervalMs of the previous one (debounce).
- *  - Depth-only path (optional, config.depthOnlyCounting): when the chest never touched the
- *    phone, a rep is counted once the face went at least minCountRatio of the way down and came
- *    back to the top zone. Needs a calibration.
+ * Counting (depth only; needs a calibration of the top position):
+ *  - A rep starts when the (median-smoothed) face distance leaves the top zone
+ *    (depthRatio > topZoneRatio). The last top-zone sample is the start of the descent.
+ *  - It counts when the face comes back to the top zone after going at least minCountRatio
+ *    of the way down. A shallower dip is discarded. Reps closer together than
+ *    minRepIntervalMs are ignored (debounce).
  *
- * Scoring:
- *  - Proximity reps are Full when proximityImpliesFull (default) - this is also the fallback
- *    when face tracking is unavailable or the face was lost at the bottom.
- *  - Otherwise depthRatio = (top - bottom) / (top - floorDistance) maps to Full/Good/Shallow.
+ * Proximity (optional supporting signal, never required):
+ *  - A valid "near" (>= minNearDurationMs) during a rep means the chest touched the phone:
+ *    the rep is deep enough to count even if ARKit lost the face at the bottom, and it is
+ *    scored Full when proximityImpliesFull. It can never add a second count.
+ *
+ * Scoring: depthRatio = (top - bottom) / (top - floorDistance) -> Full / Good / Shallow.
  */
 export class RepDetector {
   private config: DetectorConfig;
   private calibration: Calibration | null;
   private _reps: Rep[] = [];
-
-  // proximity state
-  private near = false;
-  private nearSince = 0;
   private lastRepAt = -Infinity;
 
-  // per-rep (cycle) depth state
-  private cycleMin = Infinity;
-  private cycleMax = -Infinity;
-  private nearSeenThisCycle = false;
-  private trackedWhileNear = false;
-  private depthArmed = true;
-  private depthBottomReached = false;
+  // proximity
+  private near = false;
+  private nearSince = 0;
+
+  // smoothing
   private window: number[] = [];
   private lastSmoothed: number | null = null;
+  private lastRatio: number | null = null;
+
+  // cycle
+  private phase: 'top' | 'down' = 'top';
+  private lastTopAt: number | null = null;
+  private cycleStartAt: number | null = null;
+  private cycleMin = Infinity;
+  private cycleMinAt: number | null = null;
+  private cycleMax = -Infinity;
+  private bottomReached = false;
+  private touchedThisCycle = false;
+  private touchSpan: [number, number] | null = null;
+  private lostAt: number | null = null;
+  private lostRatio: number | null = null;
+  private lostSpan: [number, number] | null = null;
+  private lostSpanRatio: number | null = null;
 
   constructor(config: Partial<DetectorConfig> = {}, calibration: Calibration | null = null) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -55,9 +66,19 @@ export class RepDetector {
     return this.near;
   }
 
+  get isCalibrated(): boolean {
+    return this.calibration !== null;
+  }
+
+  /** Latest median-smoothed face distance (meters), null before the first tracked sample. */
+  get smoothedDistance(): number | null {
+    return this.lastSmoothed;
+  }
+
   setCalibration(calibration: Calibration | null): void {
     this.calibration = calibration;
-    this.depthArmed = true;
+    this.phase = 'top';
+    this.resetCycle();
   }
 
   updateConfig(config: Partial<DetectorConfig>): void {
@@ -71,42 +92,53 @@ export class RepDetector {
     this.lastRepAt = -Infinity;
     this.window = [];
     this.lastSmoothed = null;
-    this.depthArmed = true;
+    this.lastRatio = null;
+    this.phase = 'top';
+    this.lastTopAt = null;
     this.resetCycle();
   }
 
-  /** Proximity sensor changed. Returns the completed rep on a valid near -> far transition. */
-  onProximity(near: boolean, timestamp: number): Rep | null {
-    if (near === this.near) return null; // duplicate event
+  /** Proximity sensor changed. Never counts a rep by itself; it only supports the depth logic. */
+  onProximity(near: boolean, timestamp: number): void {
+    if (near === this.near) return; // duplicate event
     this.near = near;
-
     if (near) {
       this.nearSince = timestamp;
-      this.nearSeenThisCycle = true;
-      this.trackedWhileNear = false;
-      return null;
+      return;
     }
-
-    // near -> far
-    const nearDuration = timestamp - this.nearSince;
-    if (nearDuration < this.config.minNearDurationMs) {
-      // Sensor glitch: forget it ever happened so it can't block a depth-only rep.
-      this.nearSeenThisCycle = false;
-      return null;
+    if (timestamp - this.nearSince < this.config.minNearDurationMs) return; // glitch
+    if (!this.calibration) return;
+    if (this.phase === 'top') {
+      // Face tracking was lost before we saw the descent; the chest still touched the phone.
+      this.phase = 'down';
+      this.cycleStartAt = this.lastTopAt ?? this.nearSince;
     }
-    if (timestamp - this.lastRepAt < this.config.minRepIntervalMs) return null; // debounce
-    return this.completeRep('proximity', timestamp);
+    this.touchedThisCycle = true;
+    this.bottomReached = true;
+    this.touchSpan = [this.nearSince, timestamp];
   }
 
   /**
    * Face distance sample. `distance` in meters; pass tracked=false (or distance null) when ARKit
-   * lost the face. Returns a rep only for depth-only counting.
+   * lost the face. Returns the completed rep, if any.
    */
   onFaceDistance(distance: number | null, tracked: boolean, timestamp: number): Rep | null {
     if (!tracked || distance === null || !Number.isFinite(distance) || distance <= 0) {
       // Face lost. Common at the very bottom when the face is too close to the camera.
       this.window = [];
+      if (this.phase === 'down' && this.lostAt === null) {
+        this.lostAt = timestamp;
+        this.lostRatio = this.lastRatio;
+      }
       return null;
+    }
+
+    if (this.lostAt !== null) {
+      if (this.phase === 'down') {
+        this.lostSpan = [this.lostAt, timestamp];
+        this.lostSpanRatio = this.lostRatio;
+      }
+      this.lostAt = null;
     }
 
     this.window.push(distance);
@@ -114,84 +146,107 @@ export class RepDetector {
     if (this.window.length > w) this.window.splice(0, this.window.length - w);
     const d = median(this.window);
     this.lastSmoothed = d;
-
-    if (this.near) this.trackedWhileNear = true;
-    if (d < this.cycleMin) this.cycleMin = d;
-    if (d > this.cycleMax) this.cycleMax = d;
+    if (d > this.cycleMax && this.phase === 'top') this.cycleMax = d;
 
     const cal = this.calibration;
     if (!cal) return null;
-
     const ratio = depthRatio(cal.topDistance, d, this.config.floorDistance);
-    if (ratio <= this.config.topZoneRatio) {
-      this.depthArmed = true;
-      if (
-        this.config.depthOnlyCounting &&
-        this.depthBottomReached &&
-        !this.nearSeenThisCycle &&
-        !this.near &&
-        timestamp - this.lastRepAt >= this.config.minRepIntervalMs
-      ) {
-        return this.completeRep('depth', timestamp);
+    this.lastRatio = ratio;
+    const inTopZone = ratio <= this.config.topZoneRatio;
+
+    if (this.phase === 'top') {
+      if (inTopZone) {
+        this.lastTopAt = timestamp;
+        return null;
       }
-    } else if (this.depthArmed && ratio >= this.config.minCountRatio) {
-      this.depthBottomReached = true;
+      this.phase = 'down';
+      this.cycleStartAt = this.lastTopAt ?? timestamp;
     }
-    return null;
+
+    // phase === 'down'
+    if (d < this.cycleMin) {
+      this.cycleMin = d;
+      this.cycleMinAt = timestamp;
+    }
+    if (ratio >= this.config.minCountRatio) this.bottomReached = true;
+
+    // Still on the way, or the proximity sensor still reads "near" (wait for it to clear).
+    if (!inTopZone || this.near) return null;
+
+    const counts =
+      this.bottomReached && timestamp - this.lastRepAt >= this.config.minRepIntervalMs;
+    const rep = counts ? this.completeRep(timestamp) : null;
+    // Back at the top either way (a shallow dip or a bounce is simply discarded).
+    this.phase = 'top';
+    this.lastTopAt = timestamp;
+    this.resetCycle();
+    this.cycleMax = d;
+    return rep;
   }
 
-  private completeRep(source: RepSource, timestamp: number): Rep {
-    const cal = this.calibration;
+  private completeRep(timestamp: number): Rep {
+    const cal = this.calibration!;
+    const cfg = this.config;
     const bottom = Number.isFinite(this.cycleMin) ? this.cycleMin : null;
-    const top: number | null = Number.isFinite(this.cycleMax) ? this.cycleMax : cal ? cal.topDistance : null;
+    const top = Number.isFinite(this.cycleMax) ? this.cycleMax : cal.topDistance;
+    const trackedRatio = bottom !== null ? depthRatio(cal.topDistance, bottom, cfg.floorDistance) : null;
 
-    // Depth ratio is measured against the calibrated top when we have one (stable reference),
-    // otherwise against this rep's own top.
-    const reference = cal ? cal.topDistance : top;
-    const ratio =
-      bottom !== null && reference !== null ? depthRatio(reference, bottom, this.config.floorDistance) : null;
-
-    const faceLostAtBottom = source === 'proximity' && !this.trackedWhileNear;
+    // Face lost at the bottom: tracking dropped mid-rep and either the chest touched the phone or
+    // the face was already deep (ARKit loses faces that get too close to the camera).
+    const faceLostAtBottom =
+      this.lostSpan !== null && (this.touchedThisCycle || (this.lostSpanRatio ?? 0) >= cfg.goodRatio);
 
     let quality: RepQuality;
-    if (source === 'proximity' && this.config.proximityImpliesFull) {
+    let ratio = trackedRatio;
+    if (this.touchedThisCycle && cfg.proximityImpliesFull) {
       quality = 'full';
-    } else if (ratio !== null && !faceLostAtBottom) {
-      quality = qualityForRatio(ratio, this.config);
+      ratio = Math.max(trackedRatio ?? 0, cfg.fullRatio);
+    } else if (trackedRatio !== null) {
+      quality = qualityForRatio(trackedRatio, cfg);
     } else {
-      // Proximity triggered but no usable depth (no TrueDepth, or face lost at the bottom):
-      // the chest touched the phone, so treat it as full depth.
+      // Only reachable via a proximity touch with proximityImpliesFull disabled and no tracking.
       quality = 'full';
     }
+
+    let bottomAt: number | null = this.cycleMinAt;
+    if (faceLostAtBottom && this.lostSpan) bottomAt = (this.lostSpan[0] + this.lostSpan[1]) / 2;
+    else if (bottomAt === null && this.touchSpan) bottomAt = (this.touchSpan[0] + this.touchSpan[1]) / 2;
+    const startedAt = this.cycleStartAt;
+    const prev = this._reps[this._reps.length - 1];
 
     const rep: Rep = {
       index: this._reps.length + 1,
       timestamp,
       quality,
-      source,
+      source: 'depth',
       bottomDistance: bottom,
       topDistance: top,
-      rangeOfMotion: bottom !== null && top !== null ? Math.max(0, top - bottom) : null,
-      // Face lost at the bottom while the chest was on the phone: treated as full depth.
-      depthRatio: faceLostAtBottom && ratio !== null ? Math.max(ratio, this.config.fullRatio) : ratio,
+      rangeOfMotion: bottom !== null ? Math.max(0, top - bottom) : null,
+      depthRatio: ratio,
       faceLostAtBottom,
+      startedAt,
+      bottomAt,
+      descentMs: startedAt !== null && bottomAt !== null ? Math.max(0, bottomAt - startedAt) : null,
+      ascentMs: bottomAt !== null ? Math.max(0, timestamp - bottomAt) : null,
+      intervalMs: prev ? timestamp - prev.timestamp : null,
+      proximityTouched: this.touchedThisCycle,
     };
     this._reps.push(rep);
     this.lastRepAt = timestamp;
-
-    this.resetCycle();
-    // After a proximity rep the face may still be low; require a return to the top zone before
-    // the depth-only path can start a new rep (prevents double counting).
-    this.depthArmed = source === 'depth';
-    if (this.lastSmoothed !== null) this.cycleMax = this.lastSmoothed;
     return rep;
   }
 
   private resetCycle(): void {
+    this.cycleStartAt = null;
     this.cycleMin = Infinity;
+    this.cycleMinAt = null;
     this.cycleMax = -Infinity;
-    this.nearSeenThisCycle = this.near;
-    this.trackedWhileNear = false;
-    this.depthBottomReached = false;
+    this.bottomReached = false;
+    this.touchedThisCycle = false;
+    this.touchSpan = null;
+    this.lostAt = null;
+    this.lostRatio = null;
+    this.lostSpan = null;
+    this.lostSpanRatio = null;
   }
 }

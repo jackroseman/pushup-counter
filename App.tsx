@@ -53,6 +53,7 @@ export default function App() {
         {route.name === 'summary' && (
           <SummaryScreen
             record={route.record}
+            fromHistory={route.from === 'history'}
             onDone={() => setRoute(route.from === 'history' ? { name: 'history' } : { name: 'start' })}
           />
         )}

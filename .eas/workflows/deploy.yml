@@ -1,0 +1,59 @@
+# Ship every push to main:
+#   test -> fingerprint -> is there already a preview iOS build with this native fingerprint?
+#     yes -> JS-only change: publish an OTA update to the "preview" channel
+#     no  -> native change: make a new iOS preview (ad-hoc) build
+# Pattern from https://docs.expo.dev/eas/workflows/examples/deploy-to-production/
+name: Deploy preview
+
+on:
+  push:
+    branches: ['main']
+
+concurrency:
+  group: deploy-preview-${{ github.ref }}
+
+jobs:
+  test:
+    name: Jest + TypeScript
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Unit tests
+        run: npx jest --ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  fingerprint:
+    name: Fingerprint
+    needs: [test]
+    type: fingerprint
+    environment: preview # same environment as the "preview" build profile
+
+  get_ios_build:
+    name: Check for a compatible iOS build
+    needs: [fingerprint]
+    type: get-build
+    params:
+      platform: ios
+      profile: preview
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      wait_for_in_progress: true
+
+  build_ios:
+    name: Build iOS (native change)
+    needs: [get_ios_build]
+    if: ${{ !needs.get_ios_build.outputs.build_id }}
+    type: build
+    params:
+      platform: ios
+      profile: preview
+
+  publish_ios_update:
+    name: Publish OTA update (JS-only change)
+    needs: [get_ios_build]
+    if: ${{ needs.get_ios_build.outputs.build_id }}
+    type: update
+    environment: preview
+    params:
+      channel: preview
+      platform: ios

@@ -20,6 +20,7 @@ import {
 import { HistoryStore, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported } from '../sensors';
+import { notifyHistoryChanged } from '../backend/syncEvents';
 
 const KEEP_AWAKE_TAG = 'pushup-session';
 /** Countdown after calibration locks in (the user can redo it during this time). */
@@ -339,6 +340,7 @@ export function useSession(settings: Settings) {
     patch({ phase: 'finished' });
     say(`Done. ${reps.length} ${reps.length === 1 ? 'pushup' : 'pushups'}`);
     await historyStore.add(record).catch(() => {});
+    notifyHistoryChanged();
     return record;
   }, [patch]);
 

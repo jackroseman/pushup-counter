@@ -194,9 +194,11 @@ supabase/
   migrations/20261031191027_battles_initial.sql    ← from docs/battles/schema.sql + app_settings
   migrations/20261031191033_battles_cron.sql       ← pg_cron: finalize-battles every minute
   migrations/20261031191149_battles_hardening.sql  ← advisor fixes (private schema, grants, FK indexes)
+  migrations/20261031200357_identity.sql           ← phase 2b: username check, device + push token
+                                                     RPCs, delete_my_account, FK-cascade fixes
   functions/
-    _shared/   (supabase client, auth helper, validation imported from src/core)
-    submit-set/  redeem-invite/  notify/  finalize/  delete-account/
+    _shared/expoPush.ts  (pure helpers, unit-tested by jest: __tests__/expoPush.test.ts)
+    notify/              (phase 2b: Expo push sender; later phases add more functions)
   tests/       (node:test on PGlite: RLS + state-machine + metrics + settings tests; `npm run test:db`)
 ```
 
@@ -205,7 +207,8 @@ supabase/
 * The required `checks` job now also runs `npm run test:db`: the migrations (except
   `*_cron.sql`) are applied to an in-process Postgres (PGlite) with small auth/realtime
   stubs, then RLS, state-machine, metric and settings tests run (`supabase/tests/`).
-  Edge Function checks (`deno check`) join when functions land.
+  Edge Function helpers in `supabase/functions/_shared` are unit-tested by jest;
+  `deno check supabase/functions/notify/index.ts` passes locally (not yet in CI).
 
 ### GitHub Actions (CD for the backend, after merge)
 
@@ -214,7 +217,9 @@ supabase/
     `production`, when `supabase/migrations/` changes. Never on PRs. Each GitHub
     environment only accepts its own branch.
   * Steps: `supabase link --project-ref $SUPABASE_PROJECT_REF`, `supabase db push --dry-run`,
-    `supabase db push`. `supabase functions deploy` joins when functions land.
+    `supabase db push`, then `supabase functions deploy --no-verify-jwt --use-api` (phase 2b;
+    also triggered by changes in `supabase/functions/`). Functions authorize requests
+    themselves.
 * Secrets: `SUPABASE_ACCESS_TOKEN` (repo secret; the job skips with a warning until it
   exists), `SUPABASE_PROJECT_REF` (per environment), optional `SUPABASE_DB_PASSWORD`
   (the CLI otherwise uses a temporary login role derived from the token).
@@ -309,7 +314,7 @@ Things to check before that build so we don't need another:
 | **0. Design** | this PR: spec, schema draft, architecture | docs | Sunny approves the decisions / answers the open questions |
 | **1. Backend foundation** ✅ (PR `feat/battles-phase-1`) | Staging + prod Supabase projects, `supabase/` migrations (applied to both, advisors fixed), DB tests in CI `checks`, `supabase-deploy.yml`, GitHub environments `staging`/`production`, EAS env vars, server-side `app_settings` | backend only | migrations apply cleanly in CI and on staging; RLS tests green |
 | **2a. Native batch** ✅ (same PR) | All native deps from §8, `expo install --check` fixes, version 1.2.0, URL scheme, Sign in with Apple + push entitlements, React Navigation, Supabase client, optional sign-in prompt after solo sets | **3 builds** (dev, preview, TestFlight internal) once merged | dev build signs in with Apple against staging |
-| **2b. Identity** | Username picker, profile, solo set sync (upload queue + backfill), account deletion, push token registration | OTA | sets show in Supabase staging, a test push arrives |
+| **2b. Identity** ✅ (PR `feat/battles-phase-2b`) | Username picker, profile, solo set sync (upload queue + backfill), account deletion, push token registration, `notify` Edge Function (test push) | OTA | sets show in Supabase staging, a test push arrives |
 | **3. Friends + async battles** | Friends, invite links + universal links (domain + AASA live), push notifications, async max-reps/timed, battles home/detail/invite/results (basic) | OTA | two testers complete an async battle end to end from a push |
 | **4. Live battles** | Lobby, presence, synced countdown, rep broadcast, reconnect, checkpointing, waiting screen | OTA | 10 live battles on poor networks with no wrong results |
 | **5. Polish & hardening** | Multi-day battles, all 4 metrics, comparison charts, stats/streaks, report/block, outlier flags, App Attest (needs a native change: fold into the next build that's needed anyway), external TestFlight | OTA (+ any native change batched) | Beta App Review passed |
@@ -317,6 +322,27 @@ Things to check before that build so we don't need another:
 
 Each phase lands on `dev` through normal PRs (`feat/*`), then a `dev` → `main` release PR,
 per CONTRIBUTING.
+
+### Phase 2b notes
+
+* **Profile**: chosen right after the first sign-in (skippable with "Later"; the Account
+  screen offers it again). Apple's name, which Apple only sends on the first sign-in, prefills
+  the display name.
+* **Devices**: a random per-install id (`installationId.v1` in AsyncStorage) →
+  `register_device()`. Push tokens go through `register_push_token()`, which moves a token
+  to the newest account that signed in on that phone. Sign-out deletes this phone's token.
+* **Set backup**: every eligible local set (incl. ones from before sign-in) is uploaded with
+  `submit_set()` (idempotent on the local id), oldest first, after sign-in, after each new
+  set and when the app comes back to the foreground. Data errors (SQLSTATE 22/23) are
+  skipped for good; network errors retry later. Clearing local history keeps the backup.
+* **Account deletion**: `delete_my_account()` deletes the auth user; FKs cascade. Battles the
+  user created and other people's results stay (the creator / inviter becomes null).
+  Follow-up: Apple asks apps to also revoke the Sign in with Apple token on deletion; that
+  needs an Apple key (client secret) in a server function (not done yet).
+* **Push**: `notify` Edge Function. A Supabase secret key (`apikey` header) may notify any
+  users (used by later phases); a signed-in user may only send a test push to themselves.
+  Tokens Expo reports as `DeviceNotRegistered` are disabled. Push receipts are not checked
+  yet. iOS delivery needs an APNs key in EAS credentials.
 
 ## 10. Risks
 

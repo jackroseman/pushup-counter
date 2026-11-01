@@ -1,4 +1,4 @@
-# Applies supabase/migrations to the hosted databases after code lands.
+# Applies supabase/migrations and deploys supabase/functions to the hosted projects after code lands.
 #   push to dev  -> GitHub environment "staging"    -> pushup-battles-staging
 #   push to main -> GitHub environment "production" -> pushup-battles-prod
 # Never runs on pull requests (PR code never gets the deploy secrets).
@@ -15,6 +15,7 @@ on:
     branches: [dev, main]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/functions/**'
       - '.github/workflows/supabase-deploy.yml'
   workflow_dispatch:
 
@@ -65,3 +66,9 @@ jobs:
       - name: Apply migrations
         if: steps.secrets.outputs.ready == 'true'
         run: supabase db push --linked --yes
+
+      # Edge Functions authorize requests themselves (see each index.ts), so the platform JWT
+      # check is off. --use-api bundles on Supabase's side (no Docker needed).
+      - name: Deploy Edge Functions
+        if: steps.secrets.outputs.ready == 'true'
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api

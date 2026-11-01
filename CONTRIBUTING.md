@@ -116,7 +116,8 @@ Validate a workflow before pushing: `eas workflow:validate .eas/workflows/deploy
 * Test them: add steps to `supabase/tests/cases.mjs` and run `npm run test:db`. Migrations
   ending in `_cron.sql` need pg_cron and are skipped by the tests.
 * `.github/workflows/supabase-deploy.yml` runs `supabase db push` **only on a push to `dev`
-  (staging) or `main` (prod)** when `supabase/migrations/` changes, never on PRs. The
+  (staging) or `main` (prod)** when `supabase/migrations/` or `supabase/functions/` changes, never on PRs. It also deploys
+  every Edge Function in `supabase/functions/` (folders starting with `_` are shared code). The
   `production` environment only accepts `main`, and `staging` only `dev`.
 * Tunable defaults (form-score weights, battle sizes, friend visibility, the sign-in
   prompt, invite links) live in the `public.app_settings` table, not in code. Change them

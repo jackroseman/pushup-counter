@@ -6,7 +6,7 @@
 -- first time it runs, so no project ref or key lives in a migration. Until then this job
 -- does nothing.
 -- Skipped by the PGlite DB tests (*_cron.sql): pg_net and pg_cron aren't available there.
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions;
 create extension if not exists pg_cron;
 
 create or replace function private.wake_notify()

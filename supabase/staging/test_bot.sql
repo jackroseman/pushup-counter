@@ -29,7 +29,7 @@ insert into public.profiles (id, username, display_name)
 values ('00000000-0000-4000-8000-00000000b07a', 'pushup_bot', 'Pushup Bot 🤖')
 on conflict (id) do nothing;
 
-create or replace function testing.bot_id() returns uuid language sql immutable as
+create or replace function testing.bot_id() returns uuid language sql immutable set search_path = '' as
 $$ select '00000000-0000-4000-8000-00000000b07a'::uuid $$;
 
 -- Records one attempt for the bot: n reps, 1.5 s apart (fits a timed battle's window).

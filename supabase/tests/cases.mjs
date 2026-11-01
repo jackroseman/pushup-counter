@@ -22,7 +22,7 @@ export const steps = [
  ['A set_metrics', `${as(A)} select total_reps, full_reps, avg_depth_pct, depth_std_pct, depth_consistency, reps_per_minute, tempo_trend, avg_descent_s, active_duration_s from set_metrics; reset role;`],
  ['B cannot see A solo set', `${as(B)} select count(*) from sets; select count(*) from reps; reset role;`],
  ['A tries battle set directly (expect ERR)', `${as(A)} select submit_set(${q({...rec('x',3,1500,[0.15]),battleId:'00000000-0000-4000-8000-000000000000'})}); reset role;`],
- ['A friend-requests B; B accepts', `${as(A)} insert into friendships(user_low,user_high,requested_by) values (least('${A}'::uuid,'${B}'::uuid),greatest('${A}'::uuid,'${B}'::uuid),'${A}'); reset role; ${as(B)} update friendships set status='accepted', responded_at=now(); reset role;`],
+ ['A friend-requests B; B accepts', `${as(A)} select send_friend_request('bob'); reset role; ${as(B)} select respond_friend_request('${A}', true); reset role;`],
  ['A cannot self-accept own request to C (expect ERR)', `${as(A)} insert into friendships(user_low,user_high,requested_by) values ('${A}','${C}','${A}'); update friendships set status='accepted' where user_high='${C}'; reset role;`],
  ['A creates async max_reps battle (id fixed)', `${as(A)} insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('11111111-1111-4111-8111-111111111111','${A}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); select status, (select count(*) from battle_participants) from battles; reset role;`],
  ['A invites C (not friend, expect ERR)', `${as(A)} insert into battle_participants(battle_id,user_id,invited_by) values ('11111111-1111-4111-8111-111111111111','${C}','${A}'); reset role;`],
@@ -124,7 +124,7 @@ steps.push(
   ['identity: same phone, other account -> token moves', `${as(E)} select register_push_token(register_device('install-0001','iPhone17,1','26.2'), '${TOKEN}'); reset role; select d.user_id = '${E}'::uuid moved, count(*) over () n from push_tokens t join devices d on d.id = t.device_id;`],
   ['identity: invalid token format (expect ERR)', `${as(E)} select register_push_token((select id from devices where user_id='${E}'), 'not-a-token'); reset role;`],
   ['identity: solo sync upload (v2 + legacy v1)', `${as(D)} select submit_set(${q(rec('1730000000000',5,1500,[0.15]))}) is not null; select submit_set(${q({id:'1690000000000',startedAt:1690000000000,endedAt:1690000060000,reps:[{index:1,timestamp:1690000005000,quality:'good',source:'proximity',bottomDistance:null,topDistance:null,faceLostAtBottom:false}],calibratedTopDistance:null,depthTracking:false})}) is not null; select client_set_id, data_version from sets where user_id='${D}' order by 1; reset role;`],
-  ['identity: D creates a battle with E; E deletes account', `${as(D)} insert into friendships(user_low,user_high,requested_by) values (least('${D}'::uuid,'${E}'::uuid),greatest('${D}'::uuid,'${E}'::uuid),'${D}'); reset role; ${as(E)} update friendships set status='accepted', responded_at=now(); select submit_set(${q(rec('e-solo',4,1500,[0.15]))}); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${E}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); insert into battle_participants(battle_id,user_id,invited_by) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${D}','${E}'); reset role; ${as(D)} update battle_participants set status='accepted' where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and user_id='${D}'; reset role; select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('del-e',10,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:E})}) is not null; select public.submit_set(${q({...rec('del-d',12,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:D})}) is not null; reset role; select finalize_battles(); ${as(E)} select delete_my_account(); reset role; select (select count(*) from auth.users where id='${E}') users, (select count(*) from profiles where id='${E}') profiles, (select count(*) from devices where user_id='${E}') devices, (select count(*) from push_tokens) tokens, (select count(*) from friendships where '${E}' in (user_low,user_high)) friends, (select count(*) from battle_participants where user_id='${E}') parts, (select count(*) from sets where user_id='${E}') e_sets, (select count(*) from battles where id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and created_by is null) orphan_battles, (select count(*) from battle_results where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e') results, (select count(*) from battle_participants where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and invited_by is null) uninvited;`],
+  ['identity: D creates a battle with E; E deletes account', `${as(D)} select send_friend_request('erin'); reset role; ${as(E)} select respond_friend_request('${D}', true); select submit_set(${q(rec('e-solo',4,1500,[0.15]))}); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${E}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); insert into battle_participants(battle_id,user_id,invited_by) values ('7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e','${D}','${E}'); reset role; ${as(D)} update battle_participants set status='accepted' where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and user_id='${D}'; reset role; select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('del-e',10,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:E})}) is not null; select public.submit_set(${q({...rec('del-d',12,1500,[0.14]),battleId:'7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e',userId:D})}) is not null; reset role; select finalize_battles(); ${as(E)} select delete_my_account(); reset role; select (select count(*) from auth.users where id='${E}') users, (select count(*) from profiles where id='${E}') profiles, (select count(*) from devices where user_id='${E}') devices, (select count(*) from push_tokens) tokens, (select count(*) from friendships where '${E}' in (user_low,user_high)) friends, (select count(*) from battle_participants where user_id='${E}') parts, (select count(*) from sets where user_id='${E}') e_sets, (select count(*) from battles where id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and created_by is null) orphan_battles, (select count(*) from battle_results where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e') results, (select count(*) from battle_participants where battle_id='7e7e7e7e-7e7e-4e7e-8e7e-7e7e7e7e7e7e' and invited_by is null) uninvited;`],
   ['identity: delete_my_account requires sign-in (expect ERR)', `set role authenticated; select set_config('request.jwt.claim.sub','',false); select delete_my_account(); reset role;`],
   ['identity: anon cannot delete accounts (expect ERR)', `set role anon; select delete_my_account(); reset role;`],
   ['identity: D account and sets untouched', `select count(*) from sets where user_id='${D}';`],
@@ -145,4 +145,147 @@ Object.assign(checks, {
     ok(x.users === 0 && x.profiles === 0 && x.devices === 0 && x.tokens === 0 && x.friends === 0 && x.parts === 0 && x.e_sets === 0 && x.orphan_battles === 1 && x.results === 1 && x.uninvited === 1, 'delete ' + JSON.stringify(x));
   },
   'identity: D account and sets untouched': (r) => ok(r[0][0].count === 3, 'D sets'),
+});
+
+// ---- Phase 3: friends, async battles, invite links, notifications ----
+const F='f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0', G='a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', H='b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
+// Generated ids (battles, tokens) are kept in a scratch table between steps.
+const ctx = (k) => `(select v from test_ctx where k='${k}')`;
+const battleSet = (id, n, k, user, bottoms = [0.14]) =>
+  `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q(rec(id, n, 1400, bottoms))} || jsonb_build_object('battleId', ${ctx(k)}, 'userId', '${user}')) is not null; reset role;`;
+const outbox = (kind, user, k) => `(select count(*) from private.notification_outbox where kind='${kind}' and user_id='${user}'${k ? ` and battle_id=${ctx(k)}::uuid` : ''})`;
+const create = (k, body, ids, tk) =>
+  `with c as (select create_battle(${q(body)} || jsonb_build_object('friendIds', jsonb_build_array(${ids.map((i) => `'${i}'`).join(',')}))) r) insert into test_ctx select '${k}', r->>'battleId' from c${tk ? ` union all select '${tk}', r->>'inviteToken' from c` : ''} on conflict (k) do update set v = excluded.v;`;
+
+steps.push(
+  ['p3: setup F, G, H', `create table test_ctx (k text primary key, v text); grant all on test_ctx to authenticated, anon, service_role; delete from private.notification_outbox; insert into auth.users values ('${F}'),('${G}'),('${H}'); insert into profiles(id,username,display_name) values ('${F}','fred','Fred'),('${H}','hank',null); insert into profiles(id,username,time_zone) values ('${G}','gina','America/New_York');`],
+  ['p3: direct friendship insert is denied (expect ERR)', `${as(F)} insert into friendships(user_low,user_high,requested_by) values (least('${F}'::uuid,'${G}'::uuid),greatest('${F}'::uuid,'${G}'::uuid),'${F}'); reset role;`],
+  ['p3: direct friendship update is denied (expect ERR)', `${as(A)} update friendships set status='blocked'; reset role;`],
+  ['p3: F requests G by username (any case)', `${as(F)} select send_friend_request('GINA') r; select send_friend_request('gina') again; reset role; select ${outbox('friend_request', G)} n;`],
+  ['p3: unknown username (expect ERR)', `${as(F)} select send_friend_request('nobody_here'); reset role;`],
+  ['p3: F cannot accept own request (expect ERR)', `${as(F)} select respond_friend_request('${G}', true); reset role;`],
+  ['p3: G requesting back accepts', `${as(G)} select send_friend_request('fred') r; reset role; select ${outbox('friend_accepted', F)} n;`],
+  ['p3: my_friends + search_users', `${as(F)} select username, relation from my_friends(); select username, relation from search_users('gi'); select count(*) from search_users('h'); select username, relation from search_users('ha'); select count(*) from search_users('%%'); reset role;`],
+  ['p3: H blocks F: F cannot find H or see the block', `${as(H)} select block_user('${F}'); reset role; ${as(F)} select count(*) from search_users('ha'); select count(*) from friendships where '${H}' in (user_low,user_high); reset role; ${as(H)} select relation from my_friends(); reset role;`],
+  ['p3: F cannot add H after the block (expect ERR)', `${as(F)} select send_friend_request('hank'); reset role;`],
+  ['p3: only the blocker can unblock', `${as(F)} select unblock_user('${H}'); select remove_friend('${H}'); reset role; select count(*) from friendships where status='blocked'; ${as(H)} select unblock_user('${F}'); reset role; select count(*) from friendships where status='blocked';`],
+  ['p3: friend_battle_record needs friendship (expect ERR)', `${as(F)} select friend_battle_record('${H}'); reset role;`],
+  ['p3: create_battle rejects live (expect ERR)', `${as(F)} select create_battle(${q({ mode: 'live', format: 'max_reps', friendIds: [G] })}); reset role;`],
+  ['p3: create_battle rejects non-friends (expect ERR)', `${as(F)} select create_battle(${q({ format: 'max_reps', friendIds: [H] })}); reset role;`],
+  ['p3: create_battle rejects a 45 s timed battle (expect ERR)', `${as(F)} select create_battle(${q({ format: 'timed', durationS: 45, friendIds: [G] })}); reset role;`],
+  ['p3: create_battle rejects a deadline past the max (expect ERR)', `${as(F)} select create_battle(${q({ format: 'max_reps', deadlineHours: 500, friendIds: [G] })}); reset role;`],
+  ['p3: create_battle needs someone to invite (expect ERR)', `${as(F)} select create_battle(${q({ format: 'max_reps' })}); reset role;`],
+  ['p3: F creates a max-reps battle with G + an invite link', `${as(F)} ${create('b1', { format: 'max_reps', inviteLink: true }, [G], 't1')} reset role; select status, max_participants, attempts_allowed, ends_at >= invite_expires_at and ends_at <= now() + interval '24 hours' deadline_ok, (select count(*) from battle_participants p where p.battle_id = b.id) parts from battles b where id = ${ctx('b1')}::uuid; select ${outbox('battle_invite', G, 'b1')} n;`],
+  ['p3: anon previews the invite link', `set role anon; select invite_preview(${ctx('t1')}) p; select invite_preview('00000000000000000000000000000000') p; reset role;`],
+  ['p3: anon cannot redeem (expect ERR)', `set role anon; select redeem_invite(${ctx('t1')}); reset role;`],
+  ['p3: F plays first while pending', `${battleSet('p3-f', 20, 'b1', F)} select ${outbox('set_submitted', G, 'b1')} n;`],
+  ['p3: users cannot claim notifications (expect ERR)', `${as(F)} select * from claim_notifications(10); reset role;`],
+  ['p3: users cannot read the outbox (expect ERR)', `${as(F)} select count(*) from private.notification_outbox; reset role;`],
+  ['p3: claim_notifications returns facts once', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) order by id; select count(*) from claim_notifications(100); reset role;`],
+  ['p3: G accepts -> active; creator notified', `${as(G)} update battle_participants set status='accepted' where battle_id=${ctx('b1')}::uuid and user_id='${G}'; reset role; select status from battles where id=${ctx('b1')}::uuid; select ${outbox('invite_accepted', F, 'b1')} n;`],
+  ['p3: G plays; battle stays open while the link is usable', `${battleSet('p3-g', 15, 'b1', G)} select finalize_battles(); select status from battles where id=${ctx('b1')}::uuid;`],
+  ['p3: H redeems the link (becomes F friend), idempotent', `${as(H)} select redeem_invite(${ctx('t1')})::text = ${ctx('b1')} same; select redeem_invite(${ctx('t1')})::text = ${ctx('b1')} again; reset role; select status, invite_link_token is not null via_link, invited_by::text from battle_participants where battle_id=${ctx('b1')}::uuid and user_id='${H}'; select status from friendships where user_low=least('${F}'::uuid,'${H}'::uuid) and user_high=greatest('${F}'::uuid,'${H}'::uuid); select ${outbox('invite_accepted', F, 'b1')} n;`],
+  ['p3: F revokes the link', `${as(F)} select revoke_invite_link(${ctx('t1')}); reset role; set role anon; select invite_preview(${ctx('t1')})->>'status' s; reset role;`],
+  ['p3: C cannot redeem a revoked link (expect ERR)', `${as(C)} select redeem_invite(${ctx('t1')}); reset role;`],
+  ['p3: H plays -> everyone done -> completed and locked', `${battleSet('p3-h', 25, 'b1', H)} select finalize_battles(); select status from battles where id=${ctx('b1')}::uuid; select user_id::text u, rank, is_winner, valid_reps from battle_results where battle_id=${ctx('b1')}::uuid order by rank; select ${outbox('battle_result', F, 'b1')} + ${outbox('battle_result', G, 'b1')} + ${outbox('battle_result', H, 'b1')} n;`],
+  ['p3: result facts', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) where kind='battle_result' order by user_id; reset role;`],
+  ['p3: my_battles detail for G', `${as(G)} select my_battles(${ctx('b1')}::uuid) b; select jsonb_array_length(my_battles()) n; reset role;`],
+  ['p3: C does not see the battle', `${as(C)} select my_battles(${ctx('b1')}::uuid) b; reset role;`],
+  ['p3: friend_battle_record (results only)', `${as(F)} select friend_battle_record('${G}') r; reset role;`],
+  ['p3: battle waits for open in-app invites', `${as(F)} ${create('b2', { format: 'timed', durationS: 60 }, [G, H])} reset role; ${battleSet('p3-f2', 10, 'b2', F)} ${as(G)} update battle_participants set status='accepted' where battle_id=${ctx('b2')}::uuid and user_id='${G}'; reset role; ${battleSet('p3-g2', 12, 'b2', G, [0.14, 0.25, 0.30])} select finalize_battles(); select status from battles where id=${ctx('b2')}::uuid; ${as(H)} update battle_participants set status='declined' where battle_id=${ctx('b2')}::uuid and user_id='${H}'; reset role; select finalize_battles(); select status from battles where id=${ctx('b2')}::uuid; select ${outbox('invite_declined', F, 'b2')} n;`],
+  ['p3: battles count Full AND Good reps, never Shallow (= set_metrics.counted_reps)', `select m.full_reps, m.good_reps, m.shallow_reps, m.implausible_reps, m.counted_reps, r.valid_reps from set_metrics m join sets s on s.id = m.set_id join battle_results r on r.battle_id = s.battle_id and r.user_id = s.user_id where s.client_set_id = 'p3-g2'; select counted_reps, full_reps, good_reps from set_metrics m join sets s on s.id = m.set_id where s.client_set_id = 'p3-h';`],
+  ['p3: all invitees declined but a link is open -> stays pending', `${as(F)} ${create('b3', { format: 'max_reps', inviteLink: true }, [G], 't3')} reset role; ${as(G)} update battle_participants set status='declined' where battle_id=${ctx('b3')}::uuid and user_id='${G}'; reset role; select status from battles where id=${ctx('b3')}::uuid;`],
+  ['p3: creator cancels -> invitees notified', `${as(F)} select cancel_battle(${ctx('b3')}::uuid); reset role; select status from battles where id=${ctx('b3')}::uuid; set role anon; select invite_preview(${ctx('t3')})->>'status' s; reset role;`],
+  ['p3: reminders 2 h before the deadline, once', `insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at,created_at) values ('99999999-9999-4999-8999-999999999999','${F}','async','max_reps','rep_count',now()+interval '1 hour',now()+interval '1 hour',now()-interval '23 hours'); insert into battle_participants(battle_id,user_id,invited_by) values ('99999999-9999-4999-8999-999999999999','${G}','${F}'); select finalize_battles(); select finalize_battles(); select count(*) from private.notification_outbox where kind='battle_reminder' and battle_id='99999999-9999-4999-8999-999999999999';`],
+  ['p3: blocking declines open invites between the two', `${as(F)} ${create('b5', { format: 'max_reps' }, [G])} reset role; ${as(G)} select block_user('${F}'); reset role; select status from battle_participants where battle_id=${ctx('b5')}::uuid and user_id='${G}'; select status from battles where id=${ctx('b5')}::uuid; ${as(F)} select count(*) from my_friends() where username='gina'; reset role;`],
+  ['p3: settings: async battle defaults readable by anon', `set role anon; select value->>'deadline_hours' h, value->'timed_durations_s' t from app_settings where key='async_battle_defaults'; select value->>'reminder_hours_before' r from app_settings where key='notifications'; reset role;`],
+  ['p3: users cannot register the notify url (expect ERR)', `${as(F)} select register_notify_url('https://evil.example/x'); reset role;`],
+  ['p3: service role registers the notify url', `set role service_role; select register_notify_url('https://example.supabase.co/functions/v1/notify'); reset role; select value from private.server_config where key='notify_url';`],
+);
+Object.assign(checks, {
+  'p3: F requests G by username (any case)': (r) => ok(r[0][0].r === 'pending' && r[1][0].again === 'pending' && r[2][0].n === 1, 'request ' + JSON.stringify(r)),
+  'p3: G requesting back accepts': (r) => ok(r[0][0].r === 'accepted' && r[1][0].n === 1, 'auto-accept'),
+  'p3: my_friends + search_users': (r) => {
+    ok(r[0].length === 1 && r[0][0].username === 'gina' && r[0][0].relation === 'friend', 'my_friends ' + JSON.stringify(r[0]));
+    ok(r[1].length === 1 && r[1][0].relation === 'friend', 'search gi');
+    ok(r[2][0].count === 0, 'short query');
+    ok(r[3].length === 1 && r[3][0].username === 'hank' && r[3][0].relation === 'none', 'search ha');
+    ok(r[4][0].count === 0, 'wildcards escaped');
+  },
+  'p3: H blocks F: F cannot find H or see the block': (r) => (r = r.slice(-3), ok(r[0][0].count === 0 && r[1][0].count === 0 && r[2][0].relation === 'blocked', 'block ' + JSON.stringify(r))),
+  'p3: only the blocker can unblock': (r) => (r = r.filter((x) => x[0] && 'count' in x[0]), ok(r[0][0].count === 1 && r[1][0].count === 0, 'unblock ' + JSON.stringify(r))),
+  'p3: F creates a max-reps battle with G + an invite link': (r) => {
+    const b = r[0][0];
+    ok(b.status === 'pending' && b.max_participants === 8 && b.attempts_allowed === 1 && b.deadline_ok && b.parts === 2, 'battle ' + JSON.stringify(b));
+    ok(r[1][0].n === 1, 'invite push');
+  },
+  'p3: anon previews the invite link': (r) => {
+    const p = r[0][0].p;
+    ok(p.status === 'ok' && p.creator.username === 'fred' && p.battle.format === 'max_reps' && p.scores.length === 0, 'preview ' + JSON.stringify(p));
+    ok(r[1][0].p.status === 'not_found', 'unknown token');
+  },
+  'p3: F plays first while pending': (r) => ok(r[r.length - 1][0].n === 1, 'set push to invitee'),
+  'p3: claim_notifications returns facts once': (r) => {
+    const rows = r[0];
+    const kinds = rows.map((x) => x.kind).sort().join(',');
+    ok(kinds === 'battle_invite,friend_accepted,friend_request,set_submitted', 'kinds ' + kinds);
+    const inv = rows.find((x) => x.kind === 'battle_invite');
+    ok(inv.user_id === G && inv.facts.actor.username === 'fred' && inv.facts.leader.validReps === 20 && inv.facts.timeZone === 'America/New_York', 'invite facts ' + JSON.stringify(inv.facts));
+    const sub = rows.find((x) => x.kind === 'set_submitted');
+    ok(sub.facts.actorScore.validReps === 20 && sub.facts.battle.format === 'max_reps' && sub.facts.battle.mySetDone === false, 'set facts ' + JSON.stringify(sub.facts));
+    ok(r[1][0].count === 0, 'claimed twice');
+  },
+  'p3: G accepts -> active; creator notified': (r) => ok(r[0][0].status === 'active' && r[1][0].n === 1, 'accept'),
+  'p3: G plays; battle stays open while the link is usable': (r) => ok(r[r.length - 1][0].status === 'active', 'finished too early'),
+  'p3: H redeems the link (becomes F friend), idempotent': (r) => {
+    ok(r[0][0].same && r[1][0].again, 'redeem id');
+    ok(r[2][0].status === 'accepted' && r[2][0].via_link && r[2][0].invited_by === F, 'participant ' + JSON.stringify(r[2]));
+    ok(r[3][0].status === 'accepted', 'friendship');
+    ok(r[4][0].n === 2, 'creator pushes');
+  },
+  'p3: F revokes the link': (r) => ok(r[r.length - 1][0].s === 'revoked', 'revoked'),
+  'p3: H plays -> everyone done -> completed and locked': (r) => {
+    const n = r.length;
+    ok(r[n - 3][0].status === 'completed', 'status ' + JSON.stringify(r));
+    const res = r[n - 2];
+    ok(res.length === 3 && res[0].u === H && res[0].is_winner && res[0].valid_reps === 25 && res[2].u === G, 'results ' + JSON.stringify(res));
+    ok(r[n - 1][0].n === 3, 'result pushes');
+  },
+  'p3: result facts': (r) => {
+    const byUser = Object.fromEntries(r[0].map((x) => [x.user_id, x.facts.result]));
+    ok(byUser[H].isWinner && byUser[H].rank === 1 && byUser[H].players === 3 && !byUser[H].draw, 'winner ' + JSON.stringify(byUser[H]));
+    ok(byUser[G].rank === 3 && byUser[G].top.length === 2 && byUser[G].top[0].username === 'hank', 'loser ' + JSON.stringify(byUser[G]));
+  },
+  'p3: my_battles detail for G': (r) => {
+    const b = r[0][0].b[0];
+    ok(b.locked === true && b.status === 'completed' && b.participants.length === 3, 'detail ' + JSON.stringify(b));
+    const me = b.participants.find((p) => p.isMe);
+    ok(me.username === 'gina' && me.rank === 3 && me.validReps === 15 && me.attemptsUsed === 1, 'me ' + JSON.stringify(me));
+    ok(b.inviteLinks.length === 0, 'links hidden from non-creator');
+    ok(r[1][0].n >= 1, 'list');
+  },
+  'p3: C does not see the battle': (r) => ok(r[0][0].b.length === 0, 'RLS leak'),
+  'p3: friend_battle_record (results only)': (r) => {
+    const x = r[0][0].r;
+    ok(x.played === 1 && x.lost === 1 && x.won === 0 && x.recent.length === 1 && x.recent[0].me.rank === 2 && x.recent[0].them.rank === 3, 'record ' + JSON.stringify(x));
+  },
+  'p3: battle waits for open in-app invites': (r) => {
+    const n = r.length;
+    ok(r[n - 4][0].status === 'active', 'finished while H still invited ' + JSON.stringify(r));
+    ok(r[n - 2][0].status === 'completed', 'not completed after decline');
+    ok(r[n - 1][0].n === 1, 'decline push');
+  },
+  'p3: battles count Full AND Good reps, never Shallow (= set_metrics.counted_reps)': (r) => {
+    const x = r[0][0];
+    ok(x.full_reps === 4 && x.good_reps === 4 && x.shallow_reps === 4 && x.implausible_reps === 0, 'buckets ' + JSON.stringify(x));
+    ok(x.counted_reps === 8 && x.valid_reps === 8, 'battle must count full + good ' + JSON.stringify(x));
+    const y = r[1][0];
+    ok(y.full_reps === 25 && y.good_reps === 0 && y.counted_reps === 25, 'all-full set ' + JSON.stringify(y));
+  },
+  'p3: all invitees declined but a link is open -> stays pending': (r) => ok(r[0][0].status === 'pending', 'cancelled despite link'),
+  'p3: creator cancels -> invitees notified': (r) => (r = r.slice(-2), ok(r[0][0].status === 'cancelled' && r[1][0].s === 'closed', 'cancel ' + JSON.stringify(r))),
+  'p3: reminders 2 h before the deadline, once': (r) => ok(r[r.length - 1][0].count === 2, 'reminders ' + JSON.stringify(r[r.length - 1])),
+  'p3: blocking declines open invites between the two': (r) => (r = r.slice(-3), ok(r[0][0].status === 'declined' && r[1][0].status === 'cancelled' && r[2][0].count === 0, 'block ' + JSON.stringify(r))),
+  'p3: settings: async battle defaults readable by anon': (r) => ok(r[0][0].h === '24' && JSON.stringify(r[0][0].t) === '[60,120]' && r[1][0].r === '2', 'settings'),
+  'p3: service role registers the notify url': (r) => ok(r[r.length - 1][0].value === 'https://example.supabase.co/functions/v1/notify', 'url'),
 });

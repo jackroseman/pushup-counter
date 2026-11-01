@@ -1,4 +1,6 @@
-# Pushup Counter (Expo / React Native, iOS-first)
+# Rep Royale (Expo / React Native, iOS-first)
+
+Formerly "Pushup Counter". App Store / TestFlight name: **Rep Royale: Push-up Battles**.
 
 Put your iPhone face-up on the floor under your chest and do pushups. The app uses the
 **TrueDepth / Face ID camera (ARKit)** to measure how far your face is from the phone,
@@ -72,7 +74,7 @@ Build profiles (`eas.json`):
 |---------------|----------------------------------------------------------------|
 | `development` | Dev client (loads JS from `expo start`), internal distribution |
 | `preview`     | Standalone release build, internal distribution (ad-hoc)       |
-| `production`  | App Store / TestFlight build (`eas submit -p ios` afterwards)  |
+| `production`  | App Store / TestFlight build (uploaded with `eas submit -p ios`; CD does it automatically) |
 
 For a standalone build that doesn't need your computer running, use
 `eas build --profile preview --platform ios`.
@@ -267,8 +269,8 @@ that. Fully close and reopen the app twice.
 * **CI** (GitHub Actions, `.github/workflows/ci.yml`): the `checks` job runs jest, tsc and
   an `expo export` bundle test on every PR commit. It is required to merge into `main`.
 * **CD** (EAS Workflows): a push to `dev` deploys to the **development** channel (Pushup Dev
-  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys to **preview**
-  (`deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
+  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys the released app
+  (**production** channel, TestFlight; `deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Every push to `main` ships automatically (EAS Workflows)
 
@@ -276,13 +278,16 @@ that. Fully close and reopen the app twice.
 linked to the Expo project under expo.dev → project → GitHub. Steps:
 
 1. **Tests**: `npx jest --ci` and `npx tsc --noEmit`. If either fails, nothing ships.
-2. **Fingerprint**: hashes the project's native characteristics (environment `preview`).
-3. **Get build**: looks for an existing iOS `preview` build with that fingerprint. It
-   waits for one that is still in progress.
-4. **If a build exists** (JS-only change): `eas update` to channel `preview` (iOS),
-   using the commit message as the update message.
-5. **If none exists** (native change): a new iOS `preview` ad-hoc build. Install it from
-   the build page.
+2. **Fingerprint**: hashes the project's native characteristics (environment `production`).
+3. **Get build**: looks for an existing iOS `production` (App Store) build with that
+   fingerprint. It waits for one that is still in progress.
+4. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
+   using the commit message as the update message. TestFlight installs get it on launch.
+5. **If none exists** (native change): ONE new iOS `production` store build, which the
+   `submit` job (EAS Submit, works on the free plan) uploads to App Store Connect / TestFlight
+   using the App Store Connect API key stored in EAS credentials and `ascAppId` in `eas.json`.
+   Retry a failed upload without rebuilding: `eas submit -p ios --id <build id>`. No ad hoc preview build is
+   made any more (`eas build --profile preview` still works by hand).
 
 Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
 `eas workflow:validate .eas/workflows/deploy.yml`.

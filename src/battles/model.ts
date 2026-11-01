@@ -181,7 +181,7 @@ export function inviteUrl(token: string, links: { scheme: string; webBaseUrl: st
 
 export function inviteShareMessage(b: Pick<Battle, 'format' | 'durationS'>, from: string, url: string): string {
   const what = b.format === 'timed' ? `a ${b.durationS ?? 60} second pushup battle` : 'a max-reps pushup battle';
-  return `${from} challenged you to ${what} on Pushup Counter. Open this on your iPhone to join: ${url}`;
+  return `${from} challenged you to ${what} on Rep Royale. Open this on your iPhone to join: ${url}`;
 }
 
 /** Friends grouped for the friends screen. */

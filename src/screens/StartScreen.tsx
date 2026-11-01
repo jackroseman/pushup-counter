@@ -36,7 +36,7 @@ export function StartScreen({
   const depth = faceTrackingSupported();
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Pushup Counter</Text>
+      <Text style={styles.title}>Rep Royale</Text>
       <Text style={styles.subtitle}>Depth-based rep counting, scoring and tempo analysis</Text>
 
       <View style={styles.card}>
@@ -52,7 +52,7 @@ export function StartScreen({
         <Text style={[styles.note, !depth && styles.warn]}>
           {depth
             ? 'TrueDepth (Face ID) camera available ✓'
-            : "This iPhone has no TrueDepth (Face ID) camera. Pushup Counter measures your depth with it to count reps, so it can't count on this device."}
+            : "This iPhone has no TrueDepth (Face ID) camera. Rep Royale measures your depth with it to count reps, so it can't count on this device."}
         </Text>
         <Row
           label="Speak rep quality"

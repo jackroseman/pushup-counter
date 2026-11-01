@@ -35,10 +35,18 @@
       "environment": "production",
       "env": {
         "APP_VARIANT": "production"
+      },
+      "distribution": "store",
+      "ios": {
+        "resourceClass": "m-medium"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6829467517"
+      }
+    }
   }
 }

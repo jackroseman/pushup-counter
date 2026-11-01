@@ -1,17 +1,25 @@
-# CD for the preview app. Runs only after a merge (a push to main), never on PR events.
+# CD for the released app (TestFlight / App Store). Runs only after a merge (a push to main),
+# never on PR events.
 # Ship every push to main:
-#   test -> fingerprint -> is there already a preview iOS build with this native fingerprint?
-#     yes -> JS-only change: publish an OTA update to the "preview" channel
-#     no  -> native change: make a new iOS preview (ad-hoc) build
+#   test -> fingerprint -> is there already a production (store) iOS build with this native fingerprint?
+#     yes -> JS-only change: publish an OTA update to the "production" channel
+#     no  -> native change: ONE new iOS production (store) build, then upload it to TestFlight
+# Only one build per native change: the ad hoc "preview" build is no longer made here
+# (TestFlight can't take an ad hoc build). `eas build --profile preview` still works by hand.
 # Pattern from https://docs.expo.dev/eas/workflows/examples/deploy-to-production/
-name: Deploy preview
+#
+# The TestFlight upload needs, once (see CONTRIBUTING.md section 8):
+#   * the app record in App Store Connect and its Apple ID as submit.production.ios.ascAppId in eas.json
+#   * an App Store Connect API key assigned to the app in EAS credentials (eas credentials -p ios)
+# If the upload fails, the build is kept: `eas submit -p ios --id <build id>` retries without a new build.
+name: Deploy production
 
 on:
   push:
     branches: ['main']
 
 concurrency:
-  group: deploy-preview-${{ github.ref }}
+  group: deploy-production-${{ github.ref }}
 
 jobs:
   test:
@@ -28,7 +36,7 @@ jobs:
     name: Fingerprint
     needs: [test]
     type: fingerprint
-    environment: preview # same environment as the "preview" build profile
+    environment: production # same environment as the "production" build profile
 
   get_ios_build:
     name: Check for a compatible iOS build
@@ -36,25 +44,33 @@ jobs:
     type: get-build
     params:
       platform: ios
-      profile: preview
+      profile: production
       fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
       wait_for_in_progress: true
 
   build_ios:
-    name: Build iOS (native change)
+    name: Build iOS for the App Store (native change)
     needs: [get_ios_build]
     if: ${{ !needs.get_ios_build.outputs.build_id }}
     type: build
     params:
       platform: ios
-      profile: preview
+      profile: production
+
+  testflight_ios:
+    name: Upload to TestFlight
+    needs: [build_ios]
+    type: testflight
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      profile: production
 
   publish_ios_update:
     name: Publish OTA update (JS-only change)
     needs: [get_ios_build]
     if: ${{ needs.get_ios_build.outputs.build_id }}
     type: update
-    environment: preview
+    environment: production
     params:
-      channel: preview
+      channel: production
       platform: ios

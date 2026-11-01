@@ -1,0 +1,88 @@
+# Applies supabase/migrations and deploys supabase/functions to the hosted projects after code lands.
+#   push to dev  -> GitHub environment "staging"    -> pushup-battles-staging
+#   push to main -> GitHub environment "production" -> pushup-battles-prod
+# Never runs on pull requests (PR code never gets the deploy secrets).
+#
+# Secrets:
+#   SUPABASE_ACCESS_TOKEN  repo (or environment) secret: a Supabase personal access token.
+#   SUPABASE_PROJECT_REF   environment secret, one per environment.
+#   SUPABASE_DB_PASSWORD   optional environment secret. Without it the CLI logs in with a
+#                          temporary role derived from the access token.
+name: Supabase deploy
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/functions/**'
+      - '.github/workflows/supabase-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: migrate (${{ github.ref_name == 'main' && 'production' || 'staging' }})
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::warning::SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF is not set; skipping the migration deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          version: latest
+
+      - name: Link project
+        if: steps.secrets.outputs.ready == 'true'
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Pending migrations (dry run)
+        if: steps.secrets.outputs.ready == 'true'
+        run: supabase db push --linked --dry-run
+
+      - name: Apply migrations
+        if: steps.secrets.outputs.ready == 'true'
+        run: supabase db push --linked --yes
+
+      # Edge Functions authorize requests themselves (see each index.ts), so the platform JWT
+      # check is off. --use-api bundles on Supabase's side (no Docker needed).
+      - name: Deploy Edge Functions
+        if: steps.secrets.outputs.ready == 'true'
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+
+      # Wake `notify` once so it registers its URL with the database (public.register_notify_url).
+      # Until that happens the pg_cron safety net ('notify-drain') has no URL and does nothing.
+      # Harmless when already registered: it only sends notifications that are already queued.
+      - name: Register the notify function with pg_cron
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          code=$(curl -sS -o /tmp/notify.json -w '%{http_code}' -X POST \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/notify" \
+            -H 'Content-Type: application/json' -d '{"drain": true}' || echo 000)
+          echo "notify drain -> HTTP $code: $(cat /tmp/notify.json 2>/dev/null)"
+          if [ "$code" != "200" ]; then
+            echo "::warning::notify did not answer 200; the notify-drain cron job stays idle until the app first calls notify."
+          fi

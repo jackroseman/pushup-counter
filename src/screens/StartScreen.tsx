@@ -4,6 +4,8 @@ import { Button } from '../components/ui';
 import { Settings } from '../storage/settings';
 import { colors } from '../theme';
 import { faceTrackingSupported } from '../sensors';
+import { SignInCard } from '../components/SignInCard';
+import { useBackend } from '../backend/BackendProvider';
 
 const STEPS = [
   'Turn the volume up. Reps are spoken out loud.',
@@ -15,15 +17,22 @@ const STEPS = [
 
 export function StartScreen({
   settings,
+  savedSets,
   onChangeSettings,
   onStart,
   onHistory,
+  onAccount,
+  onBattles,
 }: {
   settings: Settings;
+  savedSets: number;
   onChangeSettings: (s: Settings) => void;
   onStart: () => void;
   onHistory: () => void;
+  onAccount: () => void;
+  onBattles: () => void;
 }) {
+  const { configured } = useBackend();
   const depth = faceTrackingSupported();
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -55,7 +64,10 @@ export function StartScreen({
       </View>
 
       {depth ? <Button title="Start" onPress={onStart} /> : null}
+      {configured && depth ? <Button title="Battles" kind="secondary" onPress={onBattles} /> : null}
       <Button title="History" kind="secondary" onPress={onHistory} />
+      {configured ? <Button title="Account" kind="secondary" onPress={onAccount} /> : null}
+      <SignInCard savedSets={savedSets} />
     </ScrollView>
   );
 }

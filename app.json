@@ -2,7 +2,8 @@
   "expo": {
     "name": "Pushup Counter",
     "slug": "push-up-counter",
-    "version": "1.1.0",
+    "scheme": "pushupcounter",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -10,12 +11,13 @@
       "bundleIdentifier": "com.jackroseman.pushupcounter",
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "Pushup Counter uses the front TrueDepth camera to measure how far your face is from the phone so it can score the depth of each pushup. No images are stored or uploaded.",
+        "NSCameraUsageDescription": "Pushup Counter uses the front TrueDepth camera to measure how far your face is from the phone so it can score the depth of each pushup, solo and in battles. No images are stored or uploaded.",
         "UIRequiredDeviceCapabilities": [
           "arm64"
         ],
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.jackroseman.pushupcounter",
@@ -37,6 +39,14 @@
           "ios": {
             "deploymentTarget": "16.4"
           }
+        }
+      ],
+      "expo-apple-authentication",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#FFB020"
         }
       ]
     ],

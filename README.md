@@ -11,6 +11,9 @@ set), depth per rep, and other metrics. All of it is saved with the set.
 > PRs and required CI checks, CD (OTA vs native builds), the dev client with hot reload, and
 > rollbacks.
 
+> **Planned: push-up battles.** Design docs (not built yet): [spec](docs/battles/SPEC.md),
+> [architecture & phases](docs/battles/ARCHITECTURE.md), [draft DB schema](docs/battles/schema.sql).
+
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict)
 * Custom native code lives in a local Expo Module (`modules/pushup-sensors`, Swift + Kotlin).
   Because of that, **Expo Go will not work**. You need a *development build*, made with
@@ -264,8 +267,8 @@ that. Fully close and reopen the app twice.
 * **CI** (GitHub Actions, `.github/workflows/ci.yml`): the `checks` job runs jest, tsc and
   an `expo export` bundle test on every PR commit. It is required to merge into `main`.
 * **CD** (EAS Workflows): a push to `dev` deploys to the **development** channel (Pushup Dev
-  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys to **preview**
-  (`deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
+  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys the released app
+  (**production** channel, TestFlight; `deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Every push to `main` ships automatically (EAS Workflows)
 
@@ -273,13 +276,14 @@ that. Fully close and reopen the app twice.
 linked to the Expo project under expo.dev → project → GitHub. Steps:
 
 1. **Tests**: `npx jest --ci` and `npx tsc --noEmit`. If either fails, nothing ships.
-2. **Fingerprint**: hashes the project's native characteristics (environment `preview`).
-3. **Get build**: looks for an existing iOS `preview` build with that fingerprint. It
-   waits for one that is still in progress.
-4. **If a build exists** (JS-only change): `eas update` to channel `preview` (iOS),
-   using the commit message as the update message.
-5. **If none exists** (native change): a new iOS `preview` ad-hoc build. Install it from
-   the build page.
+2. **Fingerprint**: hashes the project's native characteristics (environment `production`).
+3. **Get build**: looks for an existing iOS `production` (App Store) build with that
+   fingerprint. It waits for one that is still in progress.
+4. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
+   using the commit message as the update message. TestFlight installs get it on launch.
+5. **If none exists** (native change): ONE new iOS `production` store build, which the
+   `testflight` job uploads to App Store Connect / TestFlight. No ad hoc preview build is
+   made any more (`eas build --profile preview` still works by hand).
 
 Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
 `eas workflow:validate .eas/workflows/deploy.yml`.

@@ -1,7 +1,8 @@
 # CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev and feature
 # branches. The "checks" job is the REQUIRED status check in branch protection: keep its
 # name stable (renaming it means updating the protection rules).
-# Deploys are NOT done here: EAS Workflows (.eas/workflows/) deploy after a merge.
+# Deploys are NOT done here: EAS Workflows (.eas/workflows/) deploy the app and
+# supabase-deploy.yml applies database migrations, both after a merge.
 name: CI
 
 on:
@@ -36,6 +37,9 @@ jobs:
 
       - name: Unit tests (jest)
         run: npx jest --ci
+
+      - name: Database tests (PGlite, supabase/migrations)
+        run: npm run test:db
 
       - name: Type check (tsc)
         run: npx tsc --noEmit

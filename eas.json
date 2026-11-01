@@ -35,6 +35,10 @@
       "environment": "production",
       "env": {
         "APP_VARIANT": "production"
+      },
+      "distribution": "store",
+      "ios": {
+        "resourceClass": "m-medium"
       }
     }
   },

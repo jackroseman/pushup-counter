@@ -193,7 +193,7 @@ steps.push(
   ['p3: C does not see the battle', `${as(C)} select my_battles(${ctx('b1')}::uuid) b; reset role;`],
   ['p3: friend_battle_record (results only)', `${as(F)} select friend_battle_record('${G}') r; reset role;`],
   ['p3: battle waits for open in-app invites', `${as(F)} ${create('b2', { format: 'timed', durationS: 60 }, [G, H])} reset role; ${battleSet('p3-f2', 10, 'b2', F)} ${as(G)} update battle_participants set status='accepted' where battle_id=${ctx('b2')}::uuid and user_id='${G}'; reset role; ${battleSet('p3-g2', 12, 'b2', G, [0.14, 0.25, 0.30])} select finalize_battles(); select status from battles where id=${ctx('b2')}::uuid; ${as(H)} update battle_participants set status='declined' where battle_id=${ctx('b2')}::uuid and user_id='${H}'; reset role; select finalize_battles(); select status from battles where id=${ctx('b2')}::uuid; select ${outbox('invite_declined', F, 'b2')} n;`],
-  ['p3: battles count Full AND Good reps, never Shallow (= set_metrics.counted_reps)', `select m.full_reps, m.good_reps, m.shallow_reps, m.implausible_reps, m.counted_reps, r.valid_reps from set_metrics m join sets s on s.id = m.set_id join battle_results r on r.battle_id = s.battle_id and r.user_id = s.user_id where s.client_set_id = 'p3-g2'; select counted_reps, full_reps, good_reps from set_metrics m join sets s on s.id = m.set_id where s.client_set_id = 'p3-h';`],
+  ['p3: battles count Full AND Good reps, never Shallow (= set_metrics.good_or_better_reps)', `select m.full_reps, m.good_reps, m.shallow_reps, m.implausible_reps, m.good_or_better_reps, r.valid_reps from set_metrics m join sets s on s.id = m.set_id join battle_results r on r.battle_id = s.battle_id and r.user_id = s.user_id where s.client_set_id = 'p3-g2'; select good_or_better_reps, full_reps, good_reps from set_metrics m join sets s on s.id = m.set_id where s.client_set_id = 'p3-h';`],
   ['p3: all invitees declined but a link is open -> stays pending', `${as(F)} ${create('b3', { format: 'max_reps', inviteLink: true }, [G], 't3')} reset role; ${as(G)} update battle_participants set status='declined' where battle_id=${ctx('b3')}::uuid and user_id='${G}'; reset role; select status from battles where id=${ctx('b3')}::uuid;`],
   ['p3: creator cancels -> invitees notified', `${as(F)} select cancel_battle(${ctx('b3')}::uuid); reset role; select status from battles where id=${ctx('b3')}::uuid; set role anon; select invite_preview(${ctx('t3')})->>'status' s; reset role;`],
   ['p3: reminders 2 h before the deadline, once', `insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at,created_at) values ('99999999-9999-4999-8999-999999999999','${F}','async','max_reps','rep_count',now()+interval '1 hour',now()+interval '1 hour',now()-interval '23 hours'); insert into battle_participants(battle_id,user_id,invited_by) values ('99999999-9999-4999-8999-999999999999','${G}','${F}'); select finalize_battles(); select finalize_battles(); select count(*) from private.notification_outbox where kind='battle_reminder' and battle_id='99999999-9999-4999-8999-999999999999';`],
@@ -275,12 +275,12 @@ Object.assign(checks, {
     ok(r[n - 2][0].status === 'completed', 'not completed after decline');
     ok(r[n - 1][0].n === 1, 'decline push');
   },
-  'p3: battles count Full AND Good reps, never Shallow (= set_metrics.counted_reps)': (r) => {
+  'p3: battles count Full AND Good reps, never Shallow (= set_metrics.good_or_better_reps)': (r) => {
     const x = r[0][0];
     ok(x.full_reps === 4 && x.good_reps === 4 && x.shallow_reps === 4 && x.implausible_reps === 0, 'buckets ' + JSON.stringify(x));
-    ok(x.counted_reps === 8 && x.valid_reps === 8, 'battle must count full + good ' + JSON.stringify(x));
+    ok(x.good_or_better_reps === 8 && x.valid_reps === 8, 'battle must count full + good ' + JSON.stringify(x));
     const y = r[1][0];
-    ok(y.full_reps === 25 && y.good_reps === 0 && y.counted_reps === 25, 'all-full set ' + JSON.stringify(y));
+    ok(y.full_reps === 25 && y.good_reps === 0 && y.good_or_better_reps === 25, 'all-full set ' + JSON.stringify(y));
   },
   'p3: all invitees declined but a link is open -> stays pending': (r) => ok(r[0][0].status === 'pending', 'cancelled despite link'),
   'p3: creator cancels -> invitees notified': (r) => (r = r.slice(-2), ok(r[0][0].status === 'cancelled' && r[1][0].s === 'closed', 'cancel ' + JSON.stringify(r))),

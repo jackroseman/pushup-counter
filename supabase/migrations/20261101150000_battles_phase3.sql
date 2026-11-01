@@ -767,11 +767,13 @@ revoke execute on function public.claim_notifications(integer) from authenticate
 grant execute on function public.claim_notifications(integer) to service_role;
 
 -- =====================================================================================
--- set_metrics.counted_reps. full_reps / good_reps / shallow_reps are DISJOINT buckets
--- (the app's Full / Good / Shallow labels: "good_reps" = Good but not Full). The reps a
--- battle counts are Good-or-better and plausible, i.e. full + good minus implausible
--- (battle_entries uses quality >= min_quality, and 'full' > 'good' in the enum). This
--- column states that number directly so nobody reads good_reps as "counted reps".
+-- set_metrics.good_or_better_reps. full_reps / good_reps / shallow_reps are DISJOINT buckets,
+-- like the app's Full / Good / Shallow stats ("good_reps" = Good but NOT Full). The SPEC's
+-- "good reps" (what a battle counts) means Good-or-better and plausible: full + good minus
+-- implausible. battle_entries already counts that way (quality >= min_quality, and 'full'
+-- > 'good' in the enum), but reading set_metrics.good_reps as "battle reps" undercounts
+-- (e.g. a 15-rep set with 12 Full + 3 Good shows good_reps = 3; a battle counts 15).
+-- This column states the battle number directly.
 -- (Appended at the end: CREATE OR REPLACE VIEW can only add trailing columns.)
 -- =====================================================================================
 create or replace view public.set_metrics with (security_invoker = true) as
@@ -781,7 +783,7 @@ with agg as (
          count(*) filter (where quality = 'full')        as full_reps,
          count(*) filter (where quality = 'good')        as good_reps,
          count(*) filter (where quality = 'shallow')     as shallow_reps,
-         count(*) filter (where quality >= 'good' and implausible_reason is null) as counted_reps,
+         count(*) filter (where quality >= 'good' and implausible_reason is null) as good_or_better_reps,
          count(*) filter (where implausible_reason is not null) as implausible_reps,
          avg(depth_pct)                                  as avg_depth_pct,
          stddev_pop(depth_pct)                           as depth_std_pct,
@@ -848,7 +850,7 @@ select
   round((a.avg_ascent_ms  / 1000.0)::numeric, 2)                                as avg_ascent_s,
   round((a.fastest_rep_ms / 1000.0)::numeric, 2)                                as fastest_rep_s,
   round((a.slowest_rep_ms / 1000.0)::numeric, 2)                                as slowest_rep_s,
-  coalesce(a.counted_reps, 0)  as counted_reps
+  coalesce(a.good_or_better_reps, 0)  as good_or_better_reps
 from public.sets s
 left join agg a          on a.set_id = s.id
 left join tempo t        on t.set_id = s.id

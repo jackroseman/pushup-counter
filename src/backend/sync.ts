@@ -51,6 +51,7 @@ export const saveSyncState = (kv: KeyValueStore, s: SyncState) => kv.setItem(SYN
 
 /** Why a set is never uploaded (decided on the phone), or null if it should be. */
 export function skipReason(r: SessionRecord): string | null {
+  if (r.battleId) return 'battle set (uploaded with the battle)';
   if (!r.reps.length) return 'no reps';
   if (!Number.isFinite(r.startedAt) || !Number.isFinite(r.endedAt) || r.endedAt < r.startedAt) return 'bad times';
   if (r.endedAt - r.startedAt > MAX_SET_MS) return 'longer than 2 hours';

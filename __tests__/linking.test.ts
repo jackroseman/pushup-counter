@@ -1,4 +1,4 @@
-import { parseAppLink } from '../src/backend/linking';
+import { notificationLink, parseAppLink } from '../src/backend/linking';
 import { readBackendConfig } from '../src/backend/config';
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -22,6 +22,23 @@ describe('deep links', () => {
   it('parses universal invite links only for the configured domain', () => {
     expect(parseAppLink(`https://pushup.example.app/b/${TOKEN}`, 'https://pushup.example.app')).toEqual({ type: 'invite', token: TOKEN });
     expect(parseAppLink(`https://pushup.example.app/b/${TOKEN}`, null)).toBeNull();
+  });
+});
+
+describe('battle links and push taps', () => {
+  it('parses the battles and friends screens', () => {
+    expect(parseAppLink('pushupcounter://battles')).toEqual({ type: 'battles' });
+    expect(parseAppLink('pushupcounter://friends')).toEqual({ type: 'friends' });
+    expect(parseAppLink('pushupcounter://friends/extra')).toBeNull();
+  });
+
+  it('takes the url from a push only when the app understands it', () => {
+    expect(notificationLink({ url: `pushupcounter://battle/${ID}`, type: 'battle_result' })).toBe(`pushupcounter://battle/${ID}`);
+    expect(notificationLink({ url: 'pushupcounter://friends' })).toBe('pushupcounter://friends');
+    expect(notificationLink({ url: 'https://evil.example/x' })).toBeNull();
+    expect(notificationLink({ url: 42 })).toBeNull();
+    expect(notificationLink(null)).toBeNull();
+    expect(notificationLink('pushupcounter://friends')).toBeNull();
   });
 });
 

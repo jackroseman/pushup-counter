@@ -26,6 +26,25 @@ export interface InviteLinkSettings {
   webBaseUrl: string | null;
 }
 
+export interface AsyncBattleDefaults {
+  deadlineHours: number;
+  deadlineOptionsHours: number[];
+  maxDeadlineHours: number;
+  inviteExpiryHours: number;
+  timedDurationsS: number[];
+  attemptsAllowed: number;
+  linkMaxUses: number;
+  /** Max-reps battle sets end after this long without a rep... */
+  maxRepsIdleEndS: number;
+  /** ...or at this total length. */
+  maxRepsCapS: number;
+}
+
+export interface NotificationSettings {
+  reminderHoursBefore: number;
+  reminderAtHalfTime: boolean;
+}
+
 export interface AppSettings {
   formScoreWeights: FormScoreWeights;
   asyncMaxParticipants: number;
@@ -34,6 +53,8 @@ export interface AppSettings {
   soloAccountMode: SoloAccountMode;
   signInPrompt: SignInPromptSettings;
   inviteLinks: InviteLinkSettings;
+  asyncBattleDefaults: AsyncBattleDefaults;
+  notifications: NotificationSettings;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -44,6 +65,18 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   soloAccountMode: 'anonymous_optional_sign_in',
   signInPrompt: { enabled: true, afterSets: 3, snoozeDays: 14 },
   inviteLinks: { scheme: 'pushupcounter', webBaseUrl: null },
+  asyncBattleDefaults: {
+    deadlineHours: 24,
+    deadlineOptionsHours: [6, 24, 72],
+    maxDeadlineHours: 168,
+    inviteExpiryHours: 24,
+    timedDurationsS: [60, 120],
+    attemptsAllowed: 1,
+    linkMaxUses: 7,
+    maxRepsIdleEndS: 15,
+    maxRepsCapS: 600,
+  },
+  notifications: { reminderHoursBefore: 2, reminderAtHalfTime: true },
 };
 
 export interface AppSettingRow {
@@ -58,6 +91,31 @@ const int = (v: unknown, min: number, max: number): number | undefined => {
   const n = num(v, min, max);
   return n !== undefined && Number.isInteger(n) ? n : undefined;
 };
+
+const intList = (v: unknown, min: number, max: number): number[] | undefined => {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.map((x) => int(x, min, max));
+  if (!out.length || out.some((x) => x === undefined)) return undefined;
+  return [...new Set(out as number[])].sort((a, b) => a - b);
+};
+
+export function parseAsyncBattleDefaults(v: unknown, fallback = DEFAULT_APP_SETTINGS.asyncBattleDefaults): AsyncBattleDefaults {
+  if (!isObj(v)) return fallback;
+  const maxDeadlineHours = int(v.max_deadline_hours, 1, 24 * 30) ?? fallback.maxDeadlineHours;
+  const options = (intList(v.deadline_options_hours, 1, maxDeadlineHours) ?? fallback.deadlineOptionsHours).filter((h) => h <= maxDeadlineHours);
+  const deadlineHours = int(v.deadline_hours, 1, maxDeadlineHours) ?? Math.min(fallback.deadlineHours, maxDeadlineHours);
+  return {
+    deadlineHours,
+    deadlineOptionsHours: options.length ? options : [deadlineHours],
+    maxDeadlineHours,
+    inviteExpiryHours: int(v.invite_expiry_hours, 1, 24 * 30) ?? fallback.inviteExpiryHours,
+    timedDurationsS: intList(v.timed_durations_s, 10, 3600) ?? fallback.timedDurationsS,
+    attemptsAllowed: int(v.attempts_allowed, 1, 10) ?? fallback.attemptsAllowed,
+    linkMaxUses: int(v.link_max_uses, 1, 50) ?? fallback.linkMaxUses,
+    maxRepsIdleEndS: int(v.max_reps_idle_end_s, 5, 120) ?? fallback.maxRepsIdleEndS,
+    maxRepsCapS: int(v.max_reps_cap_s, 30, 7200) ?? fallback.maxRepsCapS,
+  };
+}
 
 /** Weights must be non-negative and are normalised to sum to 1; anything invalid -> fallback. */
 export function parseFormScoreWeights(v: unknown, fallback = DEFAULT_APP_SETTINGS.formScoreWeights): FormScoreWeights {
@@ -108,6 +166,18 @@ export function parseAppSettings(rows: readonly AppSettingRow[] | null | undefin
               typeof value.web_base_url === 'string' && /^https:\/\/[^\s/]+/.test(value.web_base_url)
                 ? value.web_base_url.replace(/\/+$/, '')
                 : null,
+          };
+        }
+        break;
+      case 'async_battle_defaults':
+        s.asyncBattleDefaults = parseAsyncBattleDefaults(value);
+        break;
+      case 'notifications':
+        if (isObj(value)) {
+          s.notifications = {
+            reminderHoursBefore: num(value.reminder_hours_before, 0, 168) ?? s.notifications.reminderHoursBefore,
+            reminderAtHalfTime:
+              typeof value.reminder_at_half_time === 'boolean' ? value.reminder_at_half_time : s.notifications.reminderAtHalfTime,
           };
         }
         break;

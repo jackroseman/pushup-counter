@@ -8,6 +8,21 @@ const seed = [
   { key: 'solo_account_mode', value: 'anonymous_optional_sign_in' },
   { key: 'sign_in_prompt', value: { enabled: true, after_sets: 3, snooze_days: 14 } },
   { key: 'invite_links', value: { scheme: 'pushupcounter', web_base_url: null } },
+  {
+    key: 'async_battle_defaults',
+    value: {
+      deadline_hours: 24,
+      deadline_options_hours: [6, 24, 72],
+      max_deadline_hours: 168,
+      invite_expiry_hours: 24,
+      timed_durations_s: [60, 120],
+      attempts_allowed: 1,
+      link_max_uses: 7,
+      max_reps_idle_end_s: 15,
+      max_reps_cap_s: 600,
+    },
+  },
+  { key: 'notifications', value: { reminder_hours_before: 2, reminder_at_half_time: true } },
 ];
 
 describe('app settings', () => {
@@ -56,5 +71,24 @@ describe('app settings', () => {
     expect(await fetchAppSettings(throwing)).toEqual(DEFAULT_APP_SETTINGS);
     const ok: SettingsSource = { from: () => ({ select: async () => ({ data: [{ key: 'async_max_participants', value: 6 }], error: null }) }) };
     expect((await fetchAppSettings(ok)).asyncMaxParticipants).toBe(6);
+  });
+
+  it('reads async battle defaults and notification settings', () => {
+    const s = parseAppSettings([
+      { key: 'async_battle_defaults', value: { deadline_hours: 48, deadline_options_hours: [72, 12, 12, 400], max_deadline_hours: 96, timed_durations_s: [90] } },
+      { key: 'notifications', value: { reminder_hours_before: 1, reminder_at_half_time: false } },
+    ]);
+    expect(s.asyncBattleDefaults.deadlineHours).toBe(48);
+    // a list with an out-of-range entry falls back to the default options (capped to the max)
+    expect(s.asyncBattleDefaults.deadlineOptionsHours).toEqual([6, 24, 72]);
+    expect(s.asyncBattleDefaults.maxDeadlineHours).toBe(96);
+    expect(s.asyncBattleDefaults.timedDurationsS).toEqual([90]);
+    expect(s.asyncBattleDefaults.maxRepsIdleEndS).toBe(15);
+    expect(s.notifications).toEqual({ reminderHoursBefore: 1, reminderAtHalfTime: false });
+
+    const t = parseAppSettings([{ key: 'async_battle_defaults', value: { deadline_options_hours: [12, 6, 12], max_deadline_hours: 24, deadline_hours: 100 } }]);
+    expect(t.asyncBattleDefaults.deadlineOptionsHours).toEqual([6, 12]);
+    expect(t.asyncBattleDefaults.deadlineHours).toBe(24);
+    expect(parseAppSettings([{ key: 'async_battle_defaults', value: 'nope' }, { key: 'notifications', value: [] }])).toEqual(DEFAULT_APP_SETTINGS);
   });
 });

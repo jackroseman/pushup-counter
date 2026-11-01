@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { flushBattleUploads } from '../battles/uploader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useBackend } from './BackendProvider';
@@ -154,8 +155,14 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hasProfile || !deviceId) return;
     runSync(true);
+    // Battle attempts that couldn't upload yet (offline, app killed) go up here too.
+    flushBattleUploads();
     const off = onHistoryChanged(() => runSync(true));
-    const sub = AppState.addEventListener('change', (s) => s === 'active' && runSync(false));
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      runSync(false);
+      flushBattleUploads();
+    });
     return () => {
       off();
       sub.remove();

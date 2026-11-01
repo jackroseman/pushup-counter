@@ -165,6 +165,7 @@ describe('set payload', () => {
     expect(skipReason(record('b', T0, 0))).toBe('no reps');
     expect(skipReason({ ...record('c', T0), endedAt: T0 - 1 })).toBe('bad times');
     expect(skipReason({ ...record('d', T0), endedAt: T0 + 3 * 3600_000 })).toMatch(/2 hours/);
+    expect(skipReason({ ...record('e', T0), battleId: '11111111-1111-4111-8111-111111111111' })).toMatch(/battle/);
   });
 
   it('classifies errors', () => {

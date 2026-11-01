@@ -12,6 +12,8 @@ export interface SessionRecord {
   version?: number;
   /** Downsampled (~10 Hz) face-distance trace: [ms since startedAt, meters | null]. */
   trace?: TracePoint[];
+  /** Set recorded as a battle attempt; uploaded through submit-set, not the solo backup. */
+  battleId?: string;
 }
 
 /** Minimal async key-value interface (AsyncStorage satisfies it) so this is testable. */

@@ -21,6 +21,7 @@ import { HistoryStore, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported } from '../sensors';
 import { notifyHistoryChanged } from '../backend/syncEvents';
+import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
 
 const KEEP_AWAKE_TAG = 'pushup-session';
 /** Countdown after calibration locks in (the user can redo it during this time). */
@@ -50,6 +51,14 @@ export interface SessionState {
   guide: GuideSnapshot | null;
   /** Seconds left before counting starts after calibration locked (phase 'locked'). */
   countdown: number | null;
+  /** Battle sets: timer text, and why the set ended by itself (the screen then finishes it). */
+  battleClock: string;
+  autoEnd: EndReason | null;
+}
+
+/** Present when the set is a battle attempt. */
+export interface BattleSessionOptions extends BattleRules {
+  battleId: string;
 }
 
 /** Mutable buffer read by the live chart at its own frame rate (no React re-render per sample). */
@@ -67,7 +76,10 @@ function say(text: string) {
 
 export const historyStore = new HistoryStore(AsyncStorage);
 
-export function useSession(settings: Settings) {
+export function useSession(settings: Settings, battle?: BattleSessionOptions) {
+  const battleRef = useRef(battle);
+  const lastRepAt = useRef<number | null>(null);
+  const finishing = useRef<Promise<SessionRecord> | null>(null);
   const detector = useRef(new RepDetector());
   const guide = useRef<CalibrationGuide | null>(null);
   const lastGuidePush = useRef(0);
@@ -99,6 +111,8 @@ export function useSession(settings: Settings) {
     proximityAvailable: true,
     guide: null,
     countdown: null,
+    battleClock: '',
+    autoEnd: null,
   });
   const patch = useCallback((p: Partial<SessionState>) => setState((s) => ({ ...s, ...p })), []);
 
@@ -113,6 +127,7 @@ export function useSession(settings: Settings) {
         );
       }
       live.current.reps.push({ t: rep.timestamp, quality: rep.quality, index: rep.index });
+      lastRepAt.current = Date.now();
       patch({ count: rep.index, lastRep: rep });
     },
     [patch]
@@ -128,6 +143,7 @@ export function useSession(settings: Settings) {
     if (cancelled.current) return;
     startedAt.current = Date.now();
     trace.current = new TraceRecorder(startedAt.current);
+    lastRepAt.current = null;
     active.current = true;
     patch({ phase: 'active', countdown: null, guide: null, status: 'Go!' });
     say('Go');
@@ -303,7 +319,19 @@ export function useSession(settings: Settings) {
       });
     }, 500);
 
+    // Battle sets end by themselves: timed at the duration, max reps after a pause (or the cap).
+    const clock = setInterval(() => {
+      const b = battleRef.current;
+      if (!b || !active.current) return;
+      const now = Date.now();
+      const reason = battleEndReason(b, now, startedAt.current, lastRepAt.current);
+      const text = battleClockText(b, now, startedAt.current, lastRepAt.current);
+      if (reason) active.current = false;
+      setState((s) => (s.battleClock === text && s.autoEnd === reason ? s : { ...s, battleClock: text, autoEnd: reason ?? s.autoEnd }));
+    }, 250);
+
     return () => {
+      clearInterval(clock);
       cancelled.current = true;
       active.current = false;
       guide.current = null;
@@ -317,7 +345,13 @@ export function useSession(settings: Settings) {
   }, [onRep, onLocked, startCalibration, patch]);
 
   /** Ends the session, persists it (if it has reps) and returns the record. */
-  const finish = useCallback(async (): Promise<SessionRecord> => {
+  const finish = useCallback((): Promise<SessionRecord> => {
+    // Idempotent: the auto-end and the End button can race.
+    if (!finishing.current) finishing.current = doFinish();
+    return finishing.current;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doFinish = async (): Promise<SessionRecord> => {
     cancelled.current = true;
     active.current = false;
     guide.current = null;
@@ -336,13 +370,14 @@ export function useSession(settings: Settings) {
       depthTracking: true,
       version: 2,
       trace: trace.current?.finish() ?? [],
+      ...(battleRef.current ? { battleId: battleRef.current.battleId } : {}),
     };
     patch({ phase: 'finished' });
     say(`Done. ${reps.length} ${reps.length === 1 ? 'pushup' : 'pushups'}`);
     await historyStore.add(record).catch(() => {});
     notifyHistoryChanged();
     return record;
-  }, [patch]);
+  };
 
   return { state, finish, live, recalibrate };
 }

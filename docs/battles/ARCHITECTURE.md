@@ -101,7 +101,8 @@ The depth-ratio and quality rules exist in TypeScript (`src/core/scoring.ts`,
 2. It is POSTed to `functions/v1/submit-set` with the user's JWT. The function validates it
    and calls `submit_set`.
 3. DB triggers re-check membership, the deadline (server clock) and attempts left.
-4. A DB webhook → `notify` sends "Bob did 28".
+4. A trigger queues a notification in the outbox and `notify` sends "Bob did 28" (§9
+   Phase 3 notes).
 
 **Results**
 * `select * from battle_standings where battle_id = …` (`locked = true` once the battle
@@ -315,7 +316,7 @@ Things to check before that build so we don't need another:
 | **1. Backend foundation** ✅ (PR `feat/battles-phase-1`) | Staging + prod Supabase projects, `supabase/` migrations (applied to both, advisors fixed), DB tests in CI `checks`, `supabase-deploy.yml`, GitHub environments `staging`/`production`, EAS env vars, server-side `app_settings` | backend only | migrations apply cleanly in CI and on staging; RLS tests green |
 | **2a. Native batch** ✅ (same PR) | All native deps from §8, `expo install --check` fixes, version 1.2.0, URL scheme, Sign in with Apple + push entitlements, React Navigation, Supabase client, optional sign-in prompt after solo sets | **3 builds** (dev, preview, TestFlight internal) once merged | dev build signs in with Apple against staging |
 | **2b. Identity** ✅ (PR `feat/battles-phase-2b`) | Username picker, profile, solo set sync (upload queue + backfill), account deletion, push token registration, `notify` Edge Function (test push) | OTA | sets show in Supabase staging, a test push arrives |
-| **3. Friends + async battles** | Friends, invite links + universal links (domain + AASA live), push notifications, async max-reps/timed, battles home/detail/invite/results (basic) | OTA | two testers complete an async battle end to end from a push |
+| **3. Friends + async battles** ✅ (PR `feat/battles-phase-3`, JS only) | Friends, invite links + universal links (domain + AASA live), push notifications, async max-reps/timed, battles home/detail/invite/results (basic) | OTA | two testers complete an async battle end to end from a push |
 | **4. Live battles** | Lobby, presence, synced countdown, rep broadcast, reconnect, checkpointing, waiting screen | OTA | 10 live battles on poor networks with no wrong results |
 | **5. Polish & hardening** | Multi-day battles, all 4 metrics, comparison charts, stats/streaks, report/block, outlier flags, App Attest (needs a native change: fold into the next build that's needed anyway), external TestFlight | OTA (+ any native change batched) | Beta App Review passed |
 | **6. App Store** | Privacy policy, screenshots, review | production build | live on the App Store |
@@ -343,6 +344,72 @@ per CONTRIBUTING.
   users (used by later phases); a signed-in user may only send a test push to themselves.
   Tokens Expo reports as `DeviceNotRegistered` are disabled. Push receipts are not checked
   yet. iOS delivery needs an APNs key in EAS credentials.
+
+### Phase 3 notes
+
+Shipped as JS + backend only: the iOS fingerprint is unchanged against the 1.2.0 build, so
+it goes out as an OTA update. Live battles are phase 4.
+
+* **Friends** (`friendships`, one row per pair): `send_friend_request(username)` (accepts
+  instead if they already asked you; at most 50 open requests), `respond_friend_request`,
+  `remove_friend` (also cancels a request you sent), `block_user` / `unblock_user` (a block
+  also declines open invites between the two), `my_friends()`, `search_users(query)`
+  (excludes people who blocked you). Friends see **only battle results** of each other
+  (`friend_battle_record(user)`: W/D/L and your battles together); solo sets stay private.
+* **Battles**: `create_battle(jsonb)` → `{battleId, inviteToken}` for async max-reps or
+  timed (60/120 s) battles. Only accepted friends can be invited in-app; anyone with a link
+  can join. Up to `async_max_participants` (8). Invitees accept / decline by updating their
+  own `battle_participants.status` (RLS + `tg_participant_guard`). The creator can play
+  first while the battle is pending, and everybody sees the posted scores before their own
+  attempt. `my_battles(battle?)` returns the list / detail with live standings (locked
+  results once completed). `cancel_battle` for the creator.
+* **Invite links**: `create_invite_link`, `revoke_invite_link`, `invite_preview(token)`
+  (works signed out, shows who invited you and the scores so far), `redeem_invite(token,
+  add_friend)` (joins and, by default, befriends the creator). Tokens are 32 hex chars,
+  expire with the invite (never after the deadline) and have `link_max_uses` (7).
+  The app shares `pushupcounter://invite/<token>` today. Once `invite_links.web_base_url`
+  is set in `app_settings`, it shares `https://<domain>/b/<token>` instead and already
+  parses those links. Universal links still need the native batch (see below).
+* **Settings** (`app_settings`, read by the app at start): `async_battle_defaults`
+  (deadline 24 h with 6/24/72 h choices and a 168 h max, invite expiry 24 h, timed
+  presets, 1 attempt, link uses, max-reps auto end: 15 s without a rep or 10 min) and
+  `notifications` (reminders 2 h before the deadline and at half time).
+* **Battle sets** go through the `submit-set` Edge Function (validates the payload, then
+  `submit_set` as the service role). The app queues them on the phone first
+  (`battleUploads.v1`), so an attempt recorded offline uploads when the app comes back
+  (the server still accepts it up to 5 minutes after the deadline). Battle sets are
+  not sent through the solo backup queue. Max-reps sets end by themselves after 15 s
+  without a rep; timed sets stop at the time.
+* **Which reps count** (bug report on staging set `4b9620bb…`: 12 Full + 3 Good showed
+  `good_reps = 3`): the battle count was already right. `battle_entries` counts
+  `quality >= 'good'` and plausible, which includes Full. The confusion was the name:
+  `set_metrics.full_reps / good_reps / shallow_reps` are disjoint buckets, so
+  `good_reps` means "Good but not Full". `set_metrics` now also has
+  **`good_or_better_reps`** (Full + Good, plausible), which is exactly what a battle
+  counts; that set counts 15. A DB test pins `battle valid_reps = full + good =
+  good_or_better_reps`, with Shallow and implausible reps excluded.
+* **Push**: table triggers write a `private.notification_outbox` row (invite, accepted /
+  declined, opponent played, result, cancelled, reminder, friend request / accepted).
+  The app calls `notify` with `{drain: true}` right after an action, and a `pg_cron` job
+  (`notify-drain`, every minute, via `pg_net`) wakes it as a safety net. `notify` claims
+  rows (`claim_notifications`, `for update skip locked`), builds the text from the facts
+  (`_shared/notificationContent.ts`) and sends through Expo. Every push carries a `url`
+  (`pushupcounter://battle/<id>` or `pushupcounter://friends`); taps route through React
+  Navigation linking, also on cold start. The cron only knows the `notify` URL after
+  `notify` has run once on that project (it registers itself with `register_notify_url`).
+* **App**: Start → **Battles** (Your move / Waiting on others / Results), New battle,
+  Battle detail (rules, standings, accept/decline, start attempt, share/turn off links,
+  cancel), Friends (search, requests, block), Friend (record, challenge), Invite (deep-link
+  target). Signing in is only needed for Battles; solo stays anonymous.
+* **One-phone testing on staging**: `supabase/staging/test_bot.sql` adds `@pushup_bot`,
+  which accepts friend requests and invites and plays its attempt within a minute;
+  `select testing.bot_challenge('<username>', 'timed', 60)` makes it challenge you.
+  Staging only; removal steps are in the file.
+* **Native change still needed (batch it into the next build)**: universal links need
+  `ios.associatedDomains: ["applinks:<domain>"]` in `app.config.ts` for both bundle ids
+  (`com.jackroseman.pushupcounter` and `.dev`), plus the domain serving
+  `/.well-known/apple-app-site-association` and a `/b/<token>` landing page. Then set
+  `invite_links.web_base_url`. No app code change is needed for that.
 
 ## 10. Risks
 

@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FaceMeshView } from '../../modules/pushup-sensors';
 import { Button } from '../components/ui';
 import { LiveDistanceChart } from '../components/charts';
 import { CalibrationPanel } from '../components/calibration';
 import { qualityLabel } from '../core';
-import { LIVE_WINDOW_MS, useSession } from '../session/useSession';
+import { BattleSessionOptions, LIVE_WINDOW_MS, useSession } from '../session/useSession';
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { colors } from '../theme';
@@ -14,14 +14,26 @@ export function SessionScreen({
   settings,
   onFinished,
   onCancel,
+  battle,
 }: {
   settings: Settings;
+  battle?: BattleSessionOptions;
   onFinished: (record: SessionRecord) => void;
   onCancel: () => void;
 }) {
-  const { state, finish, live, recalibrate } = useSession(settings);
+  const { state, finish, live, recalibrate } = useSession(settings, battle);
   const [liveView, setLiveView] = useState<'chart' | 'face'>('chart');
   const last = state.lastRep;
+  const done = useRef(false);
+  const end = async () => {
+    const record = await finish();
+    if (done.current) return;
+    done.current = true;
+    onFinished(record);
+  };
+  useEffect(() => {
+    if (state.autoEnd) end();
+  }, [state.autoEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (state.phase === 'unavailable') {
     return (
@@ -60,6 +72,11 @@ export function SessionScreen({
   return (
     <View style={styles.container}>
       <Text style={styles.status}>{state.status}</Text>
+      {battle ? (
+        <Text style={styles.battleClock} accessibilityLiveRegion="polite">
+          {battle.format === 'timed' ? state.battleClock || '' : state.battleClock || 'Max reps · ends after a pause'}
+        </Text>
+      ) : null}
 
       <View style={styles.center}>
         <Text style={styles.count} accessibilityLabel={`${state.count} pushups`}>
@@ -121,7 +138,7 @@ export function SessionScreen({
           {state.phase === 'active' && state.count === 0 ? (
             <Button title="Redo calibration" kind="secondary" onPress={recalibrate} />
           ) : null}
-          <Button title="End set" kind="danger" onPress={async () => onFinished(await finish())} />
+          <Button title={battle ? 'Finish attempt' : 'End set'} kind="danger" onPress={end} />
         </>
       )}
     </View>
@@ -140,6 +157,7 @@ function Indicator({ label, ok }: { label: string; ok: boolean }) {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
   status: { color: colors.muted, fontSize: 16, textAlign: 'center', marginTop: 12, minHeight: 44 },
+  battleClock: { color: colors.accent, fontSize: 28, fontWeight: '900', textAlign: 'center', fontVariant: ['tabular-nums'] },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   count: { color: colors.text, fontSize: 130, fontWeight: '900', fontVariant: ['tabular-nums'] },
   countLabel: { color: colors.muted, fontSize: 18, marginTop: -10, textTransform: 'uppercase', letterSpacing: 2 },

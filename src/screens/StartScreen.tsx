@@ -22,6 +22,7 @@ export function StartScreen({
   onStart,
   onHistory,
   onAccount,
+  onBattles,
 }: {
   settings: Settings;
   savedSets: number;
@@ -29,6 +30,7 @@ export function StartScreen({
   onStart: () => void;
   onHistory: () => void;
   onAccount: () => void;
+  onBattles: () => void;
 }) {
   const { configured } = useBackend();
   const depth = faceTrackingSupported();
@@ -62,6 +64,7 @@ export function StartScreen({
       </View>
 
       {depth ? <Button title="Start" onPress={onStart} /> : null}
+      {configured && depth ? <Button title="Battles" kind="secondary" onPress={onBattles} /> : null}
       <Button title="History" kind="secondary" onPress={onHistory} />
       {configured ? <Button title="Account" kind="secondary" onPress={onAccount} /> : null}
       <SignInCard savedSets={savedSets} />

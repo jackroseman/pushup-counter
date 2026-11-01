@@ -105,8 +105,9 @@ Three ways to invite:
      it.
    * Redeeming a link also creates the friendship (with a confirmation step), so a rematch
      is one tap.
-3. **Custom scheme fallback**: `pushupcounter://battle/<id>` for dev builds and old
-   installs.
+3. **Custom scheme fallback**: `pushupcounter://invite/<token>` and
+   `pushupcounter://battle/<id>`. Until a domain is chosen (and the associated-domains
+   entitlement ships in a native build), shared invite links use the custom scheme.
 
 What the invitee sees:
 
@@ -354,7 +355,8 @@ Live battles have an extra **sub-phase** inside `active`: *lobby* (`starts_at` n
 | result | everyone | "You won! 32 vs 28" |
 | friend request | addressee | "Bob wants to be friends" |
 
-All of these go through one `notify` Edge Function, triggered by database webhooks. Each
+All of these go through one `notify` Edge Function. Table triggers queue them in an outbox,
+and `notify` drains it (kicked by the app right after an action, plus a once-a-minute cron). Each
 push carries a `url` the app routes to. Pushes are batched per Expo's limits, and dead
 tokens are disabled when Expo returns `DeviceNotRegistered`.
 
@@ -369,11 +371,12 @@ tokens are disabled when Expo returns `DeviceNotRegistered`.
 4. ~~**Show the opponent's score before your async attempt?**~~ **Resolved:** yes, always
    shown (no toggle). See §3 and §4.
 5. **Group size**: async up to 8, live exactly 2 for v1. OK?
-6. **Friends' stats**: should friends see your totals/streaks, or only battle results?
+6. ~~**Friends' stats**~~ **Resolved:** friends see only battle results (`friends_visibility
+   = battle_results_only`).
 7. ~~**Re-scoring**~~ **Resolved:** results are locked when the battle ends and are never
    re-scored. See §1 and §7, and ARCHITECTURE §2 "Locked results".
-8. **Account for solo**: keep solo fully anonymous/offline (proposal), or nudge sign-in to
-   back up history?
-9. **Navigation**: adopt React Navigation in the same native batch (recommended), or keep
-   the hand-rolled router?
-10. **Domain** for invite links / universal links (see ARCHITECTURE §5).
+8. ~~**Account for solo**~~ **Resolved:** solo stays anonymous; sign-in is optional (backup)
+   and required only for Battles.
+9. ~~**Navigation**~~ **Resolved:** React Navigation (native stack), adopted in phase 2a.
+10. **Domain** for invite links / universal links (see ARCHITECTURE §5). Until then invite
+    links use `pushupcounter://invite/<token>`.

@@ -72,3 +72,17 @@ jobs:
       - name: Deploy Edge Functions
         if: steps.secrets.outputs.ready == 'true'
         run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+
+      # Wake `notify` once so it registers its URL with the database (public.register_notify_url).
+      # Until that happens the pg_cron safety net ('notify-drain') has no URL and does nothing.
+      # Harmless when already registered: it only sends notifications that are already queued.
+      - name: Register the notify function with pg_cron
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          code=$(curl -sS -o /tmp/notify.json -w '%{http_code}' -X POST \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/notify" \
+            -H 'Content-Type: application/json' -d '{"drain": true}' || echo 000)
+          echo "notify drain -> HTTP $code: $(cat /tmp/notify.json 2>/dev/null)"
+          if [ "$code" != "200" ]; then
+            echo "::warning::notify did not answer 200; the notify-drain cron job stays idle until the app first calls notify."
+          fi

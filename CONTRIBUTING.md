@@ -19,7 +19,7 @@ gh pr create --base dev --fill              # PR into dev; CI must be green to m
 
 | branch      | what it is                                   | deploys to (EAS)                                   |
 |-------------|----------------------------------------------|----------------------------------------------------|
-| `main`      | Released code. Protected: changes only by PR. | **preview** channel / `preview` builds ("Pushup Counter") |
+| `main`      | Released code. Protected: changes only by PR. | **production** channel / store builds on TestFlight ("Pushup Counter") |
 | `dev`       | Integration branch for the next release.      | **development** channel / dev client builds ("Pushup Dev") |
 | `feat/*`, `fix/*`, `chore/*`, `docs/*` | Short-lived work branches, cut from `dev`. | nothing (CI only) |
 | `hotfix/*`  | Urgent fix to released code, cut from `main`. | nothing until merged |
@@ -28,7 +28,7 @@ Flow:
 
 * **Features and fixes:** branch from `dev` and open a PR **into `dev`**.
 * **Releases:** open a PR **`dev` → `main`** (title e.g. `Release 1.2.0`). Merging it
-  ships to the preview app.
+  ships to TestFlight (OTA, or one store build if anything native changed).
 * **Hotfixes:** branch `hotfix/...` from `main` and PR into `main`. After it merges, merge
   `main` back into `dev` (PR `main` → `dev`) so `dev` doesn't regress.
 * Never force-push `main` or `dev`, and don't commit directly to them.
@@ -91,7 +91,7 @@ Deploys run **only after a merge** (a push to `dev` or `main`), never on PR even
 | file              | trigger        | target                                                  |
 |-------------------|----------------|---------------------------------------------------------|
 | `deploy-dev.yml`  | push to `dev`  | profile `development`, channel `development`, EAS env `development` |
-| `deploy.yml`      | push to `main` | profile `preview`, channel `preview`, EAS env `preview`  |
+| `deploy.yml`      | push to `main` | profile `production` (store build → TestFlight), channel `production`, EAS env `production` |
 
 Each workflow: tests → **fingerprint** (a hash of everything native) → is there already a
 build of that profile with this fingerprint?
@@ -182,8 +182,16 @@ switches the name/bundle id in `app.config.ts`. Without it you get the normal
 2. If any native change went in since the last release, check that `version` was bumped.
 3. `gh pr create --base main --head dev --title "Release x.y.z" --body "<changelog>"`.
 4. Wait for CI `checks` to pass, then merge (merge commit).
-5. The `Deploy preview` workflow runs. It publishes an OTA to `preview`, or starts a
-   new preview build if anything native changed. For a build, install it from the build page.
+5. The `Deploy production` workflow runs. It publishes an OTA to `production`, or, if
+   anything native changed, makes ONE store build and uploads it to TestFlight (testers
+   get it from the TestFlight app once Apple has processed it, about 10-30 min; external
+   testers need Beta App Review for the first build of a version).
+   If the upload step fails, retry it without a new build: `eas submit -p ios --id <build id>`.
+
+   One-time setup for the TestFlight upload: the app record in App Store Connect
+   (bundle id `com.jackroseman.pushupcounter`), its Apple ID in `eas.json` as
+   `submit.production.ios.ascAppId`, and an App Store Connect API key assigned to the app
+   in EAS (`eas credentials -p ios` → production → App Store Connect API key).
 6. Optional: tag the release, `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
 
 ## 9. Rolling back
@@ -191,7 +199,7 @@ switches the name/bundle id in `app.config.ts`. Without it you get the normal
 * **Bad OTA update:** republish the last good update to the channel:
 
   ```bash
-  eas update:list --branch preview                    # find the last good update group
+  eas update:list --branch production                    # find the last good update group
   eas update:republish --group <good-group-id>        # make it the newest update again
   # or
   eas update:rollback                                  # interactive; can also roll back to the embedded build

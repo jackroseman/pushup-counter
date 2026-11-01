@@ -1,4 +1,6 @@
-# Pushup Counter (Expo / React Native, iOS-first)
+# Rep Royale (Expo / React Native, iOS-first)
+
+Formerly "Pushup Counter". App Store / TestFlight name: **Rep Royale: Push-up Battles**.
 
 Put your iPhone face-up on the floor under your chest and do pushups. The app uses the
 **TrueDepth / Face ID camera (ARKit)** to measure how far your face is from the phone,
@@ -72,7 +74,7 @@ Build profiles (`eas.json`):
 |---------------|----------------------------------------------------------------|
 | `development` | Dev client (loads JS from `expo start`), internal distribution |
 | `preview`     | Standalone release build, internal distribution (ad-hoc)       |
-| `production`  | App Store / TestFlight build (`eas submit -p ios` afterwards)  |
+| `production`  | App Store / TestFlight build (uploaded with `eas submit -p ios`; CD does it automatically) |
 
 For a standalone build that doesn't need your computer running, use
 `eas build --profile preview --platform ios`.
@@ -282,7 +284,9 @@ linked to the Expo project under expo.dev → project → GitHub. Steps:
 4. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
    using the commit message as the update message. TestFlight installs get it on launch.
 5. **If none exists** (native change): ONE new iOS `production` store build, which the
-   `testflight` job uploads to App Store Connect / TestFlight. No ad hoc preview build is
+   `submit` job (EAS Submit, works on the free plan) uploads to App Store Connect / TestFlight
+   using the App Store Connect API key stored in EAS credentials and `ascAppId` in `eas.json`.
+   Retry a failed upload without rebuilding: `eas submit -p ios --id <build id>`. No ad hoc preview build is
    made any more (`eas build --profile preview` still works by hand).
 
 Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with

@@ -250,7 +250,7 @@ battles.
   * Phases 3–5 are JS-only and ship as OTA updates.
 * **TestFlight** (release 1.2.0): `deploy.yml` now targets the `production` profile
   (store distribution) and channel instead of `preview`. A native change makes one store
-  build and a `testflight` job uploads it; a JS-only change is an OTA on `production`.
+  build and a `submit` job (EAS Submit) uploads it; a JS-only change is an OTA on `production`.
   So a release costs at most one build, and the ad hoc `preview` build is manual only.
 * App Store Connect API key for submit: stored in EAS credentials (`eas credentials`), not
   in GitHub.

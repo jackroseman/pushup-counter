@@ -294,7 +294,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
         patch({
           phase: 'unavailable',
           status:
-            'Face tracking could not start. Allow camera access in Settings › Pushup Counter › Camera, then try again.',
+            'Face tracking could not start. Allow camera access for this app in Settings › Privacy & Security › Camera, then try again.',
         });
         return;
       }

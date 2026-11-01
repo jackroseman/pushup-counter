@@ -1,4 +1,4 @@
-# Contributing to Pushup Counter
+# Contributing to Rep Royale (formerly Pushup Counter)
 
 This guide covers how code gets from your editor to a phone: branches, commits, pull
 requests, CI checks, deploys (CD) and rollbacks. Read it before your first PR.
@@ -19,7 +19,7 @@ gh pr create --base dev --fill              # PR into dev; CI must be green to m
 
 | branch      | what it is                                   | deploys to (EAS)                                   |
 |-------------|----------------------------------------------|----------------------------------------------------|
-| `main`      | Released code. Protected: changes only by PR. | **production** channel / store builds on TestFlight ("Pushup Counter") |
+| `main`      | Released code. Protected: changes only by PR. | **production** channel / store builds on TestFlight ("Rep Royale") |
 | `dev`       | Integration branch for the next release.      | **development** channel / dev client builds ("Pushup Dev") |
 | `feat/*`, `fix/*`, `chore/*`, `docs/*` | Short-lived work branches, cut from `dev`. | nothing (CI only) |
 | `hotfix/*`  | Urgent fix to released code, cut from `main`. | nothing until merged |
@@ -174,7 +174,7 @@ preview app.
 
 `APP_VARIANT=development` (set by the `development` build profile and EAS environment)
 switches the name/bundle id in `app.config.ts`. Without it you get the normal
-"Pushup Counter" config.
+"Rep Royale" config.
 
 ## 8. Releasing (`dev` → `main`)
 
@@ -183,15 +183,29 @@ switches the name/bundle id in `app.config.ts`. Without it you get the normal
 3. `gh pr create --base main --head dev --title "Release x.y.z" --body "<changelog>"`.
 4. Wait for CI `checks` to pass, then merge (merge commit).
 5. The `Deploy production` workflow runs. It publishes an OTA to `production`, or, if
-   anything native changed, makes ONE store build and uploads it to TestFlight (testers
-   get it from the TestFlight app once Apple has processed it, about 10-30 min; external
-   testers need Beta App Review for the first build of a version).
-   If the upload step fails, retry it without a new build: `eas submit -p ios --id <build id>`.
+   anything native changed, makes ONE store build and its `submit` job (EAS Submit, free
+   plan) uploads it to App Store Connect. Testers get it from the TestFlight app once Apple
+   has processed it, about 10-30 min; external testers need Beta App Review for the first
+   build of a version. Adding the build to groups / "What to Test" notes is done in App
+   Store Connect → TestFlight (the workflow `testflight` job that automates this needs a
+   paid Expo plan).
+   If the upload step fails, retry it without a new build: `eas submit -p ios --id <build id>`
+   (find the id with `eas build:list -p ios --profile production`).
 
-   One-time setup for the TestFlight upload: the app record in App Store Connect
-   (bundle id `com.jackroseman.pushupcounter`), its Apple ID in `eas.json` as
-   `submit.production.ios.ascAppId`, and an App Store Connect API key assigned to the app
-   in EAS (`eas credentials -p ios` → production → App Store Connect API key).
+   One-time setup for the upload (done):
+   * App Store Connect app record **"Rep Royale: Push-up Battles"**, bundle id
+     `com.jackroseman.pushupcounter`, Apple ID `6829467517`, set in `eas.json` as
+     `submit.production.ios.ascAppId`.
+   * An App Store Connect **team API key** (App Manager role) stored in EAS credentials and
+     assigned to this project for EAS Submit (`eas credentials -p ios` → production →
+     App Store Connect: Manage your API Key). `eas submit` and the workflow use it
+     automatically; no Apple ID login or 2FA is needed. **Never commit the `.p8` file**
+     or put key paths in `eas.json`. To rotate: revoke the key in App Store Connect → Users
+     and Access → Integrations, create a new one, and add/assign it with the same menu.
+   * Name: the App Store record is "Rep Royale: Push-up Battles" (plain "Rep Royale" was
+     taken); the home-screen name is `expo.name` in `app.json` ("Rep Royale"). The slug,
+     URL scheme (`pushupcounter://`) and bundle ids keep the old name on purpose: changing
+     them would break the EAS project link, invite links and the App Store record.
 6. Optional: tag the release, `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
 
 ## 9. Rolling back

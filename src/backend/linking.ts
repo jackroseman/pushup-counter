@@ -12,6 +12,7 @@ export type AppLink =
   | { type: 'progress' }
   | { type: 'battles' }
   | { type: 'friends' }
+  | { type: 'league' }
   | { type: 'home' };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +41,7 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
   if (head === 'progress' && parts.length === 1) return { type: 'progress' };
   if (head === 'battles' && parts.length === 1) return { type: 'battles' };
   if (head === 'friends' && parts.length === 1) return { type: 'friends' };
+  if (head === 'league' && parts.length === 1) return { type: 'league' };
   return null;
 }
 

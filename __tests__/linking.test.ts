@@ -10,6 +10,7 @@ describe('deep links', () => {
     expect(parseAppLink(`pushupcounter://invite/${TOKEN}?src=push`)).toEqual({ type: 'invite', token: TOKEN });
     expect(parseAppLink('pushupcounter://history')).toEqual({ type: 'history' });
     expect(parseAppLink('pushupcounter://progress')).toEqual({ type: 'progress' });
+    expect(parseAppLink('pushupcounter://league')).toEqual({ type: 'league' });
     expect(parseAppLink('pushupcounter://')).toEqual({ type: 'home' });
     expect(parseAppLink('pushupcounter://today')).toEqual({ type: 'home' });
   });
@@ -32,6 +33,7 @@ describe('battle links and push taps', () => {
     expect(parseAppLink('pushupcounter://battles')).toEqual({ type: 'battles' });
     expect(parseAppLink('pushupcounter://friends')).toEqual({ type: 'friends' });
     expect(parseAppLink('pushupcounter://friends/extra')).toBeNull();
+    expect(parseAppLink('pushupcounter://league/extra')).toBeNull();
   });
 
   it('takes the url from a push only when the app understands it', () => {

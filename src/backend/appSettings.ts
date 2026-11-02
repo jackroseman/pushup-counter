@@ -1,3 +1,5 @@
+import { DEFAULT_LEAGUE_WEIGHTS, parseLeagueWeights, type LeagueWeights } from '../progress/league';
+
 /**
  * Server-tunable product defaults. The source of truth is the `public.app_settings` table
  * (supabase/migrations/*_battles_initial.sql); these values mirror its seed and are used
@@ -9,7 +11,7 @@ export interface FormScoreWeights {
   tempo: number;
 }
 
-export type FriendsVisibility = 'battle_results_only';
+export type FriendsVisibility = 'battle_results_only' | 'league_and_challenge_results';
 export type SoloAccountMode = 'anonymous_optional_sign_in';
 
 export interface SignInPromptSettings {
@@ -55,6 +57,9 @@ export interface AppSettings {
   asyncMaxParticipants: number;
   liveMaxParticipants: number;
   friendsVisibility: FriendsVisibility;
+  /** Seconds after a recorded week ends during which a set can still join that week's league. */
+  uploadGraceS: number;
+  leagueWeights: LeagueWeights;
   soloAccountMode: SoloAccountMode;
   signInPrompt: SignInPromptSettings;
   inviteLinks: InviteLinkSettings;
@@ -66,7 +71,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   formScoreWeights: { depth: 0.5, consistency: 0.3, tempo: 0.2 },
   asyncMaxParticipants: 8,
   liveMaxParticipants: 2,
-  friendsVisibility: 'battle_results_only',
+  friendsVisibility: 'league_and_challenge_results',
+  uploadGraceS: 900,
+  leagueWeights: DEFAULT_LEAGUE_WEIGHTS,
   soloAccountMode: 'anonymous_optional_sign_in',
   signInPrompt: { enabled: true, afterSets: 3, snoozeDays: 14 },
   inviteLinks: { scheme: 'pushupcounter', webBaseUrl: null },
@@ -166,7 +173,15 @@ export function parseAppSettings(rows: readonly AppSettingRow[] | null | undefin
         s.liveMaxParticipants = int(value, 2, 50) ?? s.liveMaxParticipants;
         break;
       case 'friends_visibility':
-        if (value === 'battle_results_only') s.friendsVisibility = value;
+        // The old literal stays valid so a database that has not run this migration still parses.
+        // Anything else, including a future value, keeps the bundled default.
+        if (value === 'battle_results_only' || value === 'league_and_challenge_results') s.friendsVisibility = value;
+        break;
+      case 'upload_grace_s':
+        s.uploadGraceS = int(value, 0, 86400) ?? s.uploadGraceS;
+        break;
+      case 'league_improvement_weights':
+        s.leagueWeights = parseLeagueWeights(value);
         break;
       case 'solo_account_mode':
         if (value === 'anonymous_optional_sign_in') s.soloAccountMode = value;

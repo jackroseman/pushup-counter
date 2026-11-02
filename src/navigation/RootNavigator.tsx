@@ -7,6 +7,7 @@ import * as Notifications from 'expo-notifications';
 
 import { TodayScreen } from '../screens/TodayScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
+import { LeagueScreen } from '../screens/LeagueScreen';
 import { GoalSetupScreen } from '../screens/GoalSetupScreen';
 import { SessionScreen } from '../screens/SessionScreen';
 import { SummaryScreen } from '../screens/SummaryScreen';
@@ -33,6 +34,7 @@ import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
 import { enrollGoal, fetchMyProgress } from '../backend/progressClient';
+import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../backend/leagueClient';
 import { supabase } from '../backend/supabase';
 import {
   GoalEnrollment,
@@ -65,6 +67,7 @@ import { HOWTO_KEY } from '../progress/howto';
 export type RootStackParamList = {
   Today: undefined;
   Progress: undefined;
+  League: undefined;
   GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
@@ -102,6 +105,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       },
       History: 'history',
       Progress: 'progress',
+      League: 'league',
       Account: 'account',
       Battles: 'battles',
       Friends: 'friends',
@@ -201,10 +205,79 @@ function TodayRoute({ navigation }: Props<'Today'>) {
       onStart={() => navigation.navigate('Session')}
       onGoal={() => navigation.navigate('GoalSetup')}
       onProgress={() => navigation.navigate('Progress')}
+      onLeague={() => navigation.navigate('League')}
       onAccount={() => navigation.navigate('Account')}
       onBattles={() => navigation.navigate('Battles')}
       onOpenHowTo={openHowTo}
       onCloseHowTo={closeHowTo}
+    />
+  );
+}
+
+function LeagueRoute({ navigation }: Props<'League'>) {
+  const { configured, session } = useBackend();
+  const { profile } = useIdentity();
+  const userId = session?.user.id ?? null;
+  const askedFor = useRef<string | null>(null);
+  const userRef = useRef(userId);
+  userRef.current = userId;
+  const [board, setBoard] = useState<LeagueBoard | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (userId && profile === null && askedFor.current !== userId && navigation.isFocused()) {
+      askedFor.current = userId;
+      navigation.navigate('ProfileSetup');
+    }
+  }, [userId, profile, navigation]);
+
+  useEffect(() => {
+    let alive = true;
+    setBoard(null);
+    setBanner(null);
+    if (!userId) return undefined;
+    loadLeagueCache(AsyncStorage, userId).then((cached) => {
+      if (alive && cached) setBoard((current) => current ?? cached);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  const reload = useCallback(() => {
+    if (!supabase || !userId || !profile) return;
+    const requested = userId;
+    fetchMyLeague(supabase)
+      .then((doc) => {
+        if (userRef.current !== requested) return;
+        setBoard(doc);
+        setBanner(null);
+        saveLeagueCache(AsyncStorage, userId, doc).catch(() => {});
+      })
+      .catch(() => {
+        if (userRef.current === requested) setBanner(REFRESH_FAILED);
+      });
+  }, [userId, profile]);
+
+  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
+
+  return (
+    <LeagueScreen
+      configured={configured}
+      signedIn={!!session}
+      username={profile === undefined ? 'loading' : profile === null ? 'needed' : 'ready'}
+      board={board}
+      banner={banner}
+      meId={userId}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
+      onAddFriend={() => navigation.navigate('Friends')}
+      onOpenFriend={(row) => {
+        if (!userId || row.userId === userId) return;
+        navigation.navigate('Friend', {
+          friend: { userId: row.userId, username: row.username, displayName: row.displayName, relation: 'friend' },
+        });
+      }}
+      onProfile={() => navigation.navigate('ProfileSetup')}
     />
   );
 }
@@ -633,6 +706,7 @@ export function RootNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
           <Stack.Screen name="Today" component={TodayRoute} />
           <Stack.Screen name="Progress" component={ProgressRoute} />
+          <Stack.Screen name="League" component={LeagueRoute} />
           <Stack.Screen name="GoalSetup" component={GoalRoute} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />

@@ -457,3 +457,128 @@ Object.assign(checks, {
     ok(d.program.status === 'complete' && d.program.detail === 'Complete' && d.program.name === 'First 20 in a row', 'complete ' + JSON.stringify(d.program));
   },
 });
+
+// ---- Slice 4: the weekly league. Aggregates are computed at call time. Crowns are last week. ----
+const LA = 'd1d1d1d1-d1d1-41d1-81d1-d1d1d1d1d1d1';
+const LB = 'd2d2d2d2-d2d2-42d2-82d2-d2d2d2d2d2d2';
+const LC = 'd3d3d3d3-d3d3-43d3-83d3-d3d3d3d3d3d3';
+const LX = 'd4d4d4d4-d4d4-44d4-84d4-d4d4d4d4d4d4';
+
+function utcStamp(weeksAgo, isoWeekday) {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 15, 0, 0));
+  const iso = today.getUTCDay() === 0 ? 7 : today.getUTCDay();
+  const t = new Date(today);
+  t.setUTCDate(today.getUTCDate() - (iso - 1) - weeksAgo * 7 + (isoWeekday - 1));
+  return t.getTime();
+}
+function todayIso() {
+  const day = new Date().getUTCDay();
+  return day === 0 ? 7 : day;
+}
+function leagueSet(user, id, n, weeksAgo, isoWeekday, bottoms = [0.15], offsetMs = 0) {
+  const payload = { ...rec(id, n, 1500, bottoms, { start: utcStamp(weeksAgo, isoWeekday) + offsetMs }), timeZone: 'UTC' };
+  return `${as(user)} select submit_set(${q(payload)}) is not null; reset role;`;
+}
+const leagueDoc = (r) => {
+  const row = r.map((set) => set[0]).reverse().find((x) => x && x.my_league != null);
+  const raw = row.my_league;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+};
+const leagueName = (rows, username) => rows.find((row) => row.username === username);
+const monday = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay() === 1;
+
+steps.push(
+  ['league: settings publish the grace, the weights, and the visibility value', `select key, value from app_settings where key in ('upload_grace_s', 'league_improvement_weights', 'friends_visibility') order by key;`],
+  ['league: anon cannot call my_league (expect ERR)', `set role anon; select my_league(); reset role;`],
+  ['league: a user without a username cannot call it (expect ERR)', `insert into auth.users values ('${LX}'); ${as(LX)} select my_league(); reset role;`],
+  ['league: one person has no crown', `insert into auth.users values ('${LA}'),('${LB}'),('${LC}'); ${as(LA)} insert into profiles(id, username, time_zone) values ('${LA}', 'leaguea', 'UTC'); select my_league() as my_league; reset role;`],
+  ['league: a zero tie shares the crown and a pending friend stays off', `${as(LB)} insert into profiles(id, username, time_zone) values ('${LB}', 'leagueb', 'UTC'); reset role; ${as(LC)} insert into profiles(id, username, time_zone) values ('${LC}', 'leaguec', 'UTC'); reset role; ${as(LA)} select send_friend_request('leagueb'); reset role; ${as(LB)} select respond_friend_request('${LA}', true); reset role; ${as(LA)} select send_friend_request('leaguec'); reset role; ${as(LB)} select count(*)::int as n from sets where user_id='${LA}' and battle_id is null; reset role; ${as(LA)} select my_league() as my_league; reset role;`],
+  ['league: total and improvement crown different people', `
+    insert into goal_enrollments (user_id, custom_daily_reps, started_on, recorded_time_zone)
+    values ('${LA}', 10, (now() at time zone 'UTC')::date - 100, 'UTC');
+    insert into goal_enrollments (user_id, program_id, started_on, recorded_time_zone)
+    values ('${LB}', 'first_20', (now() at time zone 'UTC')::date - 100, 'UTC');
+    ${leagueSet(LA, 'lg-a-w3', 10, 3, 1)}
+    ${leagueSet(LA, 'lg-a-w2', 20, 2, 1)}
+    ${leagueSet(LA, 'lg-a-w1a', 100, 1, 1)}
+    ${leagueSet(LA, 'lg-a-w1b', 100, 1, 1, [0.15], 200000)}
+    ${leagueSet(LA, 'lg-a-now', 50, 0, todayIso())}
+    ${leagueSet(LA, 'lg-a-late', 10, 0, todayIso(), [0.15], 200000)}
+    ${leagueSet(LA, 'lg-a-shallow', 5, 0, todayIso(), [0.4], 400000)}
+    ${leagueSet(LB, 'lg-b-w3', 80, 3, 1)}
+    ${leagueSet(LB, 'lg-b-w2', 80, 2, 1)}
+    ${[1, 2, 3, 4, 5].map((day) => leagueSet(LB, `lg-b-w1-${day}`, 25, 1, day)).join('\n')}
+    ${leagueSet(LB, 'lg-b-now', 80, 0, todayIso())}
+    update sets set received_at = started_at + interval '1 minute'
+     where client_set_id like 'lg-%' and client_set_id <> 'lg-a-late';
+    update sets set received_at = (
+      (((started_at at time zone recorded_time_zone)::date
+        - (extract(isodow from (started_at at time zone recorded_time_zone)::date)::int - 1) + 7)::timestamp
+        at time zone recorded_time_zone) + interval '1 hour')
+     where client_set_id = 'lg-a-late';
+    ${as(LA)} select (my_progress()->>'lifetimeReps')::int as life, my_league() as my_league; reset role;
+  `],
+  ['league: removing a friend drops them and the crown', `${as(LA)} select remove_friend('${LB}'); select my_league() as my_league; reset role;`],
+);
+
+Object.assign(checks, {
+  'league: settings publish the grace, the weights, and the visibility value': (r) => {
+    const decode = (value) => {
+      if (typeof value !== 'string') return value;
+      try { return JSON.parse(value); } catch { return value; }
+    };
+    const rows = Object.fromEntries(r[0].map((row) => [row.key, decode(row.value)]));
+    ok(rows.friends_visibility === 'league_and_challenge_results', 'visibility ' + JSON.stringify(rows.friends_visibility));
+    ok(Number(rows.upload_grace_s) === 900, 'grace ' + JSON.stringify(rows.upload_grace_s));
+    ok(Number(rows.league_improvement_weights.per_goal_day) === 20 && Number(rows.league_improvement_weights.baseline_min_weeks) === 3, 'weights');
+  },
+  'league: one person has no crown': (r) => {
+    const doc = leagueDoc(r);
+    ok(monday(doc.weekStart) && doc.timeZone === 'UTC', 'week ' + JSON.stringify({ start: doc.weekStart, zone: doc.timeZone }));
+    const end = new Date(`${doc.weekStart}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 7);
+    ok(doc.weekEnd === end.toISOString().slice(0, 10), 'end ' + doc.weekEnd);
+    ok(doc.total.length === 1 && doc.improvement.length === 1, 'rows');
+    ok(doc.total[0].crownedLastWeek === false && doc.improvement[0].crownedLastWeek === false, 'crown');
+    ok(doc.improvement[0].baselineWeeks === 0 && doc.improvement[0].usual == null, 'baseline ' + JSON.stringify(doc.improvement[0]));
+    ok(!JSON.stringify(doc).includes('clientSetId'), 'set leak');
+  },
+  'league: a zero tie shares the crown and a pending friend stays off': (r) => {
+    const leak = r.map((set) => set[0]).find((row) => row && Object.prototype.hasOwnProperty.call(row, 'n'));
+    ok(leak && Number(leak.n) === 0, 'solo sets leaked ' + JSON.stringify(leak));
+    const doc = leagueDoc(r);
+    ok(doc.total.length === 2 && doc.improvement.length === 2, 'board ' + doc.total.length);
+    ok(doc.total.every((row) => row.crownedLastWeek && row.reps === 0), 'total crown ' + JSON.stringify(doc.total));
+    ok(doc.improvement.every((row) => row.crownedLastWeek && row.points === 0), 'imp crown');
+    ok(!JSON.stringify(doc).includes('leaguec'), 'pending ' + JSON.stringify(doc.total));
+  },
+  'league: total and improvement crown different people': (r) => {
+    const row = r.map((set) => set[0]).reverse().find((x) => x && x.my_league != null);
+    ok(Number(row.life) === 290, 'history kept the late set ' + row.life);
+    const doc = leagueDoc(r);
+    const totalA = leagueName(doc.total, 'leaguea');
+    const totalB = leagueName(doc.total, 'leagueb');
+    const impA = leagueName(doc.improvement, 'leaguea');
+    const impB = leagueName(doc.improvement, 'leagueb');
+    const sunday = new Date().getUTCDay() === 0;
+    const hitB = sunday ? 0 : 1;
+    ok(Number(totalA.reps) === 50 && Number(totalB.reps) === 80, 'reps ' + JSON.stringify({ a: totalA.reps, b: totalB.reps }));
+    ok(Number(totalB.rank) === 1 && Number(totalA.rank) === 2, 'total rank');
+    ok(totalA.crownedLastWeek === true && totalB.crownedLastWeek === false, 'total crown follows last week');
+    ok(Number(impA.goalDaysScheduled) === 7 && Number(impB.goalDaysScheduled) === 6, 'scheduled ' + JSON.stringify({ a: impA.goalDaysScheduled, b: impB.goalDaysScheduled }));
+    ok(Number(impA.goalDaysHit) === 1 && Number(impB.goalDaysHit) === hitB, 'hit ' + JSON.stringify({ a: impA.goalDaysHit, b: impB.goalDaysHit, sunday }));
+    ok(Number(impA.usual) === 20 && Number(impB.usual) === 80, 'usual ' + JSON.stringify({ a: impA.usual, b: impB.usual }));
+    ok(Number(impA.baselineWeeks) === 3 && Number(impB.baselineWeeks) === 3, 'baseline');
+    ok(Number(impA.points) === 50 && Number(impB.points) === hitB * 20, 'points ' + JSON.stringify({ a: impA.points, b: impB.points }));
+    ok(Number(impA.rank) === 1 && Number(impB.rank) === 2, 'imp rank');
+    ok(impB.crownedLastWeek === true && impA.crownedLastWeek === false, 'imp crown follows last week');
+    ok(!JSON.stringify(doc).includes('lg-'), 'no set ids');
+  },
+  'league: removing a friend drops them and the crown': (r) => {
+    const doc = leagueDoc(r);
+    ok(doc.total.length === 1 && doc.total[0].username === 'leaguea', 'left ' + JSON.stringify(doc.total));
+    ok(doc.total[0].crownedLastWeek === false && doc.improvement[0].crownedLastWeek === false, 'crown gone');
+    ok(!JSON.stringify(doc).includes('leagueb'), 'still listed');
+  },
+});

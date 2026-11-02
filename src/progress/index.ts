@@ -15,6 +15,23 @@ export {
   lockedBadgeText,
 } from './progress';
 export type { Badge, DayBucket, LifetimePoint, PeriodBucket, ProgramRow, ProgressModel, ShelfRecord } from './progress';
+export {
+  CROWN_CAPTION,
+  DEFAULT_LEAGUE_WEIGHTS,
+  FRIEND_WEEK_SUBTITLE,
+  FRIENDS_LEAGUE_COPY,
+  LEAGUE_ABOUT,
+  NO_FRIENDS,
+  WEEK_LINE,
+  formatLeagueNumber,
+  friendWeekLine,
+  improvementDetail,
+  leaguePoints,
+  leagueUsual,
+  parseLeagueWeights,
+  rankLeague,
+} from './league';
+export type { LeagueWeights } from './league';
 export { buildToday, celebrate, contributionFor, contributionLine, formatUsual, presentToday, streaks, travelLine } from './today';
 export type { Celebration, TodayModel } from './today';
 export { countedRepList, countsForStreak, PERSONAL_BACKFILL_MS, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';

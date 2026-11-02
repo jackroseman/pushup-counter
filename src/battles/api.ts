@@ -34,11 +34,15 @@ export const api = {
   createBattle: (
     c: SupabaseClient,
     p: {
-      kind: 'best_set' | 'total';
+      kind: 'best_set' | 'total' | 'streak' | 'team';
       metric?: string;
       durationS?: number;
       deadlineHours?: number;
       window?: 'day' | 'week' | 'month' | 'custom';
+      customStartsAt?: string;
+      customEndsAt?: string;
+      streakDays?: number;
+      targetReps?: number;
       friendIds: string[];
       inviteLink: boolean;
     },

@@ -75,7 +75,15 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
-  GoalSetup: undefined;
+  GoalSetup:
+    | {
+        /** After a save, open New challenge. Otherwise return to the screen underneath. */
+        next?: 'new';
+        offer?: ChallengeOffer;
+        fromSet?: SessionRecord;
+        friendIds?: string[];
+      }
+    | undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
   History: undefined;
@@ -172,7 +180,7 @@ interface AppState {
   savedSets: number;
   refreshSavedSets: () => void;
   enrollments: GoalEnrollment[];
-  saveChoice: (choice: Parameters<typeof saveEnrollment>[1]) => void;
+  saveChoice: (choice: Parameters<typeof saveEnrollment>[1]) => Promise<void>;
   remote: RemoteProgress;
   lateIds: ReadonlySet<string>;
   refreshRemote: () => void;
@@ -367,8 +375,13 @@ function BattlesRoute({ navigation }: TabProps<'Challenges'>) {
   );
 }
 
+function openGoal(enrollments: { endedOn: string | null }[]): boolean {
+  return enrollments.some((row) => row.endedOn === null);
+}
+
 function BattleRoute({ navigation, route }: Props<'Battle'>) {
   const { appSettings } = useBackend();
+  const { enrollments } = useAppState();
   const d = appSettings.asyncBattleDefaults;
   return (
     <BattleScreen
@@ -377,6 +390,8 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
       share={route.params.share}
       justPlayed={route.params.justPlayed}
       promptAttempt={route.params.promptAttempt}
+      hasGoal={openGoal(enrollments)}
+      onNeedGoal={() => navigation.navigate('GoalSetup')}
       onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
       onPlay={(b) =>
         navigation.navigate('Session', {
@@ -394,12 +409,15 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
 }
 
 function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
+  const { enrollments } = useAppState();
   return (
     <NewBattleScreen
       {...gate(navigation)}
       friendIds={route.params?.friendIds}
       fromSet={route.params?.fromSet}
       offer={route.params?.offer}
+      hasGoal={openGoal(enrollments)}
+      onNeedGoal={() => navigation.navigate('GoalSetup')}
       onBack={() => navigation.goBack()}
       onFriends={() => navigation.navigate('Friends')}
       onCreated={(challengeId, share, extras) =>
@@ -432,10 +450,13 @@ function FriendRoute({ navigation, route }: Props<'Friend'>) {
 }
 
 function InviteRoute({ navigation, route }: Props<'Invite'>) {
+  const { enrollments } = useAppState();
   return (
     <InviteScreen
       {...gate(navigation)}
       token={route.params.token}
+      hasGoal={openGoal(enrollments)}
+      onNeedGoal={() => navigation.navigate('GoalSetup')}
       onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Today' }))}
       onJoined={(challengeId) => navigation.replace('Battle', { challengeId })}
     />
@@ -488,7 +509,17 @@ function SummaryRoute({ navigation, route }: Props<'Summary'>) {
       syncedLate={lateIds.has(record.id)}
       progress={fromHistory ? null : progress}
       offers={offers}
-      onPickChallenge={offers ? (offer) => navigation.navigate('NewBattle', { fromSet: record, offer }) : undefined}
+      onPickChallenge={
+        offers
+          ? (offer) => {
+              if (offer.kind === 'streak' && !openGoal(enrollments)) {
+                navigation.navigate('GoalSetup', { next: 'new', offer, fromSet: record });
+              } else {
+                navigation.navigate('NewBattle', { fromSet: record, offer });
+              }
+            }
+          : undefined
+      }
       onSignIn={fromSession && !session ? () => navigation.navigate('Account') : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
     />
@@ -513,7 +544,7 @@ function AccountRoute({ navigation }: Props<'Account'>) {
   );
 }
 
-function GoalRoute({ navigation }: Props<'GoalSetup'>) {
+function GoalRoute({ navigation, route }: Props<'GoalSetup'>) {
   const { enrollments, saveChoice } = useAppState();
   const zone = deviceTimeZone();
   return (
@@ -521,8 +552,17 @@ function GoalRoute({ navigation }: Props<'GoalSetup'>) {
       enrollments={enrollments}
       today={localDate(Date.now(), zone)}
       onSave={(choice) => {
-        saveChoice(choice);
-        navigation.goBack();
+        void saveChoice(choice).finally(() => {
+          if (route.params?.next === 'new') {
+            navigation.replace('NewBattle', {
+              offer: route.params.offer,
+              fromSet: route.params.fromSet,
+              friendIds: route.params.friendIds,
+            });
+          } else {
+            navigation.goBack();
+          }
+        });
       }}
       onClose={() => navigation.goBack()}
     />
@@ -675,11 +715,11 @@ export function RootNavigator() {
     }
   }, [session?.user.id, refreshRemote]);
 
-  const saveChoice = useCallback((choice: Parameters<typeof saveEnrollment>[1]) => {
+  const saveChoice = useCallback((choice: Parameters<typeof saveEnrollment>[1]): Promise<void> => {
     const zone = deviceTimeZone();
     const today = localDate(Date.now(), zone);
     const result = saveEnrollment(enrollmentsRef.current, choice, today, zone, `goal-${today}-${Date.now()}`);
-    if (!result.ok) return;
+    if (!result.ok) return Promise.resolve();
     goalEpoch.current += 1;
     setEnrollments(result.enrollments);
     saveGoal(AsyncStorage, result.enrollments).catch(() => {});
@@ -691,13 +731,13 @@ export function RootNavigator() {
         goalSyncRef.current = next;
         AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(next)).catch(() => {});
       }
-      return;
+      return Promise.resolve();
     }
     const queued = queueGoalEdit(userId, choice, openServerEnrollment(remoteRef.current.doc));
     goalSyncRef.current = queued;
     AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(queued)).catch(() => {});
     const client = supabase;
-    enrollGoal(client, choice)
+    return enrollGoal(client, choice)
       .then(async () => {
         const doc = await fetchMyProgress(client);
         const settled = goalSyncSettled(userId, openServerEnrollment(doc));

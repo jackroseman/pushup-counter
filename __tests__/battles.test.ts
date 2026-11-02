@@ -2,6 +2,8 @@ import {
   Battle,
   battleSubtitle,
   battleTitle,
+  streakDayCount,
+  streakStandingLine,
   canPlay,
   canRespond,
   creatorAttemptCue,
@@ -91,6 +93,21 @@ describe('battle model', () => {
     expect(battleTitle({ kind: 'total', windowUnit: 'week', durationS: null })).toBe('Most reps this week');
     expect(battleTitle({ kind: 'best_set', durationS: 60 })).toBe('Best set · 60 s');
     expect(battleTitle({ kind: 'total', windowUnit: 'custom', durationS: null })).toBe('Most reps');
+    expect(battleTitle({ kind: 'streak', durationS: null, startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-16T00:00:00Z' })).toBe('Streak · 14 days');
+    expect(battleTitle({ kind: 'team', durationS: null, targetReps: 500 })).toBe('Team · 500');
+    expect(streakDayCount({ startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-09T00:00:00Z' })).toBe(7);
+    expect(canPlay(battle({ kind: 'streak', metric: null, attemptsAllowed: null }), NOW)).toBe(false);
+    expect(canPlay(battle({ kind: 'team', metric: null, attemptsAllowed: null, targetReps: 500 }), NOW)).toBe(false);
+    expect(streakStandingLine({ status: 'accepted', streakFloorReps: 30, eliminatedOn: null })).toBe('Still in · 30 a day');
+    expect(streakStandingLine({ status: 'accepted', eliminatedOn: '2026-11-04' })).toBe('Out · 2026-11-04');
+    const teamWin = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
+      person('me', { isMe: true, isWinner: true, rank: null, validReps: 0 }),
+    ]);
+    expect(battleSubtitle(teamWin, NOW)).toBe('You won');
+    const teamMiss = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
+      person('me', { isMe: true, isWinner: false, rank: null, validReps: 12 }),
+    ]);
+    expect(battleSubtitle(teamMiss, NOW)).toBe('Missed the goal');
   });
 
   it('only the creator may go first while a battle is pending', () => {
@@ -172,6 +189,7 @@ describe('battle model', () => {
   });
 
   it('turns server errors into plain messages', () => {
+    expect(friendlyError('a streak face-off needs a goal')).toBe('Set a daily goal first.');
     expect(friendlyError('not friends')).toMatch(/only challenge friends/);
     expect(friendlyError('set is not recent enough to use')).toMatch(/too old/);
     expect(friendlyError('timed battle duration must match the set timer')).toMatch(/same timer/);

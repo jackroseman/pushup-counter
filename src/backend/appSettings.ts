@@ -52,6 +52,20 @@ export interface NotificationSettings {
   reminderAtHalfTime: boolean;
 }
 
+export interface StreakLengths {
+  optionsDays: number[];
+  minDays: number;
+  maxDays: number;
+}
+
+export interface TeamTargets {
+  options: number[];
+  min: number;
+  max: number;
+  defaultTarget: number;
+  defaultWindow: 'day' | 'week' | 'month';
+}
+
 export interface AppSettings {
   formScoreWeights: FormScoreWeights;
   asyncMaxParticipants: number;
@@ -65,6 +79,10 @@ export interface AppSettings {
   inviteLinks: InviteLinkSettings;
   asyncBattleDefaults: AsyncBattleDefaults;
   notifications: NotificationSettings;
+  /** Longest custom Most-reps or Team window, in days. */
+  challengeCustomMaxDays: number;
+  streakLengths: StreakLengths;
+  teamTargets: TeamTargets;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -92,6 +110,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     multiDayWindowOptionsDays: [1, 7, 14],
   },
   notifications: { reminderHoursBefore: 2, reminderAtHalfTime: true },
+  challengeCustomMaxDays: 92,
+  streakLengths: { optionsDays: [7, 14, 30], minDays: 3, maxDays: 92 },
+  teamTargets: { options: [200, 500, 1000], min: 10, max: 100000, defaultTarget: 500, defaultWindow: 'week' },
 };
 
 export interface AppSettingRow {
@@ -158,6 +179,30 @@ export function parseFormScoreWeights(v: unknown, fallback = DEFAULT_APP_SETTING
   return { depth: d / sum, consistency: c / sum, tempo: t / sum };
 }
 
+export function parseStreakLengths(v: unknown, fallback = DEFAULT_APP_SETTINGS.streakLengths): StreakLengths {
+  if (!isObj(v)) return fallback;
+  const minDays = int(v.min_days, 1, 366) ?? fallback.minDays;
+  const maxDays = int(v.max_days, minDays, 366) ?? fallback.maxDays;
+  const optionsDays = (intList(v.options_days, minDays, maxDays) ?? fallback.optionsDays).filter((d) => d >= minDays && d <= maxDays);
+  return { optionsDays: optionsDays.length ? optionsDays : [minDays], minDays, maxDays };
+}
+
+export function parseTeamTargets(v: unknown, fallback = DEFAULT_APP_SETTINGS.teamTargets): TeamTargets {
+  if (!isObj(v)) return fallback;
+  const min = int(v.min, 1, 1_000_000) ?? fallback.min;
+  const max = int(v.max, min, 1_000_000) ?? fallback.max;
+  const options = (intList(v.options, min, max) ?? fallback.options).filter((n) => n >= min && n <= max);
+  const defaultTarget = int(v.default, min, max) ?? fallback.defaultTarget;
+  const defaultWindow = v.default_window === 'day' || v.default_window === 'week' || v.default_window === 'month' ? v.default_window : fallback.defaultWindow;
+  return {
+    options: options.length ? options : [Math.min(Math.max(defaultTarget, min), max)],
+    min,
+    max,
+    defaultTarget: Math.min(Math.max(defaultTarget, min), max),
+    defaultWindow,
+  };
+}
+
 /** Builds AppSettings from `app_settings` rows. Unknown keys are ignored; bad values keep the default. */
 export function parseAppSettings(rows: readonly AppSettingRow[] | null | undefined): AppSettings {
   const s: AppSettings = JSON.parse(JSON.stringify(DEFAULT_APP_SETTINGS));
@@ -217,6 +262,15 @@ export function parseAppSettings(rows: readonly AppSettingRow[] | null | undefin
               typeof value.reminder_at_half_time === 'boolean' ? value.reminder_at_half_time : s.notifications.reminderAtHalfTime,
           };
         }
+        break;
+      case 'challenge_custom_max_days':
+        s.challengeCustomMaxDays = int(value, 1, 366) ?? s.challengeCustomMaxDays;
+        break;
+      case 'streak_lengths':
+        s.streakLengths = parseStreakLengths(value);
+        break;
+      case 'team_targets':
+        s.teamTargets = parseTeamTargets(value);
         break;
     }
   }

@@ -23,8 +23,10 @@ export function InviteScreen(props: {
   onJoined: (battleId: string) => void;
   onAccount: () => void;
   onProfile: () => void;
+  hasGoal: boolean;
+  onNeedGoal: () => void;
 }) {
-  const { token, onJoined } = props;
+  const { token, onJoined, hasGoal, onNeedGoal } = props;
   const { session } = useBackend();
   const { profile } = useIdentity();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -90,7 +92,14 @@ export function InviteScreen(props: {
                   <Switch value={addFriend} onValueChange={setAddFriend} />
                 </Row>
               ) : null}
-              <Button title={busy ? 'Joining…' : 'Join challenge'} onPress={join} />
+              {b?.kind === 'streak' && !hasGoal ? (
+                <>
+                  <Text style={[s.muted, { marginTop: 8 }]}>A streak face-off needs a daily goal before you can join.</Text>
+                  <Button title="Set a daily goal" onPress={onNeedGoal} />
+                </>
+              ) : (
+                <Button title={busy ? 'Joining…' : 'Join challenge'} onPress={join} />
+              )}
             </>
           )}
         </AccountGate>

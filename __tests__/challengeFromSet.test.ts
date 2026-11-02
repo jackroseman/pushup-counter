@@ -12,8 +12,17 @@ describe('challengeOffers', () => {
       { kind: 'total', window: 'day' },
       { kind: 'total', window: 'week' },
       { kind: 'total', window: 'month' },
+      { kind: 'streak' },
+      { kind: 'team' },
     ]);
-    expect(offers.map(offerLabel)).toEqual(['Best single set', 'Most reps today', 'Most reps this week', 'Most reps this month']);
+    expect(offers.map(offerLabel)).toEqual([
+      'Best single set',
+      'Most reps today',
+      'Most reps this week',
+      'Most reps this month',
+      'Streak face-off',
+      'Team goal',
+    ]);
   });
 
   it('keeps a timed set only when that timer is allowed', () => {
@@ -27,6 +36,8 @@ describe('challengeOffers', () => {
       { kind: 'total', window: 'day' },
       { kind: 'total', window: 'week' },
       { kind: 'total', window: 'month' },
+      { kind: 'streak' },
+      { kind: 'team' },
     ];
     expect(challengeOffers({ timerDurationS: 60, endedAt: now, battleId: 'b1' }, opts)).toEqual(windows);
     expect(challengeOffers({ timerDurationS: 60, endedAt: now, challengeId: 'c1' }, opts)).toEqual(windows);

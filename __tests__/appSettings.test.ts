@@ -45,6 +45,15 @@ describe('app settings', () => {
     expect(s.asyncMaxParticipants).toBe(12);
     expect(s.signInPrompt).toEqual({ enabled: false, afterSets: 5, snoozeDays: 7 });
     expect(s.inviteLinks.webBaseUrl).toBe('https://pushup.example.app');
+    const tuned = parseAppSettings([
+      { key: 'streak_lengths', value: { options_days: [7, 14], min_days: 3, max_days: 40 } },
+      { key: 'team_targets', value: { options: [100, 200], min: 10, max: 1000, default: 200, default_window: 'day' } },
+      { key: 'challenge_custom_max_days', value: 30 },
+    ]);
+    expect(tuned.streakLengths).toEqual({ optionsDays: [7, 14], minDays: 3, maxDays: 40 });
+    expect(tuned.teamTargets.defaultTarget).toBe(200);
+    expect(tuned.teamTargets.defaultWindow).toBe('day');
+    expect(tuned.challengeCustomMaxDays).toBe(30);
   });
 
   it('keeps defaults for invalid values and ignores unknown keys', () => {

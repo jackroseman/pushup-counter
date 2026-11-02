@@ -591,7 +591,6 @@ Object.assign(checks, {
 steps.push(
   ['slice5: linking a set onto a total is rejected (expect ERR)', link('claim-md1', 10, 'cmd', A)],
   ['slice5: a short custom window is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'total', window: 'custom', customStartsAt: new Date(Date.now() - 60000).toISOString(), customEndsAt: new Date(Date.now() + 20 * 60000).toISOString(), friendIds: [B] })}); reset role;`],
-  ['slice5: team is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'team', window: 'week', targetReps: 500, friendIds: [B] })}); reset role;`],
   ['slice5: accepting later pulls earlier sets in; a set outside the window does not', `${as(A)} ${create('cday', { kind: 'total', window: 'custom', customStartsAt: new Date(Date.now() - 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role; update challenges set starts_at = now() - interval '10 days', ends_at = now() - interval '9 days' where id=${ctx('cday')}::uuid; ${solo('before-accept', 6, B)} update sets set started_at = (select starts_at + interval '1 hour' from challenges where id=${ctx('cday')}::uuid), ended_at = (select starts_at + interval '1 hour 2 minutes' from challenges where id=${ctx('cday')}::uuid), received_at = (select starts_at + interval '2 hours' from challenges where id=${ctx('cday')}::uuid) where client_set_id='before-accept'; select coalesce((select valid_reps from challenge_standings where challenge_id=${ctx('cday')}::uuid and user_id='${B}'), 0) before; ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('cday')}::uuid and user_id='${B}'; reset role; select valid_reps after from challenge_standings where challenge_id=${ctx('cday')}::uuid and user_id='${B}'; ${solo('outside-day', 9, A, { start: Date.now() - 3 * 24 * 3600 * 1000 })} ${solo('inside-day', 4, A)} update sets set started_at = (select starts_at + interval '3 hours' from challenges where id=${ctx('cday')}::uuid), ended_at = (select starts_at + interval '3 hours 2 minutes' from challenges where id=${ctx('cday')}::uuid), received_at = (select starts_at + interval '4 hours' from challenges where id=${ctx('cday')}::uuid) where client_set_id='inside-day'; select valid_reps mine from challenge_standings where challenge_id=${ctx('cday')}::uuid and user_id='${A}';`],
   ['slice5: a forfeited later set stays out and the higher total wins', `${as(A)} ${create('cdraw', { kind: 'total', window: 'custom', customStartsAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role; ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('cdraw')}::uuid and user_id='${B}'; reset role; ${solo('draw-a', 10, A)} ${solo('draw-b', 4, B)} ${as(B)} update challenge_participants set status='forfeited' where challenge_id=${ctx('cdraw')}::uuid and user_id='${B}'; reset role; ${solo('draw-b2', 20, B)} update sets set started_at = now() - interval '40 minutes', received_at = now() - interval '30 minutes' where client_set_id in ('draw-a','draw-b'); update challenges set ends_at = now() - interval '16 minutes' where id=${ctx('cdraw')}::uuid; select valid_reps, user_id::text = '${A}' me from challenge_standings where challenge_id=${ctx('cdraw')}::uuid order by user_id; select finalize_challenges(); select status, (select count(*) from challenge_results r where r.challenge_id=${ctx('cdraw')}::uuid and r.is_winner) winners from challenges where id=${ctx('cdraw')}::uuid;`],
 );
@@ -611,5 +610,143 @@ Object.assign(checks, {
     ok(Number(a.valid_reps) === 10 && Number(b.valid_reps) === 4, 'reps ' + JSON.stringify(rows));
     const done = r[r.length - 1][0];
     ok(done.status === 'completed' && Number(done.winners) === 1, 'lock ' + JSON.stringify(done));
+  },
+});
+
+const placeSet = (id, k, offsetSql) =>
+  `update sets s set started_at = c.starts_at + ${offsetSql}, ended_at = c.starts_at + ${offsetSql} + interval '2 minutes', received_at = c.starts_at + ${offsetSql} + interval '30 minutes' from challenges c where s.client_set_id='${id}' and c.id=${ctx(k)}::uuid;`;
+
+steps.push(
+  ['slice6: a streak without a goal is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'streak', streakDays: 7, friendIds: [B] })}); reset role;`],
+  ['slice6: an invitee without a goal cannot accept (expect ERR)', `${as(A)} select enroll_goal(${q({ customDailyReps: 10 })}); reset role; ${as(A)} ${create('snogoal', { kind: 'streak', streakDays: 7 }, [B])} reset role; ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('snogoal')}::uuid and user_id='${B}'; reset role;`],
+  ['slice6: the last person still hitting wins before the window ends', `
+    ${as(A)} select enroll_goal(${q({ customDailyReps: 10 })}); reset role;
+    ${as(B)} select enroll_goal(${q({ customDailyReps: 20 })}); reset role;
+    ${as(A)} ${create('stk', { kind: 'streak', streakDays: 7 }, [B])} reset role;
+    select streak_floor_reps as a_floor, joined_time_zone as a_zone from challenge_participants where challenge_id=${ctx('stk')}::uuid and user_id='${A}';
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('stk')}::uuid and user_id='${B}'; reset role;
+    select streak_floor_reps as b_floor from challenge_participants where challenge_id=${ctx('stk')}::uuid and user_id='${B}';
+    select set_config('request.jwt.claim.sub','',false);
+    update challenges set
+      starts_at = ((date_trunc('day', now() at time zone 'UTC') - interval '2 days') at time zone 'UTC'),
+      ends_at = ((date_trunc('day', now() at time zone 'UTC') - interval '2 days') at time zone 'UTC') + interval '7 days'
+      where id=${ctx('stk')}::uuid;
+    update challenge_participants set
+      responded_at = (select starts_at + interval '1 hour' from challenges where id=${ctx('stk')}::uuid),
+      joined_time_zone = 'UTC'
+      where challenge_id=${ctx('stk')}::uuid and status='accepted';
+    ${solo('st-b-0', 24, B)}
+    ${solo('st-b-1', 24, B)}
+    ${placeSet('st-b-0', 'stk', "interval '2 hours'")}
+    ${placeSet('st-b-1', 'stk', "interval '1 day 2 hours'")}
+    select user_id::text = '${A}' as me, days_survived, (eliminated_on is not null) as out
+      from challenge_standings where challenge_id=${ctx('stk')}::uuid order by user_id;
+    select (ends_at > now()) as still_open from challenges where id=${ctx('stk')}::uuid;
+    ${as(A)} select p->>'streakFloorReps' as mine_floor
+      from jsonb_array_elements(my_challenges(${ctx('stk')}::uuid)->0->'participants') p
+      where (p->>'isMe')::boolean; reset role;
+    select finalize_challenges();
+    select status, (ends_at > finished_at) as ended_early,
+      (select is_winner from challenge_results where challenge_id=${ctx('stk')}::uuid and user_id='${A}') as a_win,
+      (select is_winner from challenge_results where challenge_id=${ctx('stk')}::uuid and user_id='${B}') as b_win,
+      (select days_survived from challenge_results where challenge_id=${ctx('stk')}::uuid and user_id='${B}') as b_days
+      from challenges where id=${ctx('stk')}::uuid;
+  `],
+  ['slice6: changing the goal does not lower the frozen bar', `
+    select streak_floor_reps as before from challenge_participants where challenge_id=${ctx('stk')}::uuid and user_id='${A}';
+    ${as(A)} select enroll_goal(${q({ programId: 'first_20' })}); reset role;
+    select streak_floor_reps as after from challenge_participants where challenge_id=${ctx('stk')}::uuid and user_id='${A}';
+    ${as(A)} ${create('sprog', { kind: 'streak', streakDays: 7 }, [B])} reset role;
+    select streak_floor_reps as program_floor from challenge_participants where challenge_id=${ctx('sprog')}::uuid and user_id='${A}';
+  `],
+  ['slice6: a team locks when the total hits, and a miss has no winner', `
+    ${as(A)} ${create('thit', { kind: 'team', window: 'week', targetReps: 10 }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('thit')}::uuid and user_id='${B}'; reset role;
+    select (ends_at > now()) as open, coalesce((select max(team_total) from challenge_standings where challenge_id=${ctx('thit')}::uuid), 0) as total
+      from challenges where id=${ctx('thit')}::uuid;
+    select finalize_challenges();
+    select c.status, (c.ends_at > c.finished_at) as early,
+      (select count(*) from challenge_results r where r.challenge_id=c.id and r.is_winner) as winners
+      from challenges c where c.id=${ctx('thit')}::uuid;
+    ${as(A)} ${create('tzero', { kind: 'team', targetReps: 10, window: 'custom', customStartsAt: new Date(Date.now() - 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('tzero')}::uuid and user_id='${B}'; reset role;
+    ${solo('team-zero-a', 12, A)}
+    update challenges set starts_at = now() - interval '20 days', ends_at = now() - interval '20 days' + interval '2 hours' where id=${ctx('tzero')}::uuid;
+    ${placeSet('team-zero-a', 'tzero', "interval '20 minutes'")}
+    select finalize_challenges();
+    select user_id::text = '${B}' as b, valid_reps, is_winner, team_total from challenge_results where challenge_id=${ctx('tzero')}::uuid order by user_id;
+    ${as(A)} ${create('tmiss', { kind: 'team', targetReps: 500, window: 'custom', customStartsAt: new Date(Date.now() - 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('tmiss')}::uuid and user_id='${B}'; reset role;
+    update challenges set starts_at = now() - interval '25 days', ends_at = now() - interval '25 days' + interval '2 hours' where id=${ctx('tmiss')}::uuid;
+    select finalize_challenges();
+    select status, (select coalesce(max(team_total), 0) from challenge_results where challenge_id=${ctx('tmiss')}::uuid) as total,
+      (select count(*) from challenge_results where challenge_id=${ctx('tmiss')}::uuid and is_winner) as winners
+      from challenges where id=${ctx('tmiss')}::uuid;
+  `],
+  ['slice6: a forfeited teammate cannot win and later reps stay out', `
+    ${as(A)} ${create('tfor', { kind: 'team', targetReps: 15, window: 'custom', customStartsAt: new Date(Date.now() - 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('tfor')}::uuid and user_id='${B}'; reset role;
+    ${solo('team-for-a', 12, A)}
+    ${solo('team-for-b', 6, B)}
+    ${as(B)} update challenge_participants set status='forfeited' where challenge_id=${ctx('tfor')}::uuid and user_id='${B}'; reset role;
+    ${solo('team-for-b2', 30, B)}
+    update challenges set starts_at = now() - interval '22 days', ends_at = now() - interval '22 days' + interval '2 hours' where id=${ctx('tfor')}::uuid;
+    ${placeSet('team-for-a', 'tfor', "interval '15 minutes'")}
+    ${placeSet('team-for-b', 'tfor', "interval '40 minutes'")}
+    select finalize_challenges();
+    select user_id::text = '${A}' as a, valid_reps, is_winner, team_total from challenge_results where challenge_id=${ctx('tfor')}::uuid order by user_id;
+    ${as(B)} select count(*)::int as seen from sets where client_set_id='team-for-a'; reset role;
+  `],
+  ['slice6: a short streak is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'streak', streakDays: 2, friendIds: [B] })}); reset role;`],
+  ['slice6: a tiny team target is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'team', window: 'week', targetReps: 5, friendIds: [B] })}); reset role;`],
+  ['slice6: the frozen bar cannot be edited (expect ERR)', `${as(B)} update challenge_participants set streak_floor_reps=1 where challenge_id=${ctx('stk')}::uuid and user_id='${B}'; reset role;`],
+);
+
+Object.assign(checks, {
+  'slice6: the last person still hitting wins before the window ends': (r) => {
+    const a = r.find((set) => set[0] && 'a_floor' in set[0])[0];
+    const b = r.find((set) => set[0] && 'b_floor' in set[0])[0];
+    ok(Number(a.a_floor) === 10 && a.a_zone === 'UTC', 'A floor ' + JSON.stringify(a));
+    ok(Number(b.b_floor) === 20, 'B floor ' + JSON.stringify(b));
+    const stand = r.find((set) => set[0] && 'out' in set[0]);
+    const aRow = stand.find((row) => row.me === true);
+    const bRow = stand.find((row) => row.me === false);
+    ok(aRow.out === true && Number(aRow.days_survived) === 0, 'A survived ' + JSON.stringify(aRow));
+    ok(bRow.out === false && Number(bRow.days_survived) >= 1, 'B survived ' + JSON.stringify(bRow));
+    const open = r.find((set) => set[0] && 'still_open' in set[0])[0];
+    ok(open.still_open === true, 'window already closed');
+    const mine = r.find((set) => set[0] && 'mine_floor' in set[0])[0];
+    ok(Number(mine.mine_floor) === 10, 'document ' + JSON.stringify(mine));
+    const done = r.find((set) => set[0] && 'a_win' in set[0])[0];
+    ok(done.status === 'completed' && done.ended_early === true && done.a_win === false && done.b_win === true && Number(done.b_days) >= 1, 'lock ' + JSON.stringify(done));
+  },
+  'slice6: changing the goal does not lower the frozen bar': (r) => {
+    const before = r.find((set) => set[0] && 'before' in set[0])[0];
+    const after = r.find((set) => set[0] && 'after' in set[0])[0];
+    const program = r.find((set) => set[0] && 'program_floor' in set[0])[0];
+    ok(Number(before.before) === 10 && Number(after.after) === 10, 'frozen ' + JSON.stringify({ before, after }));
+    ok(Number(program.program_floor) === 10, 'sunday floor ' + JSON.stringify(program));
+  },
+  'slice6: a team locks when the total hits, and a miss has no winner': (r) => {
+    const open = r.find((set) => set[0] && 'open' in set[0])[0];
+    ok(open.open === true && Number(open.total) >= 1, 'not already over ' + JSON.stringify(open));
+    const hit = r.find((set) => set[0] && 'early' in set[0])[0];
+    ok(hit.status === 'completed' && hit.early === true && Number(hit.winners) === 2, 'early ' + JSON.stringify(hit));
+    const zero = r.find((set) => set[0] && 'b' in set[0]);
+    const b = zero.find((row) => row.b === true);
+    const a = zero.find((row) => row.b === false);
+    ok(b.is_winner === true && Number(b.valid_reps) === 0, 'zero still wins ' + JSON.stringify(b));
+    ok(a.is_winner === true && Number(a.valid_reps) === 12 && Number(a.team_total) === 12, 'contribution ' + JSON.stringify(a));
+    const miss = r[r.length - 1][0];
+    ok(miss.status === 'completed' && Number(miss.total) === 0 && Number(miss.winners) === 0, 'miss ' + JSON.stringify(miss));
+  },
+  'slice6: a forfeited teammate cannot win and later reps stay out': (r) => {
+    const rows = r.find((set) => set[0] && 'a' in set[0]);
+    const a = rows.find((row) => row.a === true);
+    const b = rows.find((row) => row.a === false);
+    ok(Number(a.valid_reps) === 12 && a.is_winner === true && Number(a.team_total) === 18, 'A ' + JSON.stringify(a));
+    ok(Number(b.valid_reps) === 6 && b.is_winner === false, 'B ' + JSON.stringify(b));
+    const seen = r.find((set) => set[0] && 'seen' in set[0])[0];
+    ok(Number(seen.seen) === 0, 'raw set leaked ' + JSON.stringify(seen));
   },
 });

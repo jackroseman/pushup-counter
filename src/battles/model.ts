@@ -21,6 +21,15 @@ export interface Participant {
   tempoScore: number | null;
   rank: number | null;
   isWinner: boolean;
+  /** Frozen daily bar for a streak face-off. Null until they accept. */
+  streakFloorReps?: number | null;
+  /** Closed days they hit before the first miss. */
+  daysSurvived?: number | null;
+  /** Local date they went out. Null while they are still in. */
+  eliminatedOn?: string | null;
+  /** Shared counted total on a team goal. */
+  teamTotal?: number | null;
+  teamTarget?: number | null;
 }
 
 export interface InviteLink {
@@ -91,6 +100,7 @@ export interface InvitePreview {
     status: BattleStatus;
     endsAt: string | null;
     startsAt?: string | null;
+    targetReps?: number | null;
     players: number;
     maxParticipants: number;
   };
@@ -102,11 +112,21 @@ export interface InvitePreview {
 export const personName = (p: { username?: string | null; displayName?: string | null } | null | undefined) =>
   p?.displayName?.trim() || (p?.username ? `@${p.username}` : 'Someone');
 
+/** Calendar length of a streak window. Daylight saving still rounds to the chosen day count. */
+export function streakDayCount(b: { startsAt?: string | null; endsAt?: string | null }): number | null {
+  if (!b.startsAt || !b.endsAt) return null;
+  const ms = new Date(b.endsAt).getTime() - new Date(b.startsAt).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return Math.max(1, Math.round(ms / 86_400_000));
+}
+
 export function battleTitle(b: {
   kind: ChallengeKind;
   windowUnit?: ChallengeWindow | null;
   durationS: number | null;
   targetReps?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
 }): string {
   if (b.kind === 'best_set') return b.durationS ? `Best set · ${b.durationS} s` : 'Best set';
   if (b.kind === 'total') {
@@ -115,7 +135,10 @@ export function battleTitle(b: {
     if (b.windowUnit === 'month') return 'Most reps this month';
     return 'Most reps';
   }
-  if (b.kind === 'streak') return 'Streak face-off';
+  if (b.kind === 'streak') {
+    const days = streakDayCount(b);
+    return days ? `Streak · ${days} day${days === 1 ? '' : 's'}` : 'Streak face-off';
+  }
   if (b.kind === 'team') return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
   return 'Challenge';
 }
@@ -180,6 +203,17 @@ export function timeLeft(iso: string | null | undefined, now: number = Date.now(
   return `${Math.floor(h / 24)} days left`;
 }
 
+/** One line under a name on a streak face-off. */
+export function streakStandingLine(p: Pick<Participant, 'status' | 'eliminatedOn' | 'streakFloorReps'>): string {
+  if (p.status === 'invited') return 'invited';
+  if (p.status === 'declined') return 'declined';
+  if (p.status === 'expired') return 'invite expired';
+  if (p.status === 'forfeited') return p.eliminatedOn ? `Out · ${p.eliminatedOn}` : 'Out';
+  if (p.eliminatedOn) return `Out · ${p.eliminatedOn}`;
+  if (p.status === 'accepted') return p.streakFloorReps ? `Still in · ${p.streakFloorReps} a day` : 'Still in';
+  return p.status;
+}
+
 export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'attemptsUsed'>, metric: BattleMetric | null): string {
   if (metric == null) return `${p.validReps ?? 0}`;
   if (!p.attemptsUsed) return '-';
@@ -191,6 +225,11 @@ export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'a
 export function battleSubtitle(b: Battle, now: number = Date.now()): string {
   const m = me(b);
   if (b.status === 'completed') {
+    if (b.kind === 'team') {
+      if (m?.isWinner) return 'You won';
+      if (!b.participants.some((p) => p.isWinner)) return 'Missed the goal';
+      return 'Finished';
+    }
     if (!m || m.rank == null) return 'Finished';
     const players = b.participants.filter((p) => p.rank != null).length;
     const tied = b.participants.filter((p) => p.rank === 1).length > 1;
@@ -205,7 +244,9 @@ export function battleSubtitle(b: Battle, now: number = Date.now()): string {
   const waitingOn = b.participants.filter(
     (p) => p.status === 'invited' || (b.kind === 'best_set' && p.status === 'accepted' && p.attemptsUsed < cap),
   );
-  return waitingOn.length ? `Waiting on ${waitingOn.length} · ${timeLeft(b.endsAt, now)}` : `Results soon`;
+  if (waitingOn.length) return `Waiting on ${waitingOn.length} · ${timeLeft(b.endsAt, now)}`;
+  if (b.kind !== 'best_set') return timeLeft(b.endsAt, now) || 'Results soon';
+  return 'Results soon';
 }
 
 /** The share link for an invite token: universal link once a web domain is configured, else the custom scheme. */
@@ -258,6 +299,7 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('invite used up')) return 'That invite link has been used up.';
   if (m.includes('invite closed')) return 'That challenge is over.';
   if (m.includes('invite not')) return "That invite isn't available.";
+  if (m.includes('needs a goal')) return 'Set a daily goal first.';
   if (m.includes('not friends')) return 'You can only challenge friends.';
   if (m.includes('that is you')) return "That's you!";
   if (m.includes('too many pending')) return 'Too many open friend requests. Wait for some answers.';

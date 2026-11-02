@@ -3,19 +3,23 @@
  * not already an attempt, ended within claim_set_max_age_s, and a timed set
  * only when that timer is one of timed_durations_s. Most-reps windows do not
  * claim the set; it counts because it started inside the frozen window.
- * Streak and team are not offered until slice 6.
+ * Streak and team never claim the set. Every set inside the window counts.
  */
 import { addCalendarDays, addMonths, localDate, monthStart, weekStart } from '../progress/calendar';
 
 export type ChallengeOffer =
   | { kind: 'best_set'; durationS: number | null }
-  | { kind: 'total'; window: 'day' | 'week' | 'month' };
+  | { kind: 'total'; window: 'day' | 'week' | 'month' }
+  | { kind: 'streak' }
+  | { kind: 'team' };
 
 const TOTALS: ChallengeOffer[] = [
   { kind: 'total', window: 'day' },
   { kind: 'total', window: 'week' },
   { kind: 'total', window: 'month' },
 ];
+
+const TOGETHER: ChallengeOffer[] = [{ kind: 'streak' }, { kind: 'team' }];
 
 export function challengeOffers(
   set: { timerDurationS?: number | null; challengeId?: string | null; battleId?: string | null; endedAt?: number | null },
@@ -28,11 +32,13 @@ export function challengeOffers(
   const timer = set.timerDurationS;
   const timerOk = timer == null || opts.timedDurationsS.includes(timer);
   const best: ChallengeOffer[] = !linked && ageOk && timerOk ? [{ kind: 'best_set', durationS: timer ?? null }] : [];
-  return [...best, ...TOTALS];
+  return [...best, ...TOTALS, ...TOGETHER];
 }
 
 export function offerLabel(offer: ChallengeOffer): string {
   if (offer.kind === 'best_set') return offer.durationS ? `Best single set · ${offer.durationS} s` : 'Best single set';
+  if (offer.kind === 'streak') return 'Streak face-off';
+  if (offer.kind === 'team') return 'Team goal';
   if (offer.window === 'day') return 'Most reps today';
   if (offer.window === 'week') return 'Most reps this week';
   return 'Most reps this month';

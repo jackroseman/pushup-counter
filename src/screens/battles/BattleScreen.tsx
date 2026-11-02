@@ -24,6 +24,7 @@ import {
   Participant,
   personName,
   scoreLabel,
+  streakStandingLine,
   timeLeft,
 } from '../../battles/model';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
@@ -40,6 +41,9 @@ export function BattleScreen(props: {
   onPlay: (b: Battle) => void;
   onAccount: () => void;
   onProfile: () => void;
+  /** Open daily goal on this phone. A streak invite without one goes to Goal setup. */
+  hasGoal: boolean;
+  onNeedGoal: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={s.container}>
@@ -58,6 +62,8 @@ function BattleDetail({
   promptAttempt,
   onPlay,
   onBack,
+  hasGoal,
+  onNeedGoal,
 }: {
   battleId: string;
   share?: boolean;
@@ -65,6 +71,8 @@ function BattleDetail({
   promptAttempt?: boolean;
   onPlay: (b: Battle) => void;
   onBack: () => void;
+  hasGoal: boolean;
+  onNeedGoal: () => void;
 }) {
   const { appSettings } = useBackend();
   const { profile } = useIdentity();
@@ -147,11 +155,13 @@ function BattleDetail({
   const creator = b.participants.find((p) => p.userId === b.createdBy);
   const isCreator = b.createdBy === profile?.id;
   const rules =
-    b.kind === 'total'
+    b.kind === 'total' || b.kind === 'streak' || b.kind === 'team'
       ? 'Every set you do before the end counts.'
       : b.durationS
         ? `${b.durationS} seconds, as many good reps as you can.`
         : `As many good reps as you can in one set. It ends after ${appSettings.asyncBattleDefaults.maxRepsIdleEndS} s without a rep.`;
+  const teamTotal = b.participants.find((p) => p.teamTotal != null)?.teamTotal ?? 0;
+  const teamTarget = b.targetReps ?? b.participants.find((p) => p.teamTarget != null)?.teamTarget ?? 0;
   const cue = creatorAttemptCue({
     promptAttempt,
     justPlayed: !!justPlayed,
@@ -172,6 +182,8 @@ function BattleDetail({
         <Text style={[s.muted, { marginTop: 6 }]}>
           Only Good and Full reps count. Shallow reps don't.{' '}
           {b.kind === 'best_set' ? (b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed ?? 1} attempts each.`) : 'There is no separate challenge set.'}
+          {b.kind === 'streak' ? ' Miss a day after it closes and you are out. The daily bar is frozen when you join.' : ''}
+          {b.kind === 'team' ? ' You win together when the shared total hits the goal.' : ''}
           {b.endsAt && isOpen(b) ? ` Deadline: ${new Date(b.endsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} (${timeLeft(b.endsAt)}).` : ''}
         </Text>
       </View>
@@ -200,11 +212,31 @@ function BattleDetail({
       ) : null}
       {error ? <Text style={s.error}>{error}</Text> : null}
 
+      {b.kind === 'team' && (b.status === 'active' || b.status === 'pending' || b.status === 'completed') ? (
+        <View style={s.card}>
+          <Text style={s.bold}>
+            {teamTotal} / {teamTarget}
+          </Text>
+          <Text style={s.muted}>
+            {b.status === 'completed' && !b.participants.some((p) => p.isWinner)
+              ? 'The window ended before the shared goal.'
+              : 'Shared total. Each row below is that person’s contribution.'}
+          </Text>
+        </View>
+      ) : null}
+
       {canRespond(b) ? (
         <View style={s.card}>
           <Text style={s.bold}>You're invited</Text>
           <Text style={s.muted}>Answer within {timeLeft(b.inviteExpiresAt)}.</Text>
-          <Button title="Accept" onPress={() => !busy && run(() => api.respond(supabase!, b.id, profile!.id, true))} />
+          {b.kind === 'streak' && !hasGoal ? (
+            <>
+              <Text style={s.muted}>A streak face-off needs a daily goal before you can accept.</Text>
+              <Button title="Set a daily goal" onPress={onNeedGoal} />
+            </>
+          ) : (
+            <Button title="Accept" onPress={() => !busy && run(() => api.respond(supabase!, b.id, profile!.id, true))} />
+          )}
           <Button title="Decline" kind="secondary" onPress={() => !busy && run(() => api.respond(supabase!, b.id, profile!.id, false))} />
         </View>
       ) : null}
@@ -264,20 +296,32 @@ function BattleDetail({
 function Standing({ p, b }: { p: Participant; b: Battle }) {
   const played = p.attemptsUsed > 0;
   const status =
-    p.status === 'invited'
-      ? 'invited'
-      : p.status === 'declined'
-        ? 'declined'
-        : p.status === 'expired' || p.status === 'forfeited'
-          ? "didn't play"
-          : played
-            ? p.avgDepthPct != null
-              ? `avg depth ${Math.round(p.avgDepthPct)}%`
-              : 'done'
-            : 'not played yet';
+    b.kind === 'streak'
+      ? streakStandingLine(p)
+      : b.kind === 'team'
+        ? p.status === 'forfeited'
+          ? 'Left. Reps from before that stay in the total.'
+          : p.status === 'accepted'
+            ? `${p.validReps ?? 0} contributed`
+            : p.status
+        : p.status === 'invited'
+          ? 'invited'
+          : p.status === 'declined'
+            ? 'declined'
+            : p.status === 'expired' || p.status === 'forfeited'
+              ? "didn't play"
+              : played
+                ? p.avgDepthPct != null
+                  ? `avg depth ${Math.round(p.avgDepthPct)}%`
+                  : 'done'
+                : 'not played yet';
+  const score =
+    b.kind === 'streak' ? `${p.daysSurvived ?? 0}` : b.kind === 'team' ? `${p.validReps ?? 0}` : scoreLabel(p, b.metric);
   return (
     <Row style={p.isMe ? { borderWidth: 1, borderColor: colors.accent } : undefined}>
-      <Text style={{ color: colors.muted, width: 28, fontWeight: '800', fontSize: 16 }}>{played && p.rank ? p.rank : '–'}</Text>
+      <Text style={{ color: colors.muted, width: 28, fontWeight: '800', fontSize: 16 }}>
+        {b.kind === 'team' ? '–' : played && p.rank ? p.rank : b.kind === 'streak' && p.rank ? p.rank : '–'}
+      </Text>
       <View style={{ flex: 1 }}>
         <Text style={s.bold}>
           {p.isMe ? 'You' : personName(p)}
@@ -285,7 +329,7 @@ function Standing({ p, b }: { p: Participant; b: Battle }) {
         </Text>
         <Text style={s.muted}>{status}</Text>
       </View>
-      <Text style={{ color: colors.text, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{scoreLabel(p, b.metric)}</Text>
+      <Text style={{ color: colors.text, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] }}>{score}</Text>
     </Row>
   );
 }

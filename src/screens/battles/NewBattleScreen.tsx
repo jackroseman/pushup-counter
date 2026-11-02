@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, Switch, Text, View } from 'react-native';
+import { ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { supabase } from '../../backend/supabase';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
@@ -8,13 +8,21 @@ import { colors } from '../../theme';
 import { api } from '../../battles/api';
 import { ChallengeOffer, offerLabel, windowClosingNote } from '../../battles/challengeFromSet';
 import { countedReps } from '../../battles/counting';
-import { Friend, friendlyError, personName } from '../../battles/model';
+import { ChallengeKind, Friend, friendlyError, personName } from '../../battles/model';
 import { submitBattleAttempt } from '../../battles/uploader';
 import { deviceTimeZone } from '../../backend/profile';
 import { SessionRecord } from '../../storage/history';
 import { AccountGate, Chip, Header, Row, s, SectionTitle } from './common';
 
 type Metric = 'rep_count' | 'depth_consistency' | 'tempo' | 'form_score';
+type WindowChoice = 'day' | 'week' | 'month' | 'custom';
+
+function wholeNumber(text: string, min: number, max: number): number | null {
+  if (!/^\d+$/.test(text.trim())) return null;
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
+}
 
 export function deadlineLabel(h: number): string {
   if (h % 24 === 0) return h === 24 ? '1 day' : `${h / 24} days`;
@@ -35,6 +43,9 @@ export function NewBattleScreen(props: {
   onFriends: () => void;
   onAccount: () => void;
   onProfile: () => void;
+  /** False until this phone has an open daily goal. Streak create sends them to set one. */
+  hasGoal: boolean;
+  onNeedGoal: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
@@ -52,18 +63,26 @@ function Form({
   offer,
   onCreated,
   onFriends,
+  hasGoal,
+  onNeedGoal,
 }: {
   friendIds?: string[];
   fromSet?: SessionRecord;
   offer?: ChallengeOffer;
   onCreated: (id: string, share: boolean, extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } }) => void;
   onFriends: () => void;
+  hasGoal: boolean;
+  onNeedGoal: () => void;
 }) {
   const { appSettings } = useBackend();
   const { deviceId } = useIdentity();
   const d = appSettings.asyncBattleDefaults;
+  const lengths = appSettings.streakLengths;
+  const targets = appSettings.teamTargets;
   const maxInvites = appSettings.asyncMaxParticipants - 1;
-  const [choice, setChoice] = useState<ChallengeOffer>(offer ?? { kind: 'best_set', durationS: null });
+  const [kind, setKind] = useState<ChallengeKind>(offer?.kind ?? 'best_set');
+  const [durationS, setDurationS] = useState<number | null>(offer?.kind === 'best_set' ? offer.durationS : null);
+  const [windowUnit, setWindowUnit] = useState<WindowChoice>(offer?.kind === 'total' ? offer.window : targets.defaultWindow);
   const [metric, setMetric] = useState<Metric>('rep_count');
   const [hours, setHours] = useState(d.deadlineHours);
   const [friends, setFriends] = useState<Friend[] | null>(null);
@@ -71,6 +90,13 @@ function Form({
   const [link, setLink] = useState(!(friendIds && friendIds.length));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customHours, setCustomHours] = useState('24');
+  const [streakChoice, setStreakChoice] = useState<number | 'custom'>(lengths.optionsDays[0] ?? 7);
+  const [customStreak, setCustomStreak] = useState(String(lengths.minDays));
+  const [targetChoice, setTargetChoice] = useState<number | 'custom'>(
+    targets.options.includes(targets.defaultTarget) ? targets.defaultTarget : 'custom',
+  );
+  const [customTarget, setCustomTarget] = useState(String(targets.defaultTarget));
 
   useEffect(() => {
     if (!supabase) return;
@@ -87,20 +113,44 @@ function Form({
     });
 
   const setTimer = fromSet?.timerDurationS ?? null;
-  const claimThisSet = !!fromSet && choice.kind === 'best_set' && (choice.durationS ?? null) === setTimer;
-  const closing = choice.kind === 'total' ? windowClosingNote(choice.window, Date.now(), deviceTimeZone()) : null;
+  const claimThisSet = !!fromSet && kind === 'best_set' && (durationS ?? null) === setTimer;
+  const closing =
+    (kind === 'total' || kind === 'team') && windowUnit !== 'custom' ? windowClosingNote(windowUnit, Date.now(), deviceTimeZone()) : null;
+  const maxCustomHours = appSettings.challengeCustomMaxDays * 24;
+  const streakDays = streakChoice === 'custom' ? wholeNumber(customStreak, lengths.minDays, lengths.maxDays) : streakChoice;
+  const teamTarget = targetChoice === 'custom' ? wholeNumber(customTarget, targets.min, targets.max) : targetChoice;
+  const customSpan = wholeNumber(customHours, 1, maxCustomHours);
+  const needsGoal = kind === 'streak' && !hasGoal;
 
   const create = async () => {
     if (!supabase || busy) return;
+    if (needsGoal) return onNeedGoal();
     if (!picked.size && !link) return setError('Pick a friend or turn on the invite link.');
+    if (kind === 'streak' && streakDays == null) {
+      return setError(`A streak face-off is ${lengths.minDays} to ${lengths.maxDays} days.`);
+    }
+    if (kind === 'team' && teamTarget == null) {
+      return setError(`The shared goal is ${targets.min} to ${targets.max} reps.`);
+    }
+    if ((kind === 'total' || kind === 'team') && windowUnit === 'custom' && customSpan == null) {
+      return setError(`A custom window is 1 hour to ${appSettings.challengeCustomMaxDays} days, starting now.`);
+    }
     setBusy(true);
     setError(null);
+    const now = Date.now();
     const r = await api.createBattle(supabase, {
-      kind: choice.kind,
-      metric: choice.kind === 'best_set' && !choice.durationS ? metric : undefined,
-      durationS: choice.kind === 'best_set' ? choice.durationS ?? undefined : undefined,
-      deadlineHours: choice.kind === 'best_set' ? hours : undefined,
-      window: choice.kind === 'total' ? choice.window : undefined,
+      kind,
+      metric: kind === 'best_set' && !durationS ? metric : undefined,
+      durationS: kind === 'best_set' ? durationS ?? undefined : undefined,
+      deadlineHours: kind === 'best_set' ? hours : undefined,
+      window: kind === 'total' || kind === 'team' ? windowUnit : undefined,
+      customStartsAt: windowUnit === 'custom' && (kind === 'total' || kind === 'team') ? new Date(now).toISOString() : undefined,
+      customEndsAt:
+        windowUnit === 'custom' && (kind === 'total' || kind === 'team') && customSpan != null
+          ? new Date(now + customSpan * 3_600_000).toISOString()
+          : undefined,
+      streakDays: kind === 'streak' && streakDays != null ? streakDays : undefined,
+      targetReps: kind === 'team' && teamTarget != null ? teamTarget : undefined,
       friendIds: [...picked],
       inviteLink: link,
     });
@@ -108,10 +158,10 @@ function Form({
       setBusy(false);
       return setError(friendlyError(r.message));
     }
-    let promptAttempt = choice.kind === 'best_set' && !claimThisSet;
+    let promptAttempt = kind === 'best_set' && !claimThisSet;
     let justPlayed: { reps: number; counted: number } | undefined;
     if (claimThisSet && fromSet) {
-      const rules = choice.durationS ? { format: 'timed' as const, durationS: choice.durationS } : { format: 'max_reps' as const, durationS: null };
+      const rules = durationS ? { format: 'timed' as const, durationS } : { format: 'max_reps' as const, durationS: null };
       try {
         const flushed = await submitBattleAttempt(fromSet, r.data.challengeId, deviceId, { linkFinishedSet: true });
         const failed = flushed?.failed.some((f) => f.payload.id === fromSet.id) ?? false;
@@ -135,20 +185,22 @@ function Form({
     <View>
       <SectionTitle>Kind</SectionTitle>
       <View style={s.chips}>
-        <Chip label="Best single set" on={choice.kind === 'best_set'} onPress={() => setChoice({ kind: 'best_set', durationS: null })} />
-        <Chip label="Most reps" on={choice.kind === 'total'} onPress={() => setChoice({ kind: 'total', window: 'day' })} />
+        <Chip label="Best single set" on={kind === 'best_set'} onPress={() => setKind('best_set')} />
+        <Chip label="Most reps" on={kind === 'total'} onPress={() => { setKind('total'); setWindowUnit('day'); }} />
+        <Chip label="Streak face-off" on={kind === 'streak'} onPress={() => setKind('streak')} />
+        <Chip label="Team goal" on={kind === 'team'} onPress={() => { setKind('team'); setWindowUnit(targets.defaultWindow); }} />
       </View>
 
-      {choice.kind === 'best_set' ? (
+      {kind === 'best_set' ? (
         <>
           <SectionTitle>Timer</SectionTitle>
           <View style={s.chips}>
-            <Chip label="Untimed" on={choice.durationS == null} onPress={() => setChoice({ kind: 'best_set', durationS: null })} />
+            <Chip label="Untimed" on={durationS == null} onPress={() => setDurationS(null)} />
             {d.timedDurationsS.map((t) => (
-              <Chip key={t} label={t % 60 === 0 ? `${t / 60} min` : `${t} s`} on={choice.durationS === t} onPress={() => setChoice({ kind: 'best_set', durationS: t })} />
+              <Chip key={t} label={t % 60 === 0 ? `${t / 60} min` : `${t} s`} on={durationS === t} onPress={() => setDurationS(t)} />
             ))}
           </View>
-          {choice.durationS == null && !fromSet ? (
+          {durationS == null && !fromSet ? (
             <>
               <SectionTitle>What wins</SectionTitle>
               <View style={s.chips}>
@@ -174,23 +226,88 @@ function Form({
           <Text style={s.muted}>
             {claimThisSet
               ? "We'll use the set you just did."
-              : choice.durationS
-                ? `Most good reps in ${choice.durationS} seconds wins. Shallow reps don't count.`
+              : durationS
+                ? `Most good reps in ${durationS} seconds wins. Shallow reps don't count.`
                 : `Most good reps in one set wins. A set ends after ${d.maxRepsIdleEndS} s without a rep. Shallow reps don't count.`}
           </Text>
         </>
-      ) : (
+      ) : null}
+
+      {kind === 'streak' ? (
+        <>
+          <SectionTitle>How long</SectionTitle>
+          <View style={s.chips}>
+            {lengths.optionsDays.map((days) => (
+              <Chip key={days} label={`${days} days`} on={streakChoice === days} onPress={() => setStreakChoice(days)} />
+            ))}
+            <Chip label="Custom" on={streakChoice === 'custom'} onPress={() => setStreakChoice('custom')} />
+          </View>
+          {streakChoice === 'custom' ? (
+            <TextInput
+              style={[s.input, { marginBottom: 8 }]}
+              keyboardType="number-pad"
+              value={customStreak}
+              onChangeText={setCustomStreak}
+              placeholder={`${lengths.minDays} to ${lengths.maxDays} days`}
+              placeholderTextColor={colors.muted}
+            />
+          ) : null}
+          <Text style={s.muted}>
+            Who keeps hitting their daily goal the longest. The bar freezes when each person joins. A program rest day is not a free pass.
+            {needsGoal ? ' Set a daily goal first.' : ''}
+          </Text>
+        </>
+      ) : null}
+
+      {kind === 'total' || kind === 'team' ? (
         <>
           <SectionTitle>Window</SectionTitle>
           <View style={s.chips}>
-            <Chip label="Today" on={choice.window === 'day'} onPress={() => setChoice({ kind: 'total', window: 'day' })} />
-            <Chip label="This week" on={choice.window === 'week'} onPress={() => setChoice({ kind: 'total', window: 'week' })} />
-            <Chip label="This month" on={choice.window === 'month'} onPress={() => setChoice({ kind: 'total', window: 'month' })} />
+            <Chip label="Today" on={windowUnit === 'day'} onPress={() => setWindowUnit('day')} />
+            <Chip label="This week" on={windowUnit === 'week'} onPress={() => setWindowUnit('week')} />
+            <Chip label="This month" on={windowUnit === 'month'} onPress={() => setWindowUnit('month')} />
+            <Chip label="Custom" on={windowUnit === 'custom'} onPress={() => setWindowUnit('custom')} />
           </View>
-          <Text style={s.muted}>Every set before the window ends counts, including sets you already did. Shallow reps don't count.</Text>
+          {windowUnit === 'custom' ? (
+            <TextInput
+              style={[s.input, { marginBottom: 8 }]}
+              keyboardType="number-pad"
+              value={customHours}
+              onChangeText={setCustomHours}
+              placeholder={`Hours from now, up to ${appSettings.challengeCustomMaxDays} days`}
+              placeholderTextColor={colors.muted}
+            />
+          ) : null}
+          {kind === 'team' ? (
+            <>
+              <SectionTitle>Shared goal</SectionTitle>
+              <View style={s.chips}>
+                {targets.options.map((n) => (
+                  <Chip key={n} label={String(n)} on={targetChoice === n} onPress={() => setTargetChoice(n)} />
+                ))}
+                <Chip label="Custom" on={targetChoice === 'custom'} onPress={() => setTargetChoice('custom')} />
+              </View>
+              {targetChoice === 'custom' ? (
+                <TextInput
+                  style={[s.input, { marginBottom: 8 }]}
+                  keyboardType="number-pad"
+                  value={customTarget}
+                  onChangeText={setCustomTarget}
+                  placeholder={`${targets.min} to ${targets.max}`}
+                  placeholderTextColor={colors.muted}
+                />
+              ) : null}
+              <Text style={s.muted}>Everyone's sets count toward one number. You win together when it hits the goal. Shallow reps don't count.</Text>
+            </>
+          ) : (
+            <Text style={s.muted}>Every set before the window ends counts, including sets you already did. Shallow reps don't count.</Text>
+          )}
+          {windowUnit === 'custom' ? (
+            <Text style={s.muted}>A custom window starts now and runs for the number of hours you type.</Text>
+          ) : null}
           {closing ? <Text style={s.muted}>{closing}</Text> : null}
         </>
-      )}
+      ) : null}
 
       <SectionTitle>
         Challenge friends ({picked.size}/{maxInvites})
@@ -222,8 +339,22 @@ function Form({
 
       {error ? <Text style={s.error}>{error}</Text> : null}
       {!picked.size && !link ? <Text style={s.muted}>Pick at least one friend or turn on the invite link.</Text> : null}
-      <Button title={busy ? 'Creating…' : 'Create challenge'} onPress={create} />
-      {fromSet ? <Text style={[s.muted, { marginTop: 8 }]}>{offerLabel(choice)}</Text> : null}
+      <Button title={needsGoal ? 'Set a daily goal' : busy ? 'Creating…' : 'Create challenge'} onPress={needsGoal ? onNeedGoal : create} />
+      {fromSet ? (
+        <Text style={[s.muted, { marginTop: 8 }]}>
+          {offerLabel(
+            kind === 'best_set'
+              ? { kind, durationS }
+              : kind === 'total' && windowUnit !== 'custom'
+                ? { kind, window: windowUnit }
+                : kind === 'streak'
+                  ? { kind: 'streak' }
+                  : kind === 'team'
+                    ? { kind: 'team' }
+                    : { kind: 'total', window: 'week' },
+          )}
+        </Text>
+      ) : null}
     </View>
   );
 }

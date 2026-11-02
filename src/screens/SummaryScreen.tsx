@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
+import { Celebration, formatFormScore } from '../progress';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
@@ -38,12 +39,22 @@ export function SummaryScreen({
   onDone,
   fromHistory,
   onChallenge,
+  progress,
 }: {
   record: SessionRecord;
   onDone: () => void;
   fromHistory?: boolean;
   /** Just-finished solo set: start a battle that uses this set as your attempt. */
   onChallenge?: () => void;
+  /** Present for a set that just finished. History stays on the analysis. */
+  progress?: {
+    counted: number;
+    shallow: number;
+    formScore: number | null;
+    tempoCaption: string | null;
+    contribution: string;
+    celebration: Celebration | null;
+  } | null;
 }) {
   const a = useMemo(() => analyzeSet(record.reps, record.startedAt, record.endedAt), [record]);
   const tips = insights(a);
@@ -61,6 +72,27 @@ export function SummaryScreen({
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
         <Text style={styles.title}>{fromHistory ? 'Set analysis' : 'Set complete'}</Text>
         <Text style={styles.date}>{new Date(record.startedAt).toLocaleString()}</Text>
+        {progress ? (
+          <View style={styles.card}>
+            <Text style={styles.progressValue}>{progress.counted} counted</Text>
+            <Text style={styles.caption}>
+              {progress.shallow === 0
+                ? 'Shallow reps are not counted.'
+                : progress.shallow === 1
+                  ? '1 shallow rep is not counted.'
+                  : `${progress.shallow} shallow reps are not counted.`}
+            </Text>
+            <Text style={styles.progressValue}>Form score {formatFormScore(progress.formScore)}</Text>
+            {progress.tempoCaption ? <Text style={styles.caption}>{progress.tempoCaption}</Text> : null}
+            <Text style={styles.contribution}>{progress.contribution}</Text>
+            {progress.celebration ? (
+              <View style={styles.celebrate}>
+                <Text style={styles.celebrateTitle}>{progress.celebration.title}</Text>
+                {progress.celebration.also ? <Text style={styles.celebrateAlso}>{progress.celebration.also}</Text> : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.row}>
           <Stat label="Reps" value={String(a.totalReps)} />
@@ -195,6 +227,11 @@ const styles = StyleSheet.create({
   tip: { color: colors.text, fontSize: 15, lineHeight: 21, marginVertical: 2 },
   section: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 22, marginBottom: 6 },
   caption: { color: colors.muted, fontSize: 13, marginVertical: 6 },
+  progressValue: { color: colors.text, fontSize: 22, fontWeight: '800', marginTop: 8 },
+  contribution: { color: colors.text, fontSize: 16, marginTop: 10 },
+  celebrate: { backgroundColor: colors.bg, borderRadius: 12, padding: 12, marginTop: 12 },
+  celebrateTitle: { color: colors.accent, fontSize: 18, fontWeight: '800' },
+  celebrateAlso: { color: colors.text, fontSize: 15, marginTop: 4 },
   repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   cell: { color: colors.muted, fontSize: 14, fontVariant: ['tabular-nums'] },

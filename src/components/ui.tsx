@@ -7,19 +7,23 @@ export function Button({
   onPress,
   kind = 'primary',
   style,
+  disabled,
 }: {
   title: string;
   onPress: () => void;
   kind?: 'primary' | 'secondary' | 'danger';
   style?: ViewStyle;
+  disabled?: boolean;
 }) {
   const bg = kind === 'primary' ? colors.accent : kind === 'danger' ? colors.danger : colors.card;
   const fg = kind === 'secondary' ? colors.text : '#111';
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, { backgroundColor: bg, opacity: pressed ? 0.8 : 1 }, style]}
+      style={({ pressed }) => [styles.button, { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }, style]}
     >
       <Text style={[styles.buttonText, { color: fg }]}>{title}</Text>
     </Pressable>

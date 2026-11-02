@@ -1,11 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DarkTheme, LinkingOptions, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, LinkingOptions, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 
-import { StartScreen } from '../screens/StartScreen';
+import { TodayScreen } from '../screens/TodayScreen';
+import { GoalSetupScreen } from '../screens/GoalSetupScreen';
 import { SessionScreen } from '../screens/SessionScreen';
 import { SummaryScreen } from '../screens/SummaryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
@@ -16,6 +17,7 @@ import { useIdentity } from '../backend/IdentityProvider';
 import { SessionRecord } from '../storage/history';
 import { DEFAULT_SETTINGS, Settings, loadSettings, saveSettings } from '../storage/settings';
 import { historyStore } from '../session/useSession';
+import { faceTrackingSupported } from '../sensors';
 import { colors } from '../theme';
 import { APP_SCHEME, notificationLink, parseAppLink } from '../backend/linking';
 import { BattlesScreen } from '../screens/battles/BattlesScreen';
@@ -28,9 +30,25 @@ import type { BattleSessionOptions } from '../session/useSession';
 import type { Friend } from '../battles/model';
 import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
+import { deviceTimeZone } from '../backend/profile';
+import {
+  GoalEnrollment,
+  buildToday,
+  celebrate,
+  contributionFor,
+  formScoreForReps,
+  loadGoal,
+  localDate,
+  phoneCountedReps,
+  saveEnrollment,
+  saveGoal,
+  workoutFromRecord,
+} from '../progress';
+import { HOWTO_KEY } from '../progress/howto';
 
 export type RootStackParamList = {
-  Start: undefined;
+  Today: undefined;
+  GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
   History: undefined;
@@ -61,7 +79,10 @@ const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), `${APP_SCHEME}://`],
   config: {
     screens: {
-      Start: '',
+      Today: {
+        path: '',
+        alias: ['today'],
+      },
       History: 'history',
       Account: 'account',
       Battles: 'battles',
@@ -104,6 +125,11 @@ interface AppState {
   updateSettings: (s: Settings) => void;
   savedSets: number;
   refreshSavedSets: () => void;
+  enrollments: GoalEnrollment[];
+  saveChoice: (choice: Parameters<typeof saveEnrollment>[1]) => void;
+  howToOpen: boolean;
+  openHowTo: () => void;
+  closeHowTo: () => void;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
@@ -113,13 +139,18 @@ const useAppState = () => {
   return s;
 };
 
-function StartRoute({ navigation }: Props<'Start'>) {
-  const { settings, updateSettings, savedSets, refreshSavedSets } = useAppState();
-  const { session } = useBackend();
+function TodayRoute({ navigation }: Props<'Today'>) {
+  const { savedSets, refreshSavedSets, enrollments, howToOpen, openHowTo, closeHowTo } = useAppState();
+  const { configured, session } = useBackend();
   const { profile } = useIdentity();
+  const focused = useIsFocused();
   const askedFor = useRef<string | null>(null);
-  useEffect(() => navigation.addListener('focus', refreshSavedSets), [navigation, refreshSavedSets]);
-  // Right after the first sign-in: ask for a username once per app run ("Later" is fine).
+  const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
+  const reload = useCallback(() => {
+    refreshSavedSets();
+    historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
+  }, [refreshSavedSets]);
+  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
   useEffect(() => {
     const uid = session?.user.id;
     if (uid && profile === null && askedFor.current !== uid && navigation.isFocused()) {
@@ -127,15 +158,23 @@ function StartRoute({ navigation }: Props<'Start'>) {
       navigation.navigate('ProfileSetup');
     }
   }, [session, profile, navigation]);
+  const zone = deviceTimeZone();
+  const today = localDate(Date.now(), zone);
+  const view = buildToday({ workouts, enrollments, today, timeZone: zone });
   return (
-    <StartScreen
-      settings={settings}
+    <TodayScreen
+      view={view}
+      depth={faceTrackingSupported()}
+      showBattles={configured && faceTrackingSupported()}
+      howToOpen={howToOpen && focused}
       savedSets={savedSets}
-      onChangeSettings={updateSettings}
       onStart={() => navigation.navigate('Session')}
+      onGoal={() => navigation.navigate('GoalSetup')}
       onHistory={() => navigation.navigate('History')}
       onAccount={() => navigation.navigate('Account')}
       onBattles={() => navigation.navigate('Battles')}
+      onOpenHowTo={openHowTo}
+      onCloseHowTo={closeHowTo}
     />
   );
 }
@@ -170,7 +209,7 @@ function BattlesRoute({ navigation }: Props<'Battles'>) {
   return (
     <BattlesScreen
       {...gate(navigation)}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Start'))}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
       onOpen={(battleId) => navigation.navigate('Battle', { battleId })}
       onNew={() => navigation.navigate('NewBattle')}
       onFriends={() => navigation.navigate('Friends')}
@@ -246,19 +285,50 @@ function InviteRoute({ navigation, route }: Props<'Invite'>) {
     <InviteScreen
       {...gate(navigation)}
       token={route.params.token}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Start'))}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
       onJoined={(battleId) => navigation.replace('Battle', { battleId })}
     />
   );
 }
 
 function SummaryRoute({ navigation, route }: Props<'Summary'>) {
+  const { enrollments } = useAppState();
+  const { appSettings } = useBackend();
   const record = route.params.record;
+  const fromHistory = route.params.from === 'history';
   const canChallenge = route.params.from === 'session' && !record.battleId && record.reps.length > 0;
+  const [progress, setProgress] = useState<React.ComponentProps<typeof SummaryScreen>['progress']>(null);
+  useEffect(() => {
+    if (fromHistory) return;
+    let cancelled = false;
+    historyStore.load().then((rows) => {
+      if (cancelled) return;
+      const records = rows.some((r) => r.id === record.id) ? rows : [record, ...rows];
+      const zone = record.timeZone || deviceTimeZone();
+      const today = localDate(record.startedAt, zone);
+      const workouts = records.map(workoutFromRecord);
+      const form = formScoreForReps(record.reps, appSettings.formScoreWeights, {
+        startedAt: record.startedAt,
+        timerDurationS: record.timerDurationS,
+      });
+      setProgress({
+        counted: phoneCountedReps(record),
+        shallow: record.reps.filter((r) => r.quality === 'shallow').length,
+        formScore: form.score,
+        tempoCaption: form.tempoCaption,
+        contribution: contributionFor(workouts, enrollments, today, zone),
+        celebration: celebrate(workouts, enrollments, today, zone, record.id),
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [record, enrollments, fromHistory, appSettings.formScoreWeights]);
   return (
     <SummaryScreen
       record={record}
-      fromHistory={route.params.from === 'history'}
+      fromHistory={fromHistory}
+      progress={fromHistory ? null : progress}
       onChallenge={canChallenge ? () => navigation.navigate('NewBattle', { fromSet: record }) : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
     />
@@ -272,7 +342,31 @@ function HistoryRoute({ navigation }: Props<'History'>) {
 }
 
 function AccountRoute({ navigation }: Props<'Account'>) {
-  return <AccountScreen onEditProfile={() => navigation.navigate('ProfileSetup')} onBack={() => navigation.goBack()} />;
+  const { settings, updateSettings } = useAppState();
+  return (
+    <AccountScreen
+      settings={settings}
+      onChangeSettings={updateSettings}
+      onEditProfile={() => navigation.navigate('ProfileSetup')}
+      onBack={() => navigation.goBack()}
+    />
+  );
+}
+
+function GoalRoute({ navigation }: Props<'GoalSetup'>) {
+  const { enrollments, saveChoice } = useAppState();
+  const zone = deviceTimeZone();
+  return (
+    <GoalSetupScreen
+      enrollments={enrollments}
+      today={localDate(Date.now(), zone)}
+      onSave={(choice) => {
+        saveChoice(choice);
+        navigation.goBack();
+      }}
+      onClose={() => navigation.goBack()}
+    />
+  );
 }
 
 function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
@@ -284,9 +378,15 @@ export function RootNavigator() {
   webBaseUrl = appSettings.inviteLinks.webBaseUrl;
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [savedSets, setSavedSets] = useState(0);
+  const [enrollments, setEnrollments] = useState<GoalEnrollment[]>([]);
+  const [howToOpen, setHowToOpen] = useState(false);
 
   useEffect(() => {
     loadSettings(AsyncStorage).then(setSettings);
+    loadGoal(AsyncStorage).then(setEnrollments).catch(() => {});
+    AsyncStorage.getItem(HOWTO_KEY)
+      .then((v) => setHowToOpen(v !== '1'))
+      .catch(() => setHowToOpen(true));
   }, []);
 
   const refreshSavedSets = useCallback(() => {
@@ -298,13 +398,34 @@ export function RootNavigator() {
     saveSettings(AsyncStorage, s).catch(() => {});
   }, []);
 
-  const value = useMemo(() => ({ settings, updateSettings, savedSets, refreshSavedSets }), [settings, updateSettings, savedSets, refreshSavedSets]);
+  const enrollmentsRef = useRef(enrollments);
+  enrollmentsRef.current = enrollments;
+  const saveChoice = useCallback((choice: Parameters<typeof saveEnrollment>[1]) => {
+    const zone = deviceTimeZone();
+    const today = localDate(Date.now(), zone);
+    const result = saveEnrollment(enrollmentsRef.current, choice, today, zone, `goal-${today}-${Date.now()}`);
+    if (!result.ok) return;
+    setEnrollments(result.enrollments);
+    saveGoal(AsyncStorage, result.enrollments).catch(() => {});
+  }, []);
+
+  const closeHowTo = useCallback(() => {
+    setHowToOpen(false);
+    AsyncStorage.setItem(HOWTO_KEY, '1').catch(() => {});
+  }, []);
+  const openHowTo = useCallback(() => setHowToOpen(true), []);
+
+  const value = useMemo(
+    () => ({ settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, howToOpen, openHowTo, closeHowTo }),
+    [settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, howToOpen, openHowTo, closeHowTo],
+  );
 
   return (
     <AppStateContext.Provider value={value}>
       <NavigationContainer linking={linking} theme={theme}>
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-          <Stack.Screen name="Start" component={StartRoute} />
+          <Stack.Screen name="Today" component={TodayRoute} />
+          <Stack.Screen name="GoalSetup" component={GoalRoute} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />
           <Stack.Screen name="History" component={HistoryRoute} />

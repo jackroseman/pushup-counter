@@ -16,6 +16,8 @@ export interface SessionRecord {
   battleId?: string;
   /** Seconds the timer ran, when this set was timed. Absent on an untimed set. */
   timerDurationS?: number;
+  /** IANA zone of the phone at End set. Missing on sets saved before this was recorded. */
+  timeZone?: string;
 }
 
 /** Minimal async key-value interface (AsyncStorage satisfies it) so this is testable. */

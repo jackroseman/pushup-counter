@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DarkTheme, LinkingOptions, NavigationContainer, useIsFocused } from '@react-navigation/native';
+import { CompositeScreenProps, DarkTheme, LinkingOptions, NavigationContainer, NavigatorScreenParams, useIsFocused } from '@react-navigation/native';
+import { createBottomTabNavigator, BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
@@ -30,6 +31,7 @@ import { FriendScreen } from '../screens/battles/FriendScreen';
 import { InviteScreen } from '../screens/battles/InviteScreen';
 import type { BattleSessionOptions } from '../session/useSession';
 import type { Friend } from '../battles/model';
+import { challengeOffers, type ChallengeOffer } from '../battles/challengeFromSet';
 import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
@@ -64,23 +66,29 @@ import {
 } from '../progress';
 import { HOWTO_KEY } from '../progress/howto';
 
-export type RootStackParamList = {
+export type TabParamList = {
   Today: undefined;
   Progress: undefined;
   League: undefined;
+  Challenges: undefined;
+};
+
+export type RootStackParamList = {
+  Main: NavigatorScreenParams<TabParamList> | undefined;
   GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
   History: undefined;
   Account: undefined;
   ProfileSetup: undefined;
-  Battles: undefined;
-  Battle: { battleId: string; share?: boolean; justPlayed?: { reps: number; counted: number }; promptAttempt?: boolean };
-  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord } | undefined;
+  Battle: { challengeId: string; share?: boolean; justPlayed?: { reps: number; counted: number }; promptAttempt?: boolean };
+  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
   Friends: undefined;
   Friend: { friend: Friend };
   Invite: { token: string };
 };
+
+const Tabs = createBottomTabNavigator<TabParamList>();
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -99,17 +107,27 @@ const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), `${APP_SCHEME}://`],
   config: {
     screens: {
-      Today: {
-        path: '',
-        alias: ['today'],
+      Main: {
+        screens: {
+          Today: {
+            path: '',
+            alias: ['today'],
+          },
+          Progress: 'progress',
+          League: 'league',
+          Challenges: {
+            path: 'challenges',
+            alias: ['battles'],
+          },
+        },
       },
       History: 'history',
-      Progress: 'progress',
-      League: 'league',
       Account: 'account',
-      Battles: 'battles',
       Friends: 'friends',
-      Battle: 'battle/:battleId',
+      Battle: {
+        path: 'challenge/:challengeId',
+        alias: ['battle/:challengeId'],
+      },
       Invite: 'invite/:token',
     },
   },
@@ -141,6 +159,7 @@ const theme = {
 };
 
 type Props<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;
+type TabProps<T extends keyof TabParamList> = CompositeScreenProps<BottomTabScreenProps<TabParamList, T>, NativeStackScreenProps<RootStackParamList>>;
 
 interface RemoteProgress {
   doc: ServerProgress | null;
@@ -169,9 +188,9 @@ const useAppState = () => {
   return s;
 };
 
-function TodayRoute({ navigation }: Props<'Today'>) {
+function TodayRoute({ navigation }: TabProps<'Today'>) {
   const { savedSets, refreshSavedSets, enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
-  const { configured, session } = useBackend();
+  const { session } = useBackend();
   const { profile } = useIdentity();
   const focused = useIsFocused();
   const askedFor = useRef<string | null>(null);
@@ -199,22 +218,18 @@ function TodayRoute({ navigation }: Props<'Today'>) {
       view={view}
       banner={banner}
       depth={faceTrackingSupported()}
-      showBattles={configured && faceTrackingSupported()}
       howToOpen={howToOpen && focused}
       savedSets={savedSets}
       onStart={() => navigation.navigate('Session')}
       onGoal={() => navigation.navigate('GoalSetup')}
-      onProgress={() => navigation.navigate('Progress')}
-      onLeague={() => navigation.navigate('League')}
       onAccount={() => navigation.navigate('Account')}
-      onBattles={() => navigation.navigate('Battles')}
       onOpenHowTo={openHowTo}
       onCloseHowTo={closeHowTo}
     />
   );
 }
 
-function LeagueRoute({ navigation }: Props<'League'>) {
+function LeagueRoute({ navigation }: TabProps<'League'>) {
   const { configured, session } = useBackend();
   const { profile } = useIdentity();
   const userId = session?.user.id ?? null;
@@ -269,7 +284,6 @@ function LeagueRoute({ navigation }: Props<'League'>) {
       board={board}
       banner={banner}
       meId={userId}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
       onAddFriend={() => navigation.navigate('Friends')}
       onOpenFriend={(row) => {
         if (!userId || row.userId === userId) return;
@@ -282,7 +296,7 @@ function LeagueRoute({ navigation }: Props<'League'>) {
   );
 }
 
-function ProgressRoute({ navigation }: Props<'Progress'>) {
+function ProgressRoute({ navigation }: TabProps<'Progress'>) {
   const { enrollments, remote, refreshRemote } = useAppState();
   const { session } = useBackend();
   const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
@@ -310,7 +324,6 @@ function ProgressRoute({ navigation }: Props<'Progress'>) {
     <ProgressScreen
       view={view}
       banner={banner}
-      onBack={() => navigation.goBack()}
       onAllSets={() => navigation.navigate('History')}
       onProgram={() => navigation.navigate('GoalSetup')}
     />
@@ -329,7 +342,7 @@ function SessionRoute({ navigation, route }: Props<'Session'>) {
         if (!battle) return navigation.replace('Summary', { record, from: 'session' });
         submitBattleAttempt(record, battle.battleId, deviceId).catch(() => {});
         navigation.replace('Battle', {
-          battleId: battle.battleId,
+          challengeId: battle.battleId,
           justPlayed: { reps: record.reps.length, counted: countedReps(record.reps, record.startedAt, battle) },
         });
       }}
@@ -343,12 +356,11 @@ const gate = (navigation: { navigate: (r: 'Account' | 'ProfileSetup') => void })
   onProfile: () => navigation.navigate('ProfileSetup'),
 });
 
-function BattlesRoute({ navigation }: Props<'Battles'>) {
+function BattlesRoute({ navigation }: TabProps<'Challenges'>) {
   return (
     <BattlesScreen
       {...gate(navigation)}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
-      onOpen={(battleId) => navigation.navigate('Battle', { battleId })}
+      onOpen={(challengeId) => navigation.navigate('Battle', { challengeId })}
       onNew={() => navigation.navigate('NewBattle')}
       onFriends={() => navigation.navigate('Friends')}
     />
@@ -361,16 +373,16 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
   return (
     <BattleScreen
       {...gate(navigation)}
-      battleId={route.params.battleId}
+      battleId={route.params.challengeId}
       share={route.params.share}
       justPlayed={route.params.justPlayed}
       promptAttempt={route.params.promptAttempt}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Battles'))}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
       onPlay={(b) =>
         navigation.navigate('Session', {
           battle: {
             battleId: b.id,
-            format: b.format === 'timed' ? 'timed' : 'max_reps',
+            format: b.durationS ? 'timed' : 'max_reps',
             durationS: b.durationS,
             idleEndS: d.maxRepsIdleEndS,
             capS: d.maxRepsCapS,
@@ -387,10 +399,11 @@ function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
       {...gate(navigation)}
       friendIds={route.params?.friendIds}
       fromSet={route.params?.fromSet}
+      offer={route.params?.offer}
       onBack={() => navigation.goBack()}
       onFriends={() => navigation.navigate('Friends')}
-      onCreated={(battleId, share, extras) =>
-        navigation.replace('Battle', { battleId, share, promptAttempt: extras?.promptAttempt, justPlayed: extras?.justPlayed })
+      onCreated={(challengeId, share, extras) =>
+        navigation.replace('Battle', { challengeId, share, promptAttempt: extras?.promptAttempt, justPlayed: extras?.justPlayed })
       }
     />
   );
@@ -400,7 +413,7 @@ function FriendsRoute({ navigation }: Props<'Friends'>) {
   return (
     <FriendsScreen
       {...gate(navigation)}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Battles'))}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
       onOpenFriend={(friend) => navigation.navigate('Friend', { friend })}
     />
   );
@@ -413,7 +426,7 @@ function FriendRoute({ navigation, route }: Props<'Friend'>) {
       friend={route.params.friend}
       onBack={() => navigation.goBack()}
       onChallenge={(f) => navigation.navigate('NewBattle', { friendIds: [f.userId] })}
-      onOpenBattle={(battleId) => navigation.navigate('Battle', { battleId })}
+      onOpenBattle={(challengeId) => navigation.navigate('Battle', { challengeId })}
     />
   );
 }
@@ -423,18 +436,24 @@ function InviteRoute({ navigation, route }: Props<'Invite'>) {
     <InviteScreen
       {...gate(navigation)}
       token={route.params.token}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Today'))}
-      onJoined={(battleId) => navigation.replace('Battle', { battleId })}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Today' }))}
+      onJoined={(challengeId) => navigation.replace('Battle', { challengeId })}
     />
   );
 }
 
 function SummaryRoute({ navigation, route }: Props<'Summary'>) {
   const { enrollments, lateIds } = useAppState();
-  const { appSettings } = useBackend();
+  const { appSettings, session } = useBackend();
   const record = route.params.record;
   const fromHistory = route.params.from === 'history';
-  const canChallenge = route.params.from === 'session' && !record.battleId && record.reps.length > 0;
+  const fromSession = route.params.from === 'session' && record.reps.length > 0;
+  const offers = fromSession && session
+    ? challengeOffers(record, {
+        timedDurationsS: appSettings.asyncBattleDefaults.timedDurationsS,
+        claimMaxAgeS: appSettings.asyncBattleDefaults.claimSetMaxAgeS,
+      })
+    : undefined;
   const [progress, setProgress] = useState<React.ComponentProps<typeof SummaryScreen>['progress']>(null);
   useEffect(() => {
     if (fromHistory) return;
@@ -468,7 +487,9 @@ function SummaryRoute({ navigation, route }: Props<'Summary'>) {
       fromHistory={fromHistory}
       syncedLate={lateIds.has(record.id)}
       progress={fromHistory ? null : progress}
-      onChallenge={canChallenge ? () => navigation.navigate('NewBattle', { fromSet: record }) : undefined}
+      offers={offers}
+      onPickChallenge={offers ? (offer) => navigation.navigate('NewBattle', { fromSet: record, offer }) : undefined}
+      onSignIn={fromSession && !session ? () => navigation.navigate('Account') : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
     />
   );
@@ -510,6 +531,24 @@ function GoalRoute({ navigation }: Props<'GoalSetup'>) {
 
 function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
   return <ProfileSetupScreen onDone={() => navigation.goBack()} onCancel={() => navigation.goBack()} />;
+}
+
+function MainTabs() {
+  return (
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: '#2A3145' },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.muted,
+      }}
+    >
+      <Tabs.Screen name="Today" component={TodayRoute} />
+      <Tabs.Screen name="Progress" component={ProgressRoute} />
+      <Tabs.Screen name="League" component={LeagueRoute} />
+      <Tabs.Screen name="Challenges" component={BattlesRoute} />
+    </Tabs.Navigator>
+  );
 }
 
 function openServerEnrollment(doc: ServerProgress | null): GoalSnapshot | null {
@@ -704,16 +743,13 @@ export function RootNavigator() {
     <AppStateContext.Provider value={value}>
       <NavigationContainer linking={linking} theme={theme}>
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-          <Stack.Screen name="Today" component={TodayRoute} />
-          <Stack.Screen name="Progress" component={ProgressRoute} />
-          <Stack.Screen name="League" component={LeagueRoute} />
+          <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="GoalSetup" component={GoalRoute} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />
           <Stack.Screen name="History" component={HistoryRoute} />
           <Stack.Screen name="Account" component={AccountRoute} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupRoute} />
-          <Stack.Screen name="Battles" component={BattlesRoute} />
           <Stack.Screen name="Battle" component={BattleRoute} />
           <Stack.Screen name="NewBattle" component={NewBattleRoute} />
           <Stack.Screen name="Friends" component={FriendsRoute} />

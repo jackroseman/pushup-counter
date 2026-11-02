@@ -5,12 +5,12 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 
-/** Battles need an account with a username. Renders the reason + a fix when they're missing. */
+/** Challenges need an account with a username. Renders the reason + a fix when they're missing. */
 export function AccountGate({
   children,
   onAccount,
   onProfile,
-  why = 'Battles are played with friends, so you need an account.',
+  why = 'Challenges are with friends, so you need an account.',
 }: {
   children: React.ReactNode;
   onAccount: () => void;
@@ -19,10 +19,10 @@ export function AccountGate({
 }) {
   const { configured, session } = useBackend();
   const { profile, profileError } = useIdentity();
-  if (!configured) return <Notice title="Not available" text="This build isn't connected to the battle server." />;
+  if (!configured) return <Notice title="Not available" text="This build isn't connected to the challenge server." />;
   if (!session)
     return (
-      <Notice title="Sign in to battle" text={`${why} Solo sets keep working without one.`}>
+      <Notice title="Sign in" text={`${why} Solo sets keep working without one.`}>
         <Button title="Sign in" onPress={onAccount} />
       </Notice>
     );
@@ -49,12 +49,16 @@ export function Notice({ title, text, children }: { title: string; text?: string
   );
 }
 
-export function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
+export function Header({ title, onBack, right }: { title: string; onBack?: () => void; right?: React.ReactNode }) {
   return (
     <View style={s.header}>
-      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-        <Text style={s.back}>‹ Back</Text>
-      </Pressable>
+      {onBack ? (
+        <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <Text style={s.back}>‹ Back</Text>
+        </Pressable>
+      ) : (
+        <View style={{ width: 60 }} />
+      )}
       <Text style={s.title} numberOfLines={1}>
         {title}
       </Text>

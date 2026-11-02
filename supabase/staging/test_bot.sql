@@ -5,10 +5,11 @@
 --
 -- What @pushup_bot does (cron job 'pushup-bot', every minute):
 --   * accepts friend requests sent to it;
---   * accepts battle invites sent to it (in-app invites) and plays its attempt right away,
---     so you see an opponent score before your own attempt;
---   * testing.bot_challenge('<your username>', 'max_reps' | 'timed', 60) makes the bot
---     challenge YOU (it plays first), to test the invite push / accept / play / result flow.
+--   * accepts best-set challenge invites sent to it and plays its attempt right away,
+--     so you see an opponent score before your own attempt (window challenges are not played);
+--   * testing.bot_challenge('<your username>') makes the bot challenge YOU with a 60 s
+--     best set (it plays first). Pass 'total' for most reps this week (the bot does not
+--     play a set; your solo sets in the window count). Pass duration 0 for an untimed best set.
 -- Its sets are ordinary rows: a mix of Full, Good and a couple of Shallow reps, so the
 -- standings show that Full + Good count and Shallow does not.
 --
@@ -32,18 +33,21 @@ on conflict (id) do nothing;
 create or replace function testing.bot_id() returns uuid language sql immutable set search_path = '' as
 $$ select '00000000-0000-4000-8000-00000000b07a'::uuid $$;
 
--- Records one attempt for the bot: n reps, 1.5 s apart (fits a timed battle's window).
-create or replace function testing.bot_play(p_battle uuid)
+-- Records one attempt for the bot on a best-set challenge: n reps, 1.5 s apart.
+create or replace function testing.bot_play(p_challenge uuid)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
-  b      public.battles;
+  b      public.challenges;
   c      public.detector_configs;
   v_set  uuid;
   v_top  real := 0.50;
   v_n    int;
   v_len  int;
 begin
-  select * into b from public.battles where id = p_battle;
+  select * into b from public.challenges where id = p_challenge;
+  if b.kind is distinct from 'best_set' then
+    raise exception 'the bot only plays a best-set challenge';
+  end if;
   select * into c from public.detector_configs order by id desc limit 1;
   if c.id is null then
     insert into public.detector_configs (algorithm_version, floor_distance_m, full_ratio, good_ratio,
@@ -52,12 +56,12 @@ begin
     values (1, 0.08, 0.70, 0.45, 0.25, 0.85, 400, 0, 3, true) returning * into c;
   end if;
   v_n := 10 + floor(random() * 16)::int;                               -- 10..25 reps
-  if b.format = 'timed' then v_n := least(v_n, floor((b.duration_s * 1000 - 500) / 1500.0)::int); end if;
+  if b.duration_s is not null then v_n := least(v_n, floor((b.duration_s * 1000 - 500) / 1500.0)::int); end if;
   v_len := v_n * 1500 + 1000;
 
-  insert into public.sets (user_id, client_set_id, battle_id, detector_config_id, data_version,
+  insert into public.sets (user_id, client_set_id, challenge_id, detector_config_id, data_version,
                            app_version, started_at, ended_at, calibrated_top_m, depth_tracking)
-  values (testing.bot_id(), 'bot-' || p_battle, p_battle, c.id, 2, 'bot',
+  values (testing.bot_id(), 'bot-' || p_challenge, p_challenge, c.id, 2, 'bot',
           now() - make_interval(secs => v_len / 1000.0), now(), v_top, true)
   returning id into v_set;
 
@@ -74,7 +78,7 @@ begin
   return v_set;
 end $$;
 
--- One tick: accept requests and invites, then play every open battle not played yet.
+-- One tick: accept requests and best-set invites, then play every open best-set not played yet.
 create or replace function testing.bot_respond()
 returns integer language plpgsql security definer set search_path = '' as $$
 declare r record; n int := 0;
@@ -83,18 +87,19 @@ begin
    where status = 'pending' and requested_by <> testing.bot_id()
      and testing.bot_id() in (user_low, user_high);
 
-  update public.battle_participants bp set status = 'accepted', responded_at = now()
-    from public.battles b
-   where b.id = bp.battle_id and bp.user_id = testing.bot_id() and bp.status = 'invited'
+  update public.challenge_participants bp set status = 'accepted', responded_at = now()
+    from public.challenges b
+   where b.id = bp.challenge_id and bp.user_id = testing.bot_id() and bp.status = 'invited'
+     and b.kind = 'best_set'
      and b.status in ('pending', 'active') and b.invite_expires_at > now();
 
   for r in
-    select b.id from public.battles b
-      join public.battle_participants bp on bp.battle_id = b.id and bp.user_id = testing.bot_id()
-     where bp.status = 'accepted' and b.mode = 'async'
+    select b.id from public.challenges b
+      join public.challenge_participants bp on bp.challenge_id = b.id and bp.user_id = testing.bot_id()
+     where bp.status = 'accepted' and b.mode = 'async' and b.kind = 'best_set'
        and (b.status = 'active' or (b.status = 'pending' and b.created_by = testing.bot_id()))
        and (b.ends_at is null or b.ends_at > now())
-       and not exists (select 1 from public.sets s where s.battle_id = b.id and s.user_id = testing.bot_id())
+       and not exists (select 1 from public.sets s where s.challenge_id = b.id and s.user_id = testing.bot_id())
   loop
     perform testing.bot_play(r.id);
     n := n + 1;
@@ -102,10 +107,11 @@ begin
   return n;
 end $$;
 
--- The bot challenges you (and becomes your friend first). Returns the battle id.
-create or replace function testing.bot_challenge(p_username text, p_format text default 'max_reps', p_duration int default 60)
+-- The bot challenges you (and becomes your friend first). Returns the challenge id.
+-- p_kind is 'best_set' (default) or 'total'. A best set with p_duration > 0 is timed.
+create or replace function testing.bot_challenge(p_username text, p_kind text default 'best_set', p_duration int default 60)
 returns uuid language plpgsql security definer set search_path = '' as $$
-declare v_user uuid; v_res jsonb; v_battle uuid;
+declare v_user uuid; v_res jsonb; v_challenge uuid;
 begin
   select id into v_user from public.profiles where username = p_username;
   if v_user is null then raise exception 'user % not found', p_username; end if;
@@ -113,15 +119,19 @@ begin
   values (least(v_user, testing.bot_id()), greatest(v_user, testing.bot_id()), testing.bot_id(), 'accepted', now())
   on conflict (user_low, user_high) do update set status = 'accepted', responded_at = now()
     where public.friendships.status = 'pending';
-  -- create_battle runs as the bot (auth.uid() reads this claim), for the same rules and pushes.
+  -- create_challenge runs as the bot (auth.uid() reads this claim), for the same rules and pushes.
   perform set_config('request.jwt.claim.sub', testing.bot_id()::text, true);
-  v_res := public.create_battle(jsonb_build_object(
-    'format', p_format, 'durationS', case when p_format = 'timed' then p_duration end,
+  v_res := public.create_challenge(jsonb_build_object(
+    'kind', p_kind,
+    'durationS', case when p_kind = 'best_set' and p_duration > 0 then p_duration end,
+    'window', case when p_kind = 'total' then 'week' end,
     'friendIds', jsonb_build_array(v_user)));
   perform set_config('request.jwt.claim.sub', '', true);
-  v_battle := (v_res->>'battleId')::uuid;
-  perform testing.bot_play(v_battle);
-  return v_battle;
+  v_challenge := (v_res->>'challengeId')::uuid;
+  if p_kind = 'best_set' then
+    perform testing.bot_play(v_challenge);
+  end if;
+  return v_challenge;
 end $$;
 
 revoke all on all functions in schema testing from public, anon, authenticated;

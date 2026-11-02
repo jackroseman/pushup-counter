@@ -66,7 +66,7 @@ export function AccountScreen({
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Account</Text>
         <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
-        <Text style={styles.text}>Sign in to back up your sets and battle friends. Solo counting keeps working without an account.</Text>
+        <Text style={styles.text}>Sign in to back up your sets and challenge friends. Solo counting keeps working without an account.</Text>
         {appleAvailable ? (
           <AppleAuthentication.AppleAuthenticationButton
             buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
@@ -91,7 +91,7 @@ export function AccountScreen({
   const confirmDelete = () =>
     Alert.alert(
       'Delete account?',
-      'This permanently deletes your profile, friends, backed-up sets and battle entries. Sets saved on this phone stay here. This cannot be undone.',
+      'This permanently deletes your profile, friends, backed-up sets and challenge entries. Sets saved on this phone stay here. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -158,7 +158,7 @@ export function AccountScreen({
             <Text style={styles.section}>Notifications</Text>
             {push.registered ? (
               <>
-                <Text style={styles.text}>On. You will hear about challenges and battle results.</Text>
+                <Text style={styles.text}>On. You will hear about challenges and results.</Text>
                 <Button
                   title="Send test notification"
                   kind="secondary"
@@ -171,7 +171,7 @@ export function AccountScreen({
                 <Text style={styles.text}>
                   {push.permission === 'denied'
                     ? 'Notifications are off for this app. Turn them on in iOS Settings.'
-                    : 'Get notified when a friend challenges you or a battle ends.'}
+                    : 'Get notified when a friend challenges you or a challenge ends.'}
                 </Text>
                 {push.permission !== 'denied' ? (
                   <Button

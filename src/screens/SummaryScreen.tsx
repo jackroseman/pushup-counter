@@ -4,6 +4,7 @@ import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
 import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
+import { ChallengeOffer, offerLabel } from '../battles/challengeFromSet';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
@@ -39,7 +40,9 @@ export function SummaryScreen({
   onDone,
   fromHistory,
   syncedLate,
-  onChallenge,
+  offers,
+  onPickChallenge,
+  onSignIn,
   progress,
 }: {
   record: SessionRecord;
@@ -47,8 +50,11 @@ export function SummaryScreen({
   fromHistory?: boolean;
   /** The server received this set too late for the streak. Totals still include it. */
   syncedLate?: boolean;
-  /** Just-finished solo set: start a battle that uses this set as your attempt. */
-  onChallenge?: () => void;
+  /** Just-finished set. History does not pass these. */
+  offers?: ChallengeOffer[];
+  onPickChallenge?: (offer: ChallengeOffer) => void;
+  /** Signed out: Challenge a friend opens sign in. */
+  onSignIn?: () => void;
   /** Present for a set that just finished. History stays on the analysis. */
   progress?: {
     counted: number;
@@ -211,10 +217,13 @@ export function SummaryScreen({
         })}
         <Text style={styles.caption}>Down/Up/Gap in seconds. Gap = time since the previous rep.</Text>
       </ScrollView>
-      {onChallenge ? (
+      {onSignIn ? <Button title="Challenge a friend" kind="secondary" onPress={onSignIn} /> : null}
+      {onPickChallenge && offers?.length ? (
         <>
-          <Button title="Challenge a friend" kind="secondary" onPress={onChallenge} />
-          <Text style={styles.caption}>Uses this set as your attempt. Only good reps count.</Text>
+          <Text style={styles.section}>Challenge a friend</Text>
+          {offers.map((offer) => (
+            <Button key={offerLabel(offer)} title={offerLabel(offer)} kind="secondary" onPress={() => onPickChallenge(offer)} />
+          ))}
         </>
       ) : null}
       <Button title="Done" onPress={onDone} />

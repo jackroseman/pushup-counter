@@ -13,7 +13,7 @@ function set(n = 3, extra: Record<string, unknown> = {}) {
     topDistance: 0.42,
     source: 'depth',
   }));
-  return { id: 'local-1', battleId: BATTLE, version: 2, startedAt: start, endedAt: start + 3000 + n * 1500, reps, trace: [[0, 0.42], [100, 0.4]], detectorConfig: cfg, ...extra };
+  return { id: 'local-1', challengeId: BATTLE, version: 2, startedAt: start, endedAt: start + 3000 + n * 1500, reps, trace: [[0, 0.42], [100, 0.4]], detectorConfig: cfg, ...extra };
 }
 
 describe('validateBattleSet', () => {
@@ -21,7 +21,7 @@ describe('validateBattleSet', () => {
     const r = validateBattleSet(set(3, { userId: 'someone-else' }));
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.battleId).toBe(BATTLE);
+      expect(r.challengeId).toBe(BATTLE);
       expect('userId' in r.payload).toBe(false);
     }
   });
@@ -31,7 +31,7 @@ describe('validateBattleSet', () => {
   });
 
   it.each([
-    ['no battle id', { battleId: 'x' }, /battleId/],
+    ['no challenge id', { challengeId: 'x' }, /challengeId/],
     ['legacy data', { version: 1 }, /data version/],
     ['no detector config', { detectorConfig: undefined }, /detector config/],
     ['too long', { endedAt: 1_700_000_000_000 + 3 * 3600_000 }, /2 hours/],
@@ -77,6 +77,7 @@ describe('statusForDbError', () => {
     expect(statusForDbError('set is not recent enough to use', 'P0001')).toBe(409);
     expect(statusForDbError('timed battle duration must match the set timer', 'P0001')).toBe(409);
     expect(statusForDbError('set already in a battle', 'P0001')).toBe(409);
+    expect(statusForDbError('only a best-set challenge links a set', 'P0001')).toBe(409);
     expect(statusForDbError('value too long', '22001')).toBe(400);
     expect(statusForDbError('boom')).toBe(500);
   });

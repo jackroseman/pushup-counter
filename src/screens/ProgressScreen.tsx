@@ -58,7 +58,7 @@ export function ProgressScreen({
 }: {
   view: ProgressModel;
   banner?: string | null;
-  onBack: () => void;
+  onBack?: () => void;
   onAllSets: () => void;
   onProgram: () => void;
 }) {
@@ -159,7 +159,7 @@ export function ProgressScreen({
       </Pressable>
 
       <Button title="All sets" kind="secondary" onPress={onAllSets} />
-      <Button title="Back" onPress={onBack} />
+      {onBack ? <Button title="Back" onPress={onBack} /> : null}
     </ScrollView>
   );
 }

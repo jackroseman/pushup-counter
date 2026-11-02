@@ -3,7 +3,7 @@ import type { ClaimedNotification } from '../supabase/functions/_shared/notifica
 
 const T1 = 'ExponentPushToken[one]';
 const T2 = 'ExponentPushToken[two]';
-const friendReq = (user: string): ClaimedNotification => ({ id: 1, user_id: user, kind: 'friend_request', battle_id: null, facts: { actor: { username: 'bob' } } });
+const friendReq = (user: string): ClaimedNotification => ({ id: 1, user_id: user, kind: 'friend_request', challenge_id: null, facts: { actor: { username: 'bob' } } });
 
 function io(response: unknown = { data: [] }, ok = true) {
   const calls: { url: string; body: unknown[] }[] = [];

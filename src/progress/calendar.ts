@@ -40,3 +40,9 @@ export function weekStart(isoDate: string): string {
 export function monthStart(isoDate: string): string {
   return `${isoDate.slice(0, 7)}-01`;
 }
+
+/** Steps a `YYYY-MM-01` date by whole calendar months. */
+export function addMonths(monthStartIso: string, months: number): string {
+  const [y, m] = monthStartIso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1 + months, 1)).toISOString().slice(0, 10);
+}

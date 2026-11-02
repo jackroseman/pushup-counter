@@ -15,7 +15,7 @@ export function TodayScreen({
   savedSets,
   onStart,
   onGoal,
-  onHistory,
+  onProgress,
   onAccount,
   onBattles,
   onOpenHowTo,
@@ -28,7 +28,7 @@ export function TodayScreen({
   savedSets: number;
   onStart: () => void;
   onGoal: () => void;
-  onHistory: () => void;
+  onProgress: () => void;
   onAccount: () => void;
   onBattles: () => void;
   onOpenHowTo: () => void;
@@ -63,7 +63,7 @@ export function TodayScreen({
         </Pressable>
       ) : null}
       {showBattles ? <Button title="Battles" kind="secondary" onPress={onBattles} /> : null}
-      <Button title="History" kind="secondary" onPress={onHistory} />
+      <Button title="Progress" kind="secondary" onPress={onProgress} />
       <Pressable accessibilityRole="button" onPress={onOpenHowTo} style={styles.textButton}>
         <Text style={styles.textButtonLabel}>How counting works</Text>
       </Pressable>

@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 
 import { TodayScreen } from '../screens/TodayScreen';
+import { ProgressScreen } from '../screens/ProgressScreen';
 import { GoalSetupScreen } from '../screens/GoalSetupScreen';
 import { SessionScreen } from '../screens/SessionScreen';
 import { SummaryScreen } from '../screens/SummaryScreen';
@@ -33,6 +34,7 @@ import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
 import {
   GoalEnrollment,
+  buildProgress,
   buildToday,
   celebrate,
   contributionFor,
@@ -48,6 +50,7 @@ import { HOWTO_KEY } from '../progress/howto';
 
 export type RootStackParamList = {
   Today: undefined;
+  Progress: undefined;
   GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
@@ -84,6 +87,7 @@ const linking: LinkingOptions<RootStackParamList> = {
         alias: ['today'],
       },
       History: 'history',
+      Progress: 'progress',
       Account: 'account',
       Battles: 'battles',
       Friends: 'friends',
@@ -170,11 +174,41 @@ function TodayRoute({ navigation }: Props<'Today'>) {
       savedSets={savedSets}
       onStart={() => navigation.navigate('Session')}
       onGoal={() => navigation.navigate('GoalSetup')}
-      onHistory={() => navigation.navigate('History')}
+      onProgress={() => navigation.navigate('Progress')}
       onAccount={() => navigation.navigate('Account')}
       onBattles={() => navigation.navigate('Battles')}
       onOpenHowTo={openHowTo}
       onCloseHowTo={closeHowTo}
+    />
+  );
+}
+
+function ProgressRoute({ navigation }: Props<'Progress'>) {
+  const { enrollments } = useAppState();
+  const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
+  const [storedCount, setStoredCount] = useState(0);
+  const reload = useCallback(() => {
+    historyStore
+      .load()
+      .then((rows) => {
+        setWorkouts(rows.map(workoutFromRecord));
+        setStoredCount(rows.length);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    reload();
+    return navigation.addListener('focus', reload);
+  }, [navigation, reload]);
+  const zone = deviceTimeZone();
+  const today = localDate(Date.now(), zone);
+  const view = buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount });
+  return (
+    <ProgressScreen
+      view={view}
+      onBack={() => navigation.goBack()}
+      onAllSets={() => navigation.navigate('History')}
+      onProgram={() => navigation.navigate('GoalSetup')}
     />
   );
 }
@@ -425,6 +459,7 @@ export function RootNavigator() {
       <NavigationContainer linking={linking} theme={theme}>
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
           <Stack.Screen name="Today" component={TodayRoute} />
+          <Stack.Screen name="Progress" component={ProgressRoute} />
           <Stack.Screen name="GoalSetup" component={GoalRoute} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />

@@ -9,6 +9,7 @@ describe('deep links', () => {
     expect(parseAppLink(`pushupcounter://battle/${ID}`)).toEqual({ type: 'battle', battleId: ID });
     expect(parseAppLink(`pushupcounter://invite/${TOKEN}?src=push`)).toEqual({ type: 'invite', token: TOKEN });
     expect(parseAppLink('pushupcounter://history')).toEqual({ type: 'history' });
+    expect(parseAppLink('pushupcounter://progress')).toEqual({ type: 'progress' });
     expect(parseAppLink('pushupcounter://')).toEqual({ type: 'home' });
     expect(parseAppLink('pushupcounter://today')).toEqual({ type: 'home' });
   });

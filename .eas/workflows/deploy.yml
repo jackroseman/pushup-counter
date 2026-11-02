@@ -1,9 +1,12 @@
 # CD for the released app (TestFlight / App Store). Runs only after a merge (a push to main),
 # never on PR events.
 # Ship every push to main:
-#   test -> fingerprint -> is there already a production (store) iOS build with this native fingerprint?
+#   fingerprint -> is there already a production (store) iOS build with this native fingerprint?
 #     yes -> JS-only change: publish an OTA update to the "production" channel
 #     no  -> native change: ONE new iOS production (store) build, then `submit` it to App Store Connect / TestFlight
+# Jest and tsc already ran in the required GitHub Actions `checks` job on the PR
+# (.github/workflows/ci.yml). They are not repeated here: an EAS test job waits in the
+# free-plan queue before fingerprint can start.
 # Only one build per native change: the ad hoc "preview" build is no longer made here
 # (TestFlight can't take an ad hoc build). `eas build --profile preview` still works by hand.
 # Pattern from https://docs.expo.dev/eas/workflows/examples/deploy-to-production/
@@ -24,19 +27,8 @@ concurrency:
   group: deploy-production-${{ github.ref }}
 
 jobs:
-  test:
-    name: Jest + TypeScript
-    steps:
-      - uses: eas/checkout
-      - uses: eas/install_node_modules
-      - name: Unit tests
-        run: npx jest --ci
-      - name: Type check
-        run: npx tsc --noEmit
-
   fingerprint:
     name: Fingerprint
-    needs: [test]
     type: fingerprint
     environment: production # same environment as the "production" build profile
 

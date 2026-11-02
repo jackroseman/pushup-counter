@@ -275,15 +275,15 @@ that. Fully close and reopen the app twice.
 ### Every push to `main` ships automatically (EAS Workflows)
 
 `.eas/workflows/deploy.yml` runs on every push to `main` of the GitHub repo. The repo is
-linked to the Expo project under expo.dev → project → GitHub. Steps:
+linked to the Expo project under expo.dev → project → GitHub. Jest and `tsc` already
+ran in the required GitHub `checks` job, so this workflow does not run them again. Steps:
 
-1. **Tests**: `npx jest --ci` and `npx tsc --noEmit`. If either fails, nothing ships.
-2. **Fingerprint**: hashes the project's native characteristics (environment `production`).
-3. **Get build**: looks for an existing iOS `production` (App Store) build with that
+1. **Fingerprint**: hashes the project's native characteristics (environment `production`).
+2. **Get build**: looks for an existing iOS `production` (App Store) build with that
    fingerprint. It waits for one that is still in progress.
-4. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
+3. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
    using the commit message as the update message. TestFlight installs get it on launch.
-5. **If none exists** (native change): ONE new iOS `production` store build, which the
+4. **If none exists** (native change): ONE new iOS `production` store build, which the
    `submit` job (EAS Submit, works on the free plan) uploads to App Store Connect / TestFlight
    using the App Store Connect API key stored in EAS credentials and `ascAppId` in `eas.json`.
    Retry a failed upload without rebuilding: `eas submit -p ios --id <build id>`. No ad hoc preview build is

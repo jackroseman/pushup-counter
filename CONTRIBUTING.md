@@ -93,8 +93,10 @@ Deploys run **only after a merge** (a push to `dev` or `main`), never on PR even
 | `deploy-dev.yml`  | push to `dev`  | profile `development`, channel `development`, EAS env `development` |
 | `deploy.yml`      | push to `main` | profile `production` (store build → TestFlight), channel `production`, EAS env `production` |
 
-Each workflow: tests → **fingerprint** (a hash of everything native) → is there already a
-build of that profile with this fingerprint?
+Each workflow starts at **fingerprint** (a hash of everything native) → is there already a
+build of that profile with this fingerprint? Jest and `tsc` are not run again here. The
+required GitHub `checks` job already ran them on the PR, and repeating them on EAS waits
+in the free-plan queue before fingerprint can start.
 
 * **Yes (JS/asset-only change)** → publish an **OTA update** to the channel.
 * **No (native change)** → start a **new build**. Install it from the build page in

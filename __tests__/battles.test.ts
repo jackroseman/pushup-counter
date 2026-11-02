@@ -1,8 +1,10 @@
 import {
   Battle,
   battleSubtitle,
+  battleTitle,
   canPlay,
   canRespond,
+  creatorAttemptCue,
   Friend,
   friendlyError,
   groupBattles,
@@ -20,6 +22,7 @@ import {
   BATTLE_QUEUE_KEY,
   enqueueBattleSet,
   flushBattleQueue,
+  isPermanentFailure,
   isPermanentStatus,
   loadBattleQueue,
   pendingBattleIds,
@@ -78,6 +81,13 @@ describe('battle model', () => {
     expect(canPlay(battle({ status: 'completed' }), NOW)).toBe(false);
   });
 
+  it('lets a multi-day player add more sets until the window ends', () => {
+    const md = battle({ format: 'multi_day' }, [person('alice'), person('me', { isMe: true, attemptsUsed: 3 })]);
+    expect(canPlay(md, NOW)).toBe(true);
+    expect(canPlay(battle({ format: 'multi_day', endsAt: iso(-1) }, [person('me', { isMe: true })]), NOW)).toBe(false);
+    expect(battleTitle({ format: 'multi_day', durationS: null })).toBe('Multi-day');
+  });
+
   it('only the creator may go first while a battle is pending', () => {
     const pending = (meId: string) => battle({ status: 'pending', createdBy: 'me' === meId ? 'me' : 'alice' }, [person('alice'), person('me', { isMe: true })]);
     expect(canPlay(pending('me'), NOW)).toBe(true);
@@ -132,6 +142,7 @@ describe('battle model', () => {
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: null })).toBe(`pushupcounter://invite/${t}`);
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: 'https://pushup.example.app' })).toBe(`https://pushup.example.app/b/${t}`);
     expect(inviteShareMessage({ format: 'timed', durationS: 60 }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Jack challenged you to a 60 second pushup battle.*pushupcounter:\/\/invite\/x/);
+    expect(inviteShareMessage({ format: 'multi_day', durationS: null }, 'Jack', 'pushupcounter://invite/x')).toMatch(/multi-day pushup battle/);
   });
 
   it('names people and groups friends', () => {
@@ -146,8 +157,19 @@ describe('battle model', () => {
     expect(g.blocked.map((x) => x.username)).toEqual(['dan']);
   });
 
+  it('does not celebrate a claimed set until the server has it', () => {
+    const base = { attemptsUsed: 0, uploadPending: false, canPlay: true };
+    expect(creatorAttemptCue({ ...base, promptAttempt: true })).toEqual({ showClaimed: false, showPrompt: true });
+    expect(creatorAttemptCue({ ...base, justPlayed: true })).toEqual({ showClaimed: false, showPrompt: true });
+    expect(creatorAttemptCue({ ...base, justPlayed: true, attemptsUsed: 1 })).toEqual({ showClaimed: true, showPrompt: false });
+    expect(creatorAttemptCue({ ...base, justPlayed: true, uploadPending: true })).toEqual({ showClaimed: true, showPrompt: false });
+    expect(creatorAttemptCue({ ...base, promptAttempt: true, canPlay: false })).toEqual({ showClaimed: false, showPrompt: false });
+  });
+
   it('turns server errors into plain messages', () => {
     expect(friendlyError('not friends')).toMatch(/only challenge friends/);
+    expect(friendlyError('set is not recent enough to use')).toMatch(/too old/);
+    expect(friendlyError('timed battle duration must match the set timer')).toMatch(/same timer/);
     expect(friendlyError('invite expired')).toMatch(/expired/);
     expect(friendlyError('that is you')).toBe("That's you!");
     expect(friendlyError('TypeError: Network request failed')).toMatch(/connection/);
@@ -222,6 +244,9 @@ describe('battle upload queue', () => {
     expect(isPermanentStatus(429)).toBe(false);
     expect(isPermanentStatus(500)).toBe(false);
     expect(isPermanentStatus(0)).toBe(false);
+    expect(isPermanentFailure(500, 'set is not recent enough to use')).toBe(true);
+    expect(isPermanentFailure(500, 'timed battle duration must match the set timer')).toBe(true);
+    expect(isPermanentFailure(500, 'network down')).toBe(false);
   });
 
   it('queues, dedupes and uploads oldest first', async () => {

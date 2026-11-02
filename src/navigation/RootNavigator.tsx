@@ -37,8 +37,8 @@ export type RootStackParamList = {
   Account: undefined;
   ProfileSetup: undefined;
   Battles: undefined;
-  Battle: { battleId: string; share?: boolean; justPlayed?: { reps: number; counted: number } };
-  NewBattle: { friendIds?: string[] } | undefined;
+  Battle: { battleId: string; share?: boolean; justPlayed?: { reps: number; counted: number }; promptAttempt?: boolean };
+  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord } | undefined;
   Friends: undefined;
   Friend: { friend: Friend };
   Invite: { token: string };
@@ -187,6 +187,7 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
       battleId={route.params.battleId}
       share={route.params.share}
       justPlayed={route.params.justPlayed}
+      promptAttempt={route.params.promptAttempt}
       onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Battles'))}
       onPlay={(b) =>
         navigation.navigate('Session', {
@@ -208,9 +209,12 @@ function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
     <NewBattleScreen
       {...gate(navigation)}
       friendIds={route.params?.friendIds}
+      fromSet={route.params?.fromSet}
       onBack={() => navigation.goBack()}
       onFriends={() => navigation.navigate('Friends')}
-      onCreated={(battleId, share) => navigation.replace('Battle', { battleId, share })}
+      onCreated={(battleId, share, extras) =>
+        navigation.replace('Battle', { battleId, share, promptAttempt: extras?.promptAttempt, justPlayed: extras?.justPlayed })
+      }
     />
   );
 }
@@ -249,10 +253,13 @@ function InviteRoute({ navigation, route }: Props<'Invite'>) {
 }
 
 function SummaryRoute({ navigation, route }: Props<'Summary'>) {
+  const record = route.params.record;
+  const canChallenge = route.params.from === 'session' && !record.battleId && record.reps.length > 0;
   return (
     <SummaryScreen
-      record={route.params.record}
+      record={record}
       fromHistory={route.params.from === 'history'}
+      onChallenge={canChallenge ? () => navigation.navigate('NewBattle', { fromSet: record }) : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
     />
   );

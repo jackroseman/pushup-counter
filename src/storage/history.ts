@@ -14,6 +14,8 @@ export interface SessionRecord {
   trace?: TracePoint[];
   /** Set recorded as a battle attempt; uploaded through submit-set, not the solo backup. */
   battleId?: string;
+  /** Seconds the timer ran, when this set was timed. Absent on an untimed set. */
+  timerDurationS?: number;
 }
 
 /** Minimal async key-value interface (AsyncStorage satisfies it) so this is testable. */

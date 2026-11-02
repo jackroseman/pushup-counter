@@ -72,7 +72,7 @@ export function validateBattleSet(body: unknown): ValidationResult {
 
 /** Postgres error -> HTTP status for the submit-set function. */
 export function statusForDbError(message: string, code?: string): number {
-  if (/not an accepted participant|battle not open for sets|no attempts left|battle deadline passed/i.test(message)) return 409;
+  if (/not an accepted participant|battle not open for sets|no attempts left|battle deadline passed|not recent enough|already in a battle|must match the set timer|cannot use a finished set|cannot be scored|was not linked/i.test(message)) return 409;
   if (code && /^(22|23)/.test(code)) return 400;
   return 500;
 }

@@ -32,7 +32,14 @@ export const api = {
   },
   createBattle: (
     c: SupabaseClient,
-    p: { format: 'max_reps' | 'timed'; durationS?: number; deadlineHours: number; friendIds: string[]; inviteLink: boolean },
+    p: {
+      format: 'max_reps' | 'timed' | 'multi_day';
+      durationS?: number;
+      windowDays?: number;
+      deadlineHours: number;
+      friendIds: string[];
+      inviteLink: boolean;
+    },
   ) => rpc<{ battleId: string; inviteToken: string | null }>(c, 'create_battle', { p }),
   async respond(c: SupabaseClient, battleId: string, userId: string, accept: boolean): Promise<Res<null>> {
     const { error } = await c

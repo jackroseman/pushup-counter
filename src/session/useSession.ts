@@ -371,6 +371,9 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       version: 2,
       trace: trace.current?.finish() ?? [],
       ...(battleRef.current ? { battleId: battleRef.current.battleId } : {}),
+      ...(battleRef.current?.format === 'timed' && battleRef.current.durationS
+        ? { timerDurationS: battleRef.current.durationS }
+        : {}),
     };
     patch({ phase: 'finished' });
     say(`Done. ${reps.length} ${reps.length === 1 ? 'pushup' : 'pushups'}`);

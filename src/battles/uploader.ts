@@ -37,7 +37,14 @@ export function flushBattleUploads(): Promise<FlushResult | null> {
 }
 
 /** Queue a finished battle attempt (even with 0 reps) and try to upload it right away. */
-export async function submitBattleAttempt(record: SessionRecord, battleId: string, deviceId: string | null) {
-  await enqueueBattleSet(AsyncStorage, battleId, toSetPayload(record, payloadContext(deviceId)));
+export async function submitBattleAttempt(
+  record: SessionRecord,
+  battleId: string,
+  deviceId: string | null,
+  opts?: { linkFinishedSet?: boolean },
+) {
+  const payload = toSetPayload(record, payloadContext(deviceId));
+  if (opts?.linkFinishedSet) payload.linkFinishedSet = true;
+  await enqueueBattleSet(AsyncStorage, battleId, payload);
   return flushBattleUploads();
 }

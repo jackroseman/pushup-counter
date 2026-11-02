@@ -1,5 +1,7 @@
 // submit-set: the only way a battle set gets into the database (SPEC §7 hard checks).
-//   POST { ...set payload (same shape as the solo submit_set RPC), battleId }
+//   POST { ...set payload (same shape as the solo submit_set RPC), battleId, linkFinishedSet? }
+// linkFinishedSet attaches a solo set the same user just finished (sets.battle_id), instead
+// of inserting a second copy. submit_set() enforces recency, ownership, and the battle rules.
 //   Authorization: Bearer <user JWT>
 // Verifies the user, checks the data's shape (_shared/setValidation.ts), then calls
 // submit_set() as the service role with the verified user id. The DB triggers enforce the

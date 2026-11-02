@@ -289,3 +289,80 @@ Object.assign(checks, {
   'p3: settings: async battle defaults readable by anon': (r) => ok(r[0][0].h === '24' && JSON.stringify(r[0][0].t) === '[60,120]' && r[1][0].r === '2', 'settings'),
   'p3: service role registers the notify url': (r) => ok(r[r.length - 1][0].value === 'https://example.supabase.co/functions/v1/notify', 'url'),
 });
+
+// Finished-set claims: a recent solo set becomes the creator's attempt.
+const link = (id, n, k, user, opts = {}) =>
+  `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q(rec(id, n, opts.period ?? 1500, opts.bottoms ?? [0.15], opts))} || jsonb_build_object('battleId', ${ctx(k)}, 'userId', '${user}', 'linkFinishedSet', true)) is not null; reset role;`;
+const solo = (id, n, user, opts = {}) =>
+  `${as(user)} select public.submit_set(${q(rec(id, n, opts.period ?? 1500, opts.bottoms ?? [0.15], opts))}) is not null; reset role;`;
+
+steps.push(
+  ['claim: defaults include the recency window and multi-day options', `select value->>'claim_set_max_age_s' age, value->>'multi_day_window_days' w, value->>'deadline_hours' h from app_settings where key='async_battle_defaults';`],
+  ['claim: A uploads the set he just finished', solo('claim-solo', 10, A)],
+  ['claim: A opens a max-reps battle', `${as(A)} ${create('cmax', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: resubmitting without linkFinishedSet does not attach it (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q(rec('claim-solo', 10, 1500, [0.15]))} || jsonb_build_object('battleId', ${ctx('cmax')}, 'userId', '${A}')); reset role;`],
+  ['claim: the set is still solo', `select battle_id is null solo from sets where client_set_id='claim-solo';`],
+  ['claim: linking it counts as A attempt and tells B', `${link('claim-solo', 10, 'cmax', A)} select (battle_id::text = ${ctx('cmax')}) as linked from sets where client_set_id='claim-solo'; select valid_reps, attempts_used from battle_standings where battle_id=${ctx('cmax')}::uuid and user_id='${A}'; select count(*) n from private.notification_outbox where kind='set_submitted' and battle_id=${ctx('cmax')}::uuid and user_id='${B}';`],
+  ['claim: linking again is idempotent', `${link('claim-solo', 10, 'cmax', A)} select count(*) n from sets where client_set_id='claim-solo';`],
+  ['claim: a second recent set is uploaded', solo('claim-extra', 4, A)],
+  ['claim: a second set exceeds attempts_allowed (expect ERR)', link('claim-extra', 4, 'cmax', A)],
+  ['claim: another max-reps battle', `${as(A)} ${create('cmax2', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: cannot move a set into another battle (expect ERR)', link('claim-solo', 10, 'cmax2', A)],
+  ['claim: an old set is uploaded', `${solo('claim-old', 6, A, { start: Date.now() - 3 * 3600 * 1000 })} ${as(A)} ${create('cold', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: an old set is refused (expect ERR)', link('claim-old', 6, 'cold', A, { start: Date.now() - 3 * 3600 * 1000 })],
+  ['claim: the old set stayed solo', `select battle_id is null solo from sets where client_set_id='claim-old';`],
+  ['claim: a raw update of an old set is refused too (expect ERR)', `set role service_role; update sets set battle_id=${ctx('cold')}::uuid where client_set_id='claim-old'; reset role;`],
+  ['claim: A cannot link through the table or the RPC (expect ERR)', `${as(A)} update sets set battle_id=${ctx('cold')}::uuid where client_set_id='claim-old'; reset role;`],
+  ['claim: untimed set and a timed battle', `${solo('claim-untimed', 8, A)} ${as(A)} ${create('ctimed', { format: 'timed', durationS: 60, deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: untimed set cannot fill a timed battle (expect ERR)', link('claim-untimed', 8, 'ctimed', A)],
+  ['claim: a 60 s set becomes the attempt only for a 60 s battle', `${solo('claim-t60', 10, A, { period: 8000, extra: { timerDurationS: 60 } })} ${as(A)} ${create('ct60', { format: 'timed', durationS: 60, deadlineHours: 24 }, [B])} reset role; ${link('claim-t60', 10, 'ct60', A, { period: 8000, extra: { timerDurationS: 60 } })} select timer_duration_s, (battle_id::text = ${ctx('ct60')}) as linked from sets where client_set_id='claim-t60'; select valid_reps from battle_standings where battle_id=${ctx('ct60')}::uuid and user_id='${A}';`],
+  ['claim: a 60 s set and a 120 s battle', `${as(A)} ${create('ct120', { format: 'timed', durationS: 120, deadlineHours: 24 }, [B])} reset role; ${solo('claim-t60b', 4, A, { extra: { timerDurationS: 60 } })}`],
+  ['claim: that 60 s set does not fit a 120 s battle (expect ERR)', link('claim-t60b', 4, 'ct120', A, { extra: { timerDurationS: 60 } })],
+  ['claim: multi-day window must be a configured option (expect ERR)', `${as(A)} select create_battle(${q({ format: 'multi_day', windowDays: 2, friendIds: [B] })}); reset role;`],
+  ['claim: multi-day counts the set as the first entry and accepts another', `${as(A)} ${create('cmd', { format: 'multi_day', windowDays: 7 }, [B])} reset role; select format::text fmt, starts_at is not null started, ends_at - starts_at between interval '6 days' and interval '8 days' span from battles where id=${ctx('cmd')}::uuid; ${solo('claim-md1', 10, A)} ${link('claim-md1', 10, 'cmd', A)} ${solo('claim-md2', 10, A)} ${link('claim-md2', 10, 'cmd', A)} select valid_reps, attempts_used from battle_standings where battle_id=${ctx('cmd')}::uuid and user_id='${A}';`],
+  ['claim: shallow reps still do not count', `${as(A)} ${create('cshallow', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role; ${solo('claim-shallow', 4, A, { bottoms: [0.15, 0.30] })} ${link('claim-shallow', 4, 'cshallow', A, { bottoms: [0.15, 0.30] })} select valid_reps from battle_standings where battle_id=${ctx('cshallow')}::uuid and user_id='${A}';`],
+  ['claim: a legacy set is uploaded', `${as(A)} select public.submit_set(${q({ id: 'claim-legacy', startedAt: Date.now() - 60000, endedAt: Date.now() - 1000, reps: [{ index: 1, timestamp: Date.now() - 30000, quality: 'good', source: 'proximity', bottomDistance: null, topDistance: null, faceLostAtBottom: false }], calibratedTopDistance: null, depthTracking: false })}) is not null; reset role; ${as(A)} ${create('cleg', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: a legacy set cannot be scored (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(jsonb_build_object('id','claim-legacy','battleId', ${ctx('cleg')}, 'userId','${A}','linkFinishedSet', true)); reset role;`],
+  ['claim: a live battle and a recent solo set', `insert into battles(id,created_by,mode,format,metric,invite_expires_at) values ('88888888-8888-4888-8888-888888888888','${A}','live','max_reps','rep_count',now()+interval '10 minutes'); insert into test_ctx(k,v) values ('clive','88888888-8888-4888-8888-888888888888') on conflict (k) do update set v=excluded.v; ${solo('claim-live', 4, A)}`],
+  ['claim: live battles cannot use a finished set (expect ERR)', link('claim-live', 4, 'clive', A)],
+  ['claim: a set not yet uploaded is inserted under the same rules', `${as(A)} ${create('cfresh', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role; ${link('claim-fresh', 5, 'cfresh', A)} select (battle_id::text = ${ctx('cfresh')}) as linked from sets where client_set_id='claim-fresh'; select valid_reps from battle_standings where battle_id=${ctx('cfresh')}::uuid and user_id='${A}';`],
+  ['claim: a battle for an old fresh set', `${as(A)} ${create('cfresh-old', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: fresh insert of an old set is refused (expect ERR)', link('claim-fresh-old', 4, 'cfresh-old', A, { start: Date.now() - 3 * 3600 * 1000 })],
+  ['claim: the refused fresh set was not stored', `select count(*) n from sets where client_set_id='claim-fresh-old';`],
+  ['claim: shortening the window is what the server enforces', `update app_settings set value = jsonb_set(value, '{claim_set_max_age_s}', '60') where key='async_battle_defaults';`],
+  ['claim: a set from a few minutes ago', `${solo('claim-age', 4, A, { start: Date.now() - 3 * 60 * 1000 })} ${as(A)} ${create('cage', { format: 'max_reps', deadlineHours: 24 }, [B])} reset role;`],
+  ['claim: a set from a few minutes ago is now too old (expect ERR)', link('claim-age', 4, 'cage', A, { start: Date.now() - 3 * 60 * 1000 })],
+  ['claim: restore the default window', `update app_settings set value = jsonb_set(value, '{claim_set_max_age_s}', '1800') where key='async_battle_defaults'; select value->>'claim_set_max_age_s' age from app_settings where key='async_battle_defaults';`],
+);
+Object.assign(checks, {
+  'claim: defaults include the recency window and multi-day options': (r) => ok(r[0][0].age === '1800' && r[0][0].w === '7' && r[0][0].h === '24', 'defaults ' + JSON.stringify(r[0])),
+  'claim: the set is still solo': (r) => ok(r[0][0].solo === true, 'linked without the flag'),
+  'claim: linking it counts as A attempt and tells B': (r) => {
+    const linked = r.find((x) => x[0] && 'linked' in x[0])[0];
+    const score = r.find((x) => x[0] && 'valid_reps' in x[0])[0];
+    const note = r.find((x) => x[0] && 'n' in x[0])[0];
+    ok(linked.linked === true, 'not linked ' + JSON.stringify(r));
+    ok(Number(score.valid_reps) === 10 && Number(score.attempts_used) === 1, 'score ' + JSON.stringify(score));
+    ok(Number(note.n) === 1, 'notify ' + JSON.stringify(note));
+  },
+  'claim: linking again is idempotent': (r) => ok(Number(r[r.length - 1][0].n) === 1, 'duplicated'),
+  'claim: the old set stayed solo': (r) => ok(r[0][0].solo === true, 'old set linked'),
+  'claim: a 60 s set becomes the attempt only for a 60 s battle': (r) => {
+    const row = r[r.length - 2][0];
+    ok(Number(row.timer_duration_s) === 60 && row.linked === true, 'timer ' + JSON.stringify(row));
+    ok(Number(r[r.length - 1][0].valid_reps) === 7, 'timed window ' + JSON.stringify(r[r.length - 1]));
+  },
+  'claim: multi-day counts the set as the first entry and accepts another': (r) => {
+    const meta = r.find((x) => x[0] && 'fmt' in x[0])[0];
+    ok(meta.fmt === 'multi_day' && meta.started === true && meta.span === true, 'window ' + JSON.stringify(meta));
+    const score = r[r.length - 1][0];
+    ok(Number(score.valid_reps) === 20 && Number(score.attempts_used) === 2, 'multi-day ' + JSON.stringify(score));
+  },
+  'claim: shallow reps still do not count': (r) => ok(Number(r[r.length - 1][0].valid_reps) === 2, 'shallow ' + JSON.stringify(r[r.length - 1])),
+  'claim: a set not yet uploaded is inserted under the same rules': (r) => {
+    ok(r[r.length - 2][0].linked === true, 'fresh not linked');
+    ok(Number(r[r.length - 1][0].valid_reps) === 5, 'fresh score ' + JSON.stringify(r[r.length - 1]));
+  },
+  'claim: the refused fresh set was not stored': (r) => ok(Number(r[0][0].n) === 0, 'old fresh stored'),
+  'claim: restore the default window': (r) => ok(r[r.length - 1][0].age === '1800', 'age not restored'),
+});

@@ -21,6 +21,7 @@ import { HistoryStore, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported } from '../sensors';
 import { notifyHistoryChanged } from '../backend/syncEvents';
+import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
 
 const KEEP_AWAKE_TAG = 'pushup-session';
@@ -370,6 +371,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       depthTracking: true,
       version: 2,
       trace: trace.current?.finish() ?? [],
+      timeZone: deviceTimeZone(),
       ...(battleRef.current ? { battleId: battleRef.current.battleId } : {}),
       ...(battleRef.current?.format === 'timed' && battleRef.current.durationS
         ? { timerDurationS: battleRef.current.durationS }

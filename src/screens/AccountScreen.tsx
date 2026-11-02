@@ -1,14 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Button } from '../components/ui';
 import { colors } from '../theme';
 import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
 import { isAppleSignInAvailable, signInWithApple } from '../backend/auth';
+import { Settings } from '../storage/settings';
 
-/** Account: profile, backup status, notifications, sign out, delete account. */
-export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => void; onBack: () => void }) {
+/** Account: profile, counting preferences, backup, sign out, delete account. */
+export function AccountScreen({
+  settings,
+  onChangeSettings,
+  onEditProfile,
+  onBack,
+}: {
+  settings: Settings;
+  onChangeSettings: (s: Settings) => void;
+  onEditProfile: () => void;
+  onBack: () => void;
+}) {
   const { configured, session } = useBackend();
   const { profile, profileError, refreshProfile, sync, push, signOut, deleteAccount } = useIdentity();
   const [appleAvailable, setAppleAvailable] = useState(false);
@@ -23,7 +34,8 @@ export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => 
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Account</Text>
-        <Text style={styles.text}>Accounts are not available in this build.</Text>
+        <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
+        <Text style={styles.text}>Sign in with Apple is not available in this build.</Text>
         <Button title="Back" onPress={onBack} />
       </View>
     );
@@ -31,8 +43,9 @@ export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => 
 
   if (!session) {
     return (
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Account</Text>
+        <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
         <Text style={styles.text}>Sign in to back up your sets and battle friends. Solo counting keeps working without an account.</Text>
         {appleAvailable ? (
           <AppleAuthentication.AppleAuthenticationButton
@@ -51,7 +64,7 @@ export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => 
         )}
         {message ? <Text style={styles.error}>{message}</Text> : null}
         <Button title="Back" kind="secondary" onPress={onBack} />
-      </View>
+      </ScrollView>
     );
   }
 
@@ -85,6 +98,7 @@ export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Account</Text>
+      <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
 
       <View style={styles.card}>
         {profile === undefined ? (
@@ -167,6 +181,33 @@ export function AccountScreen({ onEditProfile, onBack }: { onEditProfile: () => 
 
 const inCard = { backgroundColor: colors.bg };
 
+function CountingCard({ settings, onChangeSettings }: { settings: Settings; onChangeSettings: (s: Settings) => void }) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.section}>Counting</Text>
+      <SettingRow
+        label="Speak rep quality"
+        hint='Says "7, shallow" for reps that aren’t full depth.'
+        value={settings.speakQuality}
+        onChange={(v) => onChangeSettings({ ...settings, speakQuality: v })}
+      />
+      <SettingRow label="Haptics" value={settings.haptics} onChange={(v) => onChangeSettings({ ...settings, haptics: v })} />
+    </View>
+  );
+}
+
+function SettingRow({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={styles.row}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      </View>
+      <Switch value={value} onValueChange={onChange} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48, gap: 4 },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 12, marginBottom: 12 },
@@ -174,6 +215,9 @@ const styles = StyleSheet.create({
   section: { color: colors.text, fontSize: 17, fontWeight: '700' },
   name: { color: colors.text, fontSize: 20, fontWeight: '700' },
   text: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  hint: { color: colors.muted, fontSize: 13, marginTop: 2 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  rowLabel: { color: colors.text, fontSize: 16, fontWeight: '600' },
   error: { color: colors.danger, fontSize: 13 },
   apple: { height: 48, width: '100%', marginVertical: 12 },
 });

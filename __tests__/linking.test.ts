@@ -10,6 +10,7 @@ describe('deep links', () => {
     expect(parseAppLink(`pushupcounter://invite/${TOKEN}?src=push`)).toEqual({ type: 'invite', token: TOKEN });
     expect(parseAppLink('pushupcounter://history')).toEqual({ type: 'history' });
     expect(parseAppLink('pushupcounter://')).toEqual({ type: 'home' });
+    expect(parseAppLink('pushupcounter://today')).toEqual({ type: 'home' });
   });
 
   it('rejects malformed or foreign links', () => {

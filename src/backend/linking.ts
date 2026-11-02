@@ -32,6 +32,7 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
   const parts = path.split(/[?#]/)[0].split('/').filter(Boolean);
   if (parts.length === 0) return { type: 'home' };
   const [head, arg] = parts;
+  if (head === 'today' && parts.length === 1) return { type: 'home' };
   if (head === 'battle' && arg && UUID.test(arg)) return { type: 'battle', battleId: arg.toLowerCase() };
   if (head === 'invite' && arg && TOKEN.test(arg)) return { type: 'invite', token: arg.toLowerCase() };
   if (head === 'history' && parts.length === 1) return { type: 'history' };

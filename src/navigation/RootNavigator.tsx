@@ -32,18 +32,32 @@ import type { Friend } from '../battles/model';
 import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
+import { enrollGoal, fetchMyProgress } from '../backend/progressClient';
+import { supabase } from '../backend/supabase';
 import {
   GoalEnrollment,
+  GoalSnapshot,
+  GOAL_SYNC_KEY,
+  REFRESH_FAILED,
+  ServerProgress,
   buildProgress,
   buildToday,
   celebrate,
   contributionFor,
+  decideGoalSync,
+  enrollmentsFromServer,
   formScoreForReps,
+  goalSnapshot,
+  goalSyncSettled,
+  lateSetIds,
   loadGoal,
   localDate,
   phoneCountedReps,
+  queueGoalEdit,
+  sanitizeGoalSync,
   saveEnrollment,
   saveGoal,
+  signedInViews,
   workoutFromRecord,
 } from '../progress';
 import { HOWTO_KEY } from '../progress/howto';
@@ -124,6 +138,11 @@ const theme = {
 
 type Props<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;
 
+interface RemoteProgress {
+  doc: ServerProgress | null;
+  status: 'idle' | 'ready' | 'error';
+}
+
 interface AppState {
   settings: Settings;
   updateSettings: (s: Settings) => void;
@@ -131,6 +150,9 @@ interface AppState {
   refreshSavedSets: () => void;
   enrollments: GoalEnrollment[];
   saveChoice: (choice: Parameters<typeof saveEnrollment>[1]) => void;
+  remote: RemoteProgress;
+  lateIds: ReadonlySet<string>;
+  refreshRemote: () => void;
   howToOpen: boolean;
   openHowTo: () => void;
   closeHowTo: () => void;
@@ -144,7 +166,7 @@ const useAppState = () => {
 };
 
 function TodayRoute({ navigation }: Props<'Today'>) {
-  const { savedSets, refreshSavedSets, enrollments, howToOpen, openHowTo, closeHowTo } = useAppState();
+  const { savedSets, refreshSavedSets, enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
   const { configured, session } = useBackend();
   const { profile } = useIdentity();
   const focused = useIsFocused();
@@ -152,8 +174,9 @@ function TodayRoute({ navigation }: Props<'Today'>) {
   const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
   const reload = useCallback(() => {
     refreshSavedSets();
+    refreshRemote();
     historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
-  }, [refreshSavedSets]);
+  }, [refreshSavedSets, refreshRemote]);
   useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
   useEffect(() => {
     const uid = session?.user.id;
@@ -164,10 +187,13 @@ function TodayRoute({ navigation }: Props<'Today'>) {
   }, [session, profile, navigation]);
   const zone = deviceTimeZone();
   const today = localDate(Date.now(), zone);
-  const view = buildToday({ workouts, enrollments, today, timeZone: zone });
+  const phone = buildToday({ workouts, enrollments, today, timeZone: zone });
+  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).today : phone;
+  const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
   return (
     <TodayScreen
       view={view}
+      banner={banner}
       depth={faceTrackingSupported()}
       showBattles={configured && faceTrackingSupported()}
       howToOpen={howToOpen && focused}
@@ -184,10 +210,12 @@ function TodayRoute({ navigation }: Props<'Today'>) {
 }
 
 function ProgressRoute({ navigation }: Props<'Progress'>) {
-  const { enrollments } = useAppState();
+  const { enrollments, remote, refreshRemote } = useAppState();
+  const { session } = useBackend();
   const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
   const [storedCount, setStoredCount] = useState(0);
   const reload = useCallback(() => {
+    refreshRemote();
     historyStore
       .load()
       .then((rows) => {
@@ -195,17 +223,20 @@ function ProgressRoute({ navigation }: Props<'Progress'>) {
         setStoredCount(rows.length);
       })
       .catch(() => {});
-  }, []);
+  }, [refreshRemote]);
   useEffect(() => {
     reload();
     return navigation.addListener('focus', reload);
   }, [navigation, reload]);
   const zone = deviceTimeZone();
   const today = localDate(Date.now(), zone);
-  const view = buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount });
+  const phone = buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount });
+  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).progress : phone;
+  const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
   return (
     <ProgressScreen
       view={view}
+      banner={banner}
       onBack={() => navigation.goBack()}
       onAllSets={() => navigation.navigate('History')}
       onProgram={() => navigation.navigate('GoalSetup')}
@@ -326,7 +357,7 @@ function InviteRoute({ navigation, route }: Props<'Invite'>) {
 }
 
 function SummaryRoute({ navigation, route }: Props<'Summary'>) {
-  const { enrollments } = useAppState();
+  const { enrollments, lateIds } = useAppState();
   const { appSettings } = useBackend();
   const record = route.params.record;
   const fromHistory = route.params.from === 'history';
@@ -362,6 +393,7 @@ function SummaryRoute({ navigation, route }: Props<'Summary'>) {
     <SummaryScreen
       record={record}
       fromHistory={fromHistory}
+      syncedLate={lateIds.has(record.id)}
       progress={fromHistory ? null : progress}
       onChallenge={canChallenge ? () => navigation.navigate('NewBattle', { fromSet: record }) : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
@@ -407,17 +439,44 @@ function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
   return <ProfileSetupScreen onDone={() => navigation.goBack()} onCancel={() => navigation.goBack()} />;
 }
 
+function openServerEnrollment(doc: ServerProgress | null): GoalSnapshot | null {
+  const open = [...(doc?.enrollments ?? [])].reverse().find((row) => row.endedOn === null) ?? null;
+  return goalSnapshot(open);
+}
+
 export function RootNavigator() {
-  const { appSettings } = useBackend();
+  const { appSettings, session } = useBackend();
   webBaseUrl = appSettings.inviteLinks.webBaseUrl;
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [savedSets, setSavedSets] = useState(0);
   const [enrollments, setEnrollments] = useState<GoalEnrollment[]>([]);
+  const [remote, setRemote] = useState<RemoteProgress>({ doc: null, status: 'idle' });
+  const [lateIds, setLateIds] = useState<ReadonlySet<string>>(() => new Set());
   const [howToOpen, setHowToOpen] = useState(false);
+  const goalSyncRef = useRef<ReturnType<typeof sanitizeGoalSync> | null>(null);
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  const refreshGen = useRef(0);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const enrollmentsRef = useRef(enrollments);
+  enrollmentsRef.current = enrollments;
+  const goalEpoch = useRef(0);
 
   useEffect(() => {
     loadSettings(AsyncStorage).then(setSettings);
-    loadGoal(AsyncStorage).then(setEnrollments).catch(() => {});
+    loadGoal(AsyncStorage)
+      .then((rows) => {
+        if (goalEpoch.current === 0) setEnrollments(rows);
+      })
+      .catch(() => {});
+    AsyncStorage.getItem(GOAL_SYNC_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { userId?: unknown };
+        if (typeof parsed.userId === 'string') goalSyncRef.current = sanitizeGoalSync(parsed, parsed.userId);
+      })
+      .catch(() => {});
     AsyncStorage.getItem(HOWTO_KEY)
       .then((v) => setHowToOpen(v !== '1'))
       .catch(() => setHowToOpen(true));
@@ -432,15 +491,116 @@ export function RootNavigator() {
     saveSettings(AsyncStorage, s).catch(() => {});
   }, []);
 
-  const enrollmentsRef = useRef(enrollments);
-  enrollmentsRef.current = enrollments;
+  const refreshRemote = useCallback(() => {
+    const gen = ++refreshGen.current;
+    const userId = sessionRef.current?.user.id ?? null;
+    if (!supabase || !userId) {
+      setRemote({ doc: null, status: 'idle' });
+      setLateIds(new Set());
+      return;
+    }
+    const client = supabase;
+    fetchMyProgress(client)
+      .then(async (doc) => {
+        if (gen !== refreshGen.current) return;
+        const storedGoal = await loadGoal(AsyncStorage);
+        if (!goalSyncRef.current) {
+          const raw = await AsyncStorage.getItem(GOAL_SYNC_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { userId?: unknown };
+            if (typeof parsed.userId === 'string') goalSyncRef.current = sanitizeGoalSync(parsed, parsed.userId);
+          }
+        }
+        if (gen !== refreshGen.current) return;
+        const local = enrollmentsRef.current.length ? enrollmentsRef.current : storedGoal;
+        const decision = decideGoalSync({
+          userId,
+          local,
+          server: doc.enrollments,
+          sync: goalSyncRef.current,
+        });
+        goalSyncRef.current = decision.next;
+        await AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(decision.next));
+        if (gen !== refreshGen.current) return;
+        let shown = doc;
+        if (decision.action.type === 'adopt') {
+          const next = enrollmentsFromServer(doc.enrollments);
+          goalEpoch.current += 1;
+          setEnrollments(next);
+          await saveGoal(AsyncStorage, next);
+        } else if (decision.action.type === 'clear') {
+          goalEpoch.current += 1;
+          setEnrollments([]);
+          await saveGoal(AsyncStorage, []);
+        } else if (decision.action.type === 'upload') {
+          await enrollGoal(client, decision.action.choice);
+          shown = await fetchMyProgress(client);
+          if (gen !== refreshGen.current) return;
+          const settled = goalSyncSettled(userId, openServerEnrollment(shown));
+          goalSyncRef.current = settled;
+          await AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(settled));
+          const next = enrollmentsFromServer(shown.enrollments);
+          goalEpoch.current += 1;
+          setEnrollments(next);
+          await saveGoal(AsyncStorage, next);
+        }
+        if (gen !== refreshGen.current) return;
+        setRemote({ doc: shown, status: 'ready' });
+        setLateIds(new Set(lateSetIds(shown.sets)));
+      })
+      .catch(() => {
+        if (gen !== refreshGen.current) return;
+        setRemote((current) => ({ doc: current.doc, status: 'error' }));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (session?.user.id) refreshRemote();
+    else {
+      refreshGen.current += 1;
+      setRemote({ doc: null, status: 'idle' });
+      setLateIds(new Set());
+    }
+  }, [session?.user.id, refreshRemote]);
+
   const saveChoice = useCallback((choice: Parameters<typeof saveEnrollment>[1]) => {
     const zone = deviceTimeZone();
     const today = localDate(Date.now(), zone);
     const result = saveEnrollment(enrollmentsRef.current, choice, today, zone, `goal-${today}-${Date.now()}`);
     if (!result.ok) return;
+    goalEpoch.current += 1;
     setEnrollments(result.enrollments);
     saveGoal(AsyncStorage, result.enrollments).catch(() => {});
+    const userId = sessionRef.current?.user.id;
+    if (!userId || !supabase) {
+      const prev = goalSyncRef.current;
+      if (prev?.settled) {
+        const next = { ...prev, settled: false, pending: null };
+        goalSyncRef.current = next;
+        AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(next)).catch(() => {});
+      }
+      return;
+    }
+    const queued = queueGoalEdit(userId, choice, openServerEnrollment(remoteRef.current.doc));
+    goalSyncRef.current = queued;
+    AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(queued)).catch(() => {});
+    const client = supabase;
+    enrollGoal(client, choice)
+      .then(async () => {
+        const doc = await fetchMyProgress(client);
+        const settled = goalSyncSettled(userId, openServerEnrollment(doc));
+        goalSyncRef.current = settled;
+        await AsyncStorage.setItem(GOAL_SYNC_KEY, JSON.stringify(settled));
+        const next = enrollmentsFromServer(doc.enrollments);
+        goalEpoch.current += 1;
+        setEnrollments(next);
+        await saveGoal(AsyncStorage, next);
+        setRemote({ doc, status: 'ready' });
+        setLateIds(new Set(lateSetIds(doc.sets)));
+      })
+      .catch(() => {
+        setRemote((current) => ({ doc: current.doc, status: 'error' }));
+      });
   }, []);
 
   const closeHowTo = useCallback(() => {
@@ -450,8 +610,21 @@ export function RootNavigator() {
   const openHowTo = useCallback(() => setHowToOpen(true), []);
 
   const value = useMemo(
-    () => ({ settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, howToOpen, openHowTo, closeHowTo }),
-    [settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, howToOpen, openHowTo, closeHowTo],
+    () => ({
+      settings,
+      updateSettings,
+      savedSets,
+      refreshSavedSets,
+      enrollments,
+      saveChoice,
+      remote,
+      lateIds,
+      refreshRemote,
+      howToOpen,
+      openHowTo,
+      closeHowTo,
+    }),
+    [settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote, howToOpen, openHowTo, closeHowTo],
   );
 
   return (

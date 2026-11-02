@@ -15,7 +15,32 @@ export {
   lockedBadgeText,
 } from './progress';
 export type { Badge, DayBucket, LifetimePoint, PeriodBucket, ProgramRow, ProgressModel, ShelfRecord } from './progress';
-export { buildToday, celebrate, contributionFor, contributionLine, streaks } from './today';
+export { buildToday, celebrate, contributionFor, contributionLine, formatUsual, presentToday, streaks, travelLine } from './today';
 export type { Celebration, TodayModel } from './today';
-export { countedRepList, countsForStreak, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';
+export { countedRepList, countsForStreak, PERSONAL_BACKFILL_MS, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';
 export type { Workout } from './workouts';
+export {
+  GOAL_SYNC_KEY,
+  OLD_SETS_NOTE,
+  OLDER_SETS_NOTE,
+  REFRESH_FAILED,
+  SYNCED_LATE,
+  decideGoalSync,
+  enrollmentsFromServer,
+  freshGoalSync,
+  goalSnapshot,
+  goalSyncSettled,
+  lateSetIds,
+  mergeWorkouts,
+  openChoice,
+  parseServerProgress,
+  progressFromServer,
+  progressWithUnsynced,
+  queueGoalEdit,
+  sameSnapshot,
+  sanitizeGoalSync,
+  signedInViews,
+  todayFromServer,
+  workoutsFromServer,
+} from './remote';
+export type { GoalSnapshot, GoalSyncAction, GoalSyncState, ServerEnrollment, ServerProgress, ServerSet } from './remote';

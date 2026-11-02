@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIG } from '../core/types';
+import { deviceTimeZone } from './profile';
 import type { KeyValueStore, SessionRecord } from '../storage/history';
 
 /**
@@ -106,6 +107,7 @@ export function toSetPayload(r: SessionRecord, ctx: PayloadContext): Record<stri
     id: r.id,
     startedAt: r.startedAt,
     endedAt: r.endedAt,
+    timeZone: r.timeZone?.trim() || deviceTimeZone(),
     version,
     depthTracking: r.depthTracking,
     calibratedTopDistance: typeof top === 'number' && top >= 0.15 && top <= 1.2 ? top : null,

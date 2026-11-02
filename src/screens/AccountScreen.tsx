@@ -7,6 +7,8 @@ import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
 import { isAppleSignInAvailable, signInWithApple } from '../backend/auth';
 import { Settings } from '../storage/settings';
+import { historyStore } from '../session/useSession';
+import { OLD_SETS_NOTE, PERSONAL_BACKFILL_MS } from '../progress';
 
 /** Account: profile, counting preferences, backup, sign out, delete account. */
 export function AccountScreen({
@@ -25,6 +27,24 @@ export function AccountScreen({
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [oldSets, setOldSets] = useState(false);
+
+  useEffect(() => {
+    if (!session) {
+      setOldSets(false);
+      return;
+    }
+    let alive = true;
+    historyStore
+      .load()
+      .then((rows) => {
+        if (alive) setOldSets(rows.some((row) => Date.now() - row.startedAt > PERSONAL_BACKFILL_MS));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [session]);
 
   useEffect(() => {
     isAppleSignInAvailable().then(setAppleAvailable);
@@ -129,6 +149,7 @@ export function AccountScreen({
           <View style={styles.card}>
             <Text style={styles.section}>Backup</Text>
             <Text style={styles.text}>{backupLine}</Text>
+            {oldSets ? <Text style={styles.text}>{OLD_SETS_NOTE}</Text> : null}
             {sync.error ? <Text style={styles.error}>Last backup failed: {sync.error}</Text> : null}
             {sync.running ? <ActivityIndicator color={colors.accent} /> : <Button title="Back up now" kind="secondary" style={inCard} onPress={sync.syncNow} />}
           </View>

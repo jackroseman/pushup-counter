@@ -11,10 +11,10 @@ import { AccountGate, Header, Notice, Row, s, SectionTitle } from './common';
 const PROBLEM: Record<string, string> = {
   not_found: "This invite link doesn't exist.",
   revoked: 'This invite link was turned off.',
-  closed: 'This battle is over.',
+  closed: 'This challenge is over.',
   expired: 'This invite has expired.',
   used_up: 'This invite link has been used up.',
-  full: 'This battle is full.',
+  full: 'This challenge is full.',
 };
 
 export function InviteScreen(props: {
@@ -48,11 +48,11 @@ export function InviteScreen(props: {
     onJoined(r.data);
   };
 
-  const b = preview?.battle;
+  const b = preview?.challenge;
   const from = preview?.creator ? personName(preview.creator) : 'A friend';
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Header title="Battle invite" onBack={props.onBack} />
+      <Header title="Challenge invite" onBack={props.onBack} />
       {error ? <Text style={s.error}>{error}</Text> : null}
       {!preview && !error ? <Text style={s.muted}>Loading…</Text> : null}
       {preview && preview.status !== 'ok' && !preview.member ? <Notice title="Can't join" text={PROBLEM[preview.status] ?? 'This invite is not available.'} /> : null}
@@ -79,9 +79,9 @@ export function InviteScreen(props: {
       ) : null}
 
       {preview && (preview.status === 'ok' || preview.member) ? (
-        <AccountGate onAccount={props.onAccount} onProfile={props.onProfile} why="Battles are played with friends, so you need an account to join.">
+        <AccountGate onAccount={props.onAccount} onProfile={props.onProfile} why="Challenges are with friends, so you need an account to join.">
           {preview.member && b ? (
-            <Button title="Open battle" onPress={() => onJoined(b.id)} />
+            <Button title="Open challenge" onPress={() => onJoined(b.id)} />
           ) : (
             <>
               {preview.creator && preview.creator.username !== profile?.username ? (
@@ -90,7 +90,7 @@ export function InviteScreen(props: {
                   <Switch value={addFriend} onValueChange={setAddFriend} />
                 </Row>
               ) : null}
-              <Button title={busy ? 'Joining…' : 'Join battle'} onPress={join} />
+              <Button title={busy ? 'Joining…' : 'Join challenge'} onPress={join} />
             </>
           )}
         </AccountGate>

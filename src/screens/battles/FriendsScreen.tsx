@@ -135,7 +135,7 @@ function Friends({ onOpenFriend }: { onOpenFriend: (f: Friend) => void }) {
 
       <SectionTitle>Friends</SectionTitle>
       {rows === null ? <Text style={s.muted}>Loading…</Text> : null}
-      {rows && g.friends.length === 0 ? <Text style={s.muted}>No friends yet. Search above, or send someone a battle invite link.</Text> : null}
+      {rows && g.friends.length === 0 ? <Text style={s.muted}>No friends yet. Search above, or send someone a challenge invite link.</Text> : null}
       {g.friends.map((f) => (
         <Row key={f.userId} onPress={() => onOpenFriend(f)}>
           {name(f)}

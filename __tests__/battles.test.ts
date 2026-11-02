@@ -54,14 +54,17 @@ const person = (userId: string, extra: Partial<Participant> = {}): Participant =
 const battle = (extra: Partial<Battle> = {}, participants?: Participant[]): Battle => ({
   id: 'b1',
   mode: 'async',
-  format: 'max_reps',
+  kind: 'best_set',
+  windowUnit: null,
   metric: 'rep_count',
   status: 'active',
   durationS: null,
   attemptsAllowed: 1,
+  targetReps: null,
   maxParticipants: 8,
   minQuality: 'good',
   inviteExpiresAt: iso(10 * H),
+  startsAt: null,
   endsAt: iso(20 * H),
   createdAt: iso(-H),
   finishedAt: null,
@@ -81,11 +84,13 @@ describe('battle model', () => {
     expect(canPlay(battle({ status: 'completed' }), NOW)).toBe(false);
   });
 
-  it('lets a multi-day player add more sets until the window ends', () => {
-    const md = battle({ format: 'multi_day' }, [person('alice'), person('me', { isMe: true, attemptsUsed: 3 })]);
-    expect(canPlay(md, NOW)).toBe(true);
-    expect(canPlay(battle({ format: 'multi_day', endsAt: iso(-1) }, [person('me', { isMe: true })]), NOW)).toBe(false);
-    expect(battleTitle({ format: 'multi_day', durationS: null })).toBe('Multi-day');
+  it('does not start a special session for a total', () => {
+    const md = battle({ kind: 'total', windowUnit: 'week', metric: null, attemptsAllowed: null }, [person('alice'), person('me', { isMe: true, attemptsUsed: 3 })]);
+    expect(canPlay(md, NOW)).toBe(false);
+    expect(canPlay(battle({ kind: 'total', windowUnit: 'day', endsAt: iso(H) }, [person('me', { isMe: true })]), NOW)).toBe(false);
+    expect(battleTitle({ kind: 'total', windowUnit: 'week', durationS: null })).toBe('Most reps this week');
+    expect(battleTitle({ kind: 'best_set', durationS: 60 })).toBe('Best set · 60 s');
+    expect(battleTitle({ kind: 'total', windowUnit: 'custom', durationS: null })).toBe('Most reps');
   });
 
   it('only the creator may go first while a battle is pending', () => {
@@ -123,7 +128,7 @@ describe('battle model', () => {
     expect(battleSubtitle(third, NOW)).toBe('You came 3 of 3');
     const waiting = battle({}, [person('alice', { status: 'invited' }), person('me', { isMe: true, attemptsUsed: 1 })]);
     expect(battleSubtitle(waiting, NOW)).toBe('Waiting on 1 · 20 h 0 m left');
-    expect(battleSubtitle(battle({ status: 'expired' }), NOW)).toBe('Expired');
+    expect(battleSubtitle(battle({ status: 'expired' }), NOW)).toBe('Ended — not enough people played.');
   });
 
   it('formats time left and scores', () => {
@@ -141,8 +146,8 @@ describe('battle model', () => {
     const t = 'a'.repeat(32);
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: null })).toBe(`pushupcounter://invite/${t}`);
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: 'https://pushup.example.app' })).toBe(`https://pushup.example.app/b/${t}`);
-    expect(inviteShareMessage({ format: 'timed', durationS: 60 }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Jack challenged you to a 60 second pushup battle.*pushupcounter:\/\/invite\/x/);
-    expect(inviteShareMessage({ format: 'multi_day', durationS: null }, 'Jack', 'pushupcounter://invite/x')).toMatch(/multi-day pushup battle/);
+    expect(inviteShareMessage({ kind: 'best_set', durationS: 60 }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Jack challenged you: Best set · 60 s.*pushupcounter:\/\/invite\/x/);
+    expect(inviteShareMessage({ kind: 'total', windowUnit: 'week', durationS: null }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Most reps this week/);
   });
 
   it('names people and groups friends', () => {
@@ -256,7 +261,8 @@ describe('battle upload queue', () => {
     await enqueueBattleSet(kv, 'b1', { id: 's1', reps: [1] }, 3);
     const q = await loadBattleQueue(kv);
     expect(q.pending.map((p) => p.payload.id)).toEqual(['s2', 's1']);
-    expect(q.pending[1].payload).toEqual({ id: 's1', reps: [1], battleId: 'b1' });
+    expect(q.pending[1].payload).toEqual({ id: 's1', reps: [1], challengeId: 'b1' });
+    expect(q.pending[1].challengeId).toBe('b1');
     expect(pendingBattleIds(q)).toEqual(new Set(['b1', 'b2']));
 
     const sent: unknown[] = [];
@@ -283,6 +289,14 @@ describe('battle upload queue', () => {
       ['after', 0],
     ]);
     expect(q.failed.map((f) => [f.payload.id, f.error])).toEqual([['late', 'deadline passed']]);
+  });
+
+  it('reads a queue saved before challenges renamed battleId', async () => {
+    const kv = new MemoryKV();
+    await kv.setItem(BATTLE_QUEUE_KEY, JSON.stringify({ pending: [{ battleId: 'b9', payload: { id: 'old', battleId: 'b9' }, tries: 0, queuedAt: 1 }], failed: [] }));
+    const q = await loadBattleQueue(kv);
+    expect(q.pending[0].challengeId).toBe('b9');
+    expect(q.pending[0].payload).toEqual({ id: 'old', challengeId: 'b9' });
   });
 
   it('survives corrupt storage', async () => {

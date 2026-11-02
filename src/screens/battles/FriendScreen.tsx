@@ -43,16 +43,16 @@ export function FriendScreen(props: {
         {rec ? (
           <>
             <View style={{ flexDirection: 'row', marginHorizontal: -4 }}>
-              <Stat label="Battles" value={`${rec.played}`} />
+              <Stat label="Challenges" value={`${rec.played}`} />
               <Stat label="Won" value={`${rec.won}`} />
               <Stat label="Drawn" value={`${rec.drawn}`} />
               <Stat label="Lost" value={`${rec.lost}`} />
             </View>
-            <Text style={[s.muted, { marginTop: 4 }]}>Their record across all their battles.</Text>
+            <Text style={[s.muted, { marginTop: 4 }]}>Their record across all their challenges.</Text>
             <SectionTitle>You vs {personName(friend)}</SectionTitle>
-            {rec.recent.length === 0 ? <Text style={s.muted}>No finished battles together yet.</Text> : null}
+            {rec.recent.length === 0 ? <Text style={s.muted}>No finished challenges together yet.</Text> : null}
             {rec.recent.map((r) => (
-              <Row key={r.battleId} onPress={() => props.onOpenBattle(r.battleId)}>
+              <Row key={r.challengeId} onPress={() => props.onOpenBattle(r.challengeId)}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.bold}>
                     {battleTitle(r)} · {r.me.isWinner && !r.them.isWinner ? 'You won' : r.them.isWinner && !r.me.isWinner ? 'They won' : r.me.rank === r.them.rank ? 'Draw' : r.me.rank && r.them.rank && r.me.rank < r.them.rank ? 'You were ahead' : 'They were ahead'}

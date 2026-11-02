@@ -14,6 +14,8 @@ export interface SessionRecord {
   trace?: TracePoint[];
   /** Set recorded as a battle attempt; uploaded through submit-set, not the solo backup. */
   battleId?: string;
+  /** Set when this attempt belongs to a best-set challenge. Older rows used battleId. */
+  challengeId?: string;
   /** Seconds the timer ran, when this set was timed. Absent on an untimed set. */
   timerDurationS?: number;
   /** IANA zone of the phone at End set. Missing on sets saved before this was recorded. */

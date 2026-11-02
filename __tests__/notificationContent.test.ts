@@ -1,14 +1,15 @@
 import { buildNotification, ClaimedNotification, deadlineText, ordinal, scoreText } from '../supabase/functions/_shared/notificationContent';
 
 const B = '11111111-1111-4111-8111-111111111111';
-const row = (kind: string, facts: ClaimedNotification['facts'], battle: string | null = B): ClaimedNotification => ({
+const row = (kind: string, facts: ClaimedNotification['facts'], challenge: string | null = B): ClaimedNotification => ({
   id: 1,
   user_id: 'u',
   kind,
-  battle_id: battle,
+  challenge_id: challenge,
   facts,
 });
-const battle = { id: B, format: 'timed' as const, metric: 'rep_count' as const, durationS: 60, status: 'active', endsAt: '2026-11-06T23:00:00Z' };
+const challenge = { id: B, kind: 'best_set' as const, metric: 'rep_count' as const, durationS: 60, status: 'active', endsAt: '2026-11-06T23:00:00Z' };
+const week = { id: B, kind: 'total' as const, windowUnit: 'week' as const, metric: null, status: 'active', endsAt: '2026-11-09T05:00:00Z' };
 
 describe('notification text', () => {
   it('friend request and accept link to the friends screen', () => {
@@ -18,26 +19,34 @@ describe('notification text', () => {
     expect(buildNotification(row('friend_accepted', { actor: { username: 'bob', displayName: 'Bob' } }, null))!.body).toMatch(/^Bob accepted/);
   });
 
-  it('invite names the format and the score to beat', () => {
-    const n = buildNotification(row('battle_invite', { actor: { username: 'sunny', displayName: 'Sunny' }, battle, leader: { username: 'sunny', validReps: 32 } }))!;
-    expect(n.body).toBe('Sunny challenged you to a 60 s battle. sunny already did 32 reps.');
-    expect(n.data).toMatchObject({ url: `pushupcounter://battle/${B}`, battleId: B });
+  it('invite names the challenge', () => {
+    const n = buildNotification(row('challenge_invite', { actor: { username: 'sunny', displayName: 'Sunny' }, challenge: week }))!;
+    expect(n.body).toBe('Sunny challenged you: most reps this week.');
+    expect(n.data).toMatchObject({ url: `pushupcounter://challenge/${B}`, challengeId: B });
+    expect(buildNotification(row('challenge_invite', { actor: { displayName: 'Sunny' }, challenge }))!.body).toBe('Sunny challenged you: best set · 60 s.');
   });
 
   it('opponent submitted shows the deadline in the recipient time zone', () => {
-    const n = buildNotification(row('set_submitted', { timeZone: 'America/New_York', actor: { username: 'bob', displayName: 'Bob' }, actorScore: { validReps: 28 }, battle: { ...battle, mySetDone: false } }))!;
-    expect(n.body).toBe('Bob did 28 reps. Beat it by Fri 6:00 PM');
-    const done = buildNotification(row('set_submitted', { actor: { username: 'bob' }, actorScore: { validReps: 1 }, battle: { ...battle, mySetDone: true } }))!;
-    expect(done.body).toBe('bob did 1 rep');
-    expect(buildNotification(row('set_submitted', { actor: { username: 'bob' }, battle: { ...battle, status: 'completed' } }))).toBeNull();
+    const n = buildNotification(row('set_submitted', { timeZone: 'America/New_York', actor: { username: 'bob', displayName: 'Bob' }, actorScore: { validReps: 28 }, challenge: { ...challenge, mySetDone: false } }))!;
+    expect(n.body).toBe('Bob is on 28. You have until Fri 6:00 PM.');
+    const done = buildNotification(row('set_submitted', { actor: { username: 'bob' }, actorScore: { validReps: 1 }, challenge: { ...challenge, mySetDone: true } }))!;
+    expect(done.body).toBe('bob is on 1.');
+    const weekUpdate = buildNotification(row('set_submitted', { actor: { displayName: 'Bob' }, actorScore: { validReps: 40 }, challenge: week }))!;
+    expect(weekUpdate.body).toBe('Bob is on 40 reps this week.');
+    expect(buildNotification(row('set_submitted', { actor: { username: 'bob' }, challenge: { ...challenge, status: 'completed' } }))).toBeNull();
+  });
+
+  it('accept and decline', () => {
+    expect(buildNotification(row('invite_accepted', { actor: { displayName: 'Bob' }, challenge }))!.body).toBe("Bob accepted. You're on.");
+    expect(buildNotification(row('invite_declined', { actor: { displayName: 'Bob' }, challenge }))!.body).toBe('Bob declined.');
   });
 
   it('reminders say how long is left, and skip people who already played', () => {
     const now = new Date('2026-11-06T19:00:00Z');
-    const n = buildNotification(row('battle_reminder', { battle, leader: { username: 'sunny', validReps: 32 } }), now)!;
-    expect(n.body).toBe("4 h left to beat sunny's 32 reps");
-    expect(buildNotification(row('battle_reminder', { battle: { ...battle, mySetDone: true } }), now)).toBeNull();
-    expect(buildNotification(row('battle_reminder_half', { battle: { ...battle, endsAt: '2026-11-06T19:20:00Z' } }), now)!.body).toBe('Under an hour left in your battle');
+    const n = buildNotification(row('challenge_reminder', { challenge, leader: { username: 'sunny', validReps: 32 } }), now)!;
+    expect(n.body).toBe("4 hours left to beat sunny's 32.");
+    expect(buildNotification(row('challenge_reminder', { challenge: { ...challenge, mySetDone: true } }), now)).toBeNull();
+    expect(buildNotification(row('challenge_reminder_half', { challenge: { ...challenge, endsAt: '2026-11-06T19:20:00Z' } }), now)!.body).toBe('Under an hour left.');
   });
 
   it('results: win, loss, draw', () => {
@@ -45,21 +54,21 @@ describe('notification text', () => {
       { username: 'me', rank: 1, validReps: 32, isMe: true },
       { username: 'bob', rank: 2, validReps: 28 },
     ];
-    expect(buildNotification(row('battle_result', { battle, result: { rank: 1, isWinner: true, validReps: 32, players: 2, top } }))!.body).toBe('You won! 32 reps vs 28 reps');
+    expect(buildNotification(row('challenge_result', { challenge, result: { rank: 1, isWinner: true, validReps: 32, players: 2, top } }))!.body).toBe('You won. 32 to 28.');
     const lossTop = [{ username: 'bob', rank: 1, validReps: 40 }, { username: 'me', rank: 2, validReps: 30, isMe: true }];
-    expect(buildNotification(row('battle_result', { battle, result: { rank: 2, validReps: 30, players: 3, top: lossTop } }))!.body).toBe('You came 2nd of 3. bob won with 40 reps');
-    expect(buildNotification(row('battle_result', { battle, result: { rank: 1, draw: true, validReps: 20, players: 2, top: [] } }))!.body).toBe("It's a draw! 20 reps each");
+    expect(buildNotification(row('challenge_result', { challenge, result: { rank: 2, validReps: 30, players: 3, top: lossTop } }))!.body).toBe('You came 2nd of 3.');
+    expect(buildNotification(row('challenge_result', { challenge, result: { rank: 1, draw: true, validReps: 20, players: 2, top: [] } }))!.body).toBe('Draw.');
   });
 
   it('unknown kinds and missing facts send nothing', () => {
     expect(buildNotification(row('something_else', {}))).toBeNull();
-    expect(buildNotification(row('battle_invite', null))).toBeNull();
-    expect(buildNotification(row('battle_result', { battle }))).toBeNull();
+    expect(buildNotification(row('challenge_invite', null))).toBeNull();
+    expect(buildNotification(row('challenge_result', { challenge }))).toBeNull();
   });
 
   it('cancel and expiry', () => {
-    expect(buildNotification(row('battle_cancelled', { battle: { ...battle, creator: 'sunny' } }))!.body).toBe('@sunny cancelled the battle');
-    expect(buildNotification(row('battle_expired', { battle: { ...battle, creatorIsMe: true } }))!.body).toBe('Nobody joined your challenge in time');
+    expect(buildNotification(row('challenge_cancelled', { challenge: { ...challenge, creator: 'sunny' } }))!.body).toBe('@sunny cancelled the challenge.');
+    expect(buildNotification(row('challenge_expired', { challenge: { ...challenge, creatorIsMe: true } }))!.body).toBe('The challenge ended before enough people played.');
   });
 });
 

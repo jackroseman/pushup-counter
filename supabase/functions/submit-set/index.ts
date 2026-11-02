@@ -1,13 +1,13 @@
-// submit-set: the only way a battle set gets into the database (SPEC §7 hard checks).
-//   POST { ...set payload (same shape as the solo submit_set RPC), battleId, linkFinishedSet? }
-// linkFinishedSet attaches a solo set the same user just finished (sets.battle_id), instead
-// of inserting a second copy. submit_set() enforces recency, ownership, and the battle rules.
+// submit-set: the only way a best-set challenge attempt gets into the database.
+//   POST { ...set payload (same shape as the solo submit_set RPC), challengeId, linkFinishedSet? }
+// linkFinishedSet attaches a solo set the same user just finished (sets.challenge_id), instead
+// of inserting a second copy. submit_set() enforces recency, ownership, and the challenge rules.
 //   Authorization: Bearer <user JWT>
 // Verifies the user, checks the data's shape (_shared/setValidation.ts), then calls
 // submit_set() as the service role with the verified user id. The DB triggers enforce the
-// battle rules (accepted participant, open battle, attempts left, deadline + 5 min).
-// Afterwards it runs finalize_battles() (so a battle completes the moment the last person
-// plays) and wakes notify to send the pushes. Idempotent: a retry returns the same set id.
+// challenge rules (accepted participant, open best-set challenge, attempts left, deadline).
+// Afterwards it runs finalize_challenges() (so a challenge completes the moment the last
+// person plays) and wakes notify to send the pushes. Idempotent: a retry returns the same set id.
 // Deployed with --no-verify-jwt like notify; the function checks the JWT itself.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { parseSecretKeys } from '../_shared/expoPush.ts';
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   if (error) return json(statusForDbError(error.message, error.code), { error: error.message });
 
   // Best effort: complete/lock the battle if this was the last attempt, then send pushes.
-  await admin.rpc('finalize_battles').then(() => undefined, () => undefined);
+  await admin.rpc('finalize_challenges').then(() => undefined, () => undefined);
   const drain = fetch(`${SUPABASE_URL}/functions/v1/notify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

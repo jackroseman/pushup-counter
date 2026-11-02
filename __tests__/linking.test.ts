@@ -6,7 +6,8 @@ const TOKEN = 'a'.repeat(32);
 
 describe('deep links', () => {
   it('parses scheme links', () => {
-    expect(parseAppLink(`pushupcounter://battle/${ID}`)).toEqual({ type: 'battle', battleId: ID });
+    expect(parseAppLink(`pushupcounter://battle/${ID}`)).toEqual({ type: 'challenge', challengeId: ID });
+    expect(parseAppLink(`pushupcounter://challenge/${ID}`)).toEqual({ type: 'challenge', challengeId: ID });
     expect(parseAppLink(`pushupcounter://invite/${TOKEN}?src=push`)).toEqual({ type: 'invite', token: TOKEN });
     expect(parseAppLink('pushupcounter://history')).toEqual({ type: 'history' });
     expect(parseAppLink('pushupcounter://progress')).toEqual({ type: 'progress' });
@@ -28,9 +29,10 @@ describe('deep links', () => {
   });
 });
 
-describe('battle links and push taps', () => {
-  it('parses the battles and friends screens', () => {
-    expect(parseAppLink('pushupcounter://battles')).toEqual({ type: 'battles' });
+describe('challenge links and push taps', () => {
+  it('parses the challenges and friends screens', () => {
+    expect(parseAppLink('pushupcounter://battles')).toEqual({ type: 'challenges' });
+    expect(parseAppLink('pushupcounter://challenges')).toEqual({ type: 'challenges' });
     expect(parseAppLink('pushupcounter://friends')).toEqual({ type: 'friends' });
     expect(parseAppLink('pushupcounter://friends/extra')).toBeNull();
     expect(parseAppLink('pushupcounter://league/extra')).toBeNull();

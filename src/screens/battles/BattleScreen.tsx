@@ -43,7 +43,7 @@ export function BattleScreen(props: {
 }) {
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Header title="Battle" onBack={props.onBack} />
+      <Header title="Challenge" onBack={props.onBack} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
         <BattleDetail {...props} />
       </AccountGate>
@@ -78,8 +78,8 @@ function BattleDetail({
     if (!supabase) return;
     const q = await loadBattleQueue(AsyncStorage);
     setQueued({
-      pending: q.pending.some((x) => x.battleId === battleId),
-      failed: q.failed.filter((x) => x.battleId === battleId).pop()?.error ?? null,
+      pending: q.pending.some((x) => x.challengeId === battleId),
+      failed: q.failed.filter((x) => x.challengeId === battleId).pop()?.error ?? null,
     });
     const r = await api.battle(supabase, battleId);
     if (r.ok) {
@@ -97,7 +97,8 @@ function BattleDetail({
   useEffect(() => onBattleUploads(() => load()), [load]);
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((n) => {
-      if ((n.request.content.data as { battleId?: string })?.battleId === battleId) load();
+      const data = n.request.content.data as { challengeId?: string; battleId?: string };
+      if (data?.challengeId === battleId || data?.battleId === battleId) load();
     });
     return () => sub.remove();
   }, [battleId, load]);
@@ -140,16 +141,16 @@ function BattleDetail({
   }, [share, b]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (b === undefined) return error ? <Text style={s.error}>{error}</Text> : <Text style={s.muted}>Loading…</Text>;
-  if (b === null) return <Notice title="Battle not found" text="It may have been removed, or you're not part of it." />;
+  if (b === null) return <Notice title="Challenge not found" text="It may have been removed, or you're not part of it." />;
 
   const mine = me(b);
   const creator = b.participants.find((p) => p.userId === b.createdBy);
   const isCreator = b.createdBy === profile?.id;
   const rules =
-    b.format === 'timed'
-      ? `${b.durationS ?? 60} seconds, as many good reps as you can.`
-      : b.format === 'multi_day'
-        ? 'Most good reps across every set before the window ends.'
+    b.kind === 'total'
+      ? 'Every set you do before the end counts.'
+      : b.durationS
+        ? `${b.durationS} seconds, as many good reps as you can.`
         : `As many good reps as you can in one set. It ends after ${appSettings.asyncBattleDefaults.maxRepsIdleEndS} s without a rep.`;
   const cue = creatorAttemptCue({
     promptAttempt,
@@ -170,7 +171,7 @@ function BattleDetail({
         <Text style={s.text}>{rules}</Text>
         <Text style={[s.muted, { marginTop: 6 }]}>
           Only Good and Full reps count. Shallow reps don't.{' '}
-          {b.format === 'multi_day' ? 'Every set in the window counts.' : b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed} attempts each.`}
+          {b.kind === 'best_set' ? (b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed ?? 1} attempts each.`) : 'There is no separate challenge set.'}
           {b.endsAt && isOpen(b) ? ` Deadline: ${new Date(b.endsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} (${timeLeft(b.endsAt)}).` : ''}
         </Text>
       </View>
@@ -178,7 +179,7 @@ function BattleDetail({
       {cue.showPrompt ? (
         <Notice
           title="Do your attempt now"
-          text="This battle starts at zero. A set you already finished is not included — only the attempt you start here counts. Your friend sees that score before they go."
+          text="This challenge starts at zero. A set you already finished is not included — only the attempt you start here counts. Your friend sees that score before they go."
         />
       ) : null}
       {cue.showClaimed && justPlayed ? (
@@ -210,7 +211,7 @@ function BattleDetail({
 
       {canPlay(b) && !queued.pending ? (
         <Button
-          title="Start your attempt"
+          title="Start my set"
           onPress={() =>
             Alert.alert('Ready?', `${rules}\n\nThe attempt counts once counting starts after calibration.`, [
               { text: 'Not yet', style: 'cancel' },
@@ -241,13 +242,13 @@ function BattleDetail({
             </Row>
           ))}
           <Button
-            title="Cancel battle"
+            title="Cancel challenge"
             kind="danger"
             onPress={() =>
-              Alert.alert('Cancel this battle?', 'Everyone in it is told it was cancelled.', [
+              Alert.alert('Cancel this challenge?', 'Everyone in it is told it was cancelled.', [
                 { text: 'Keep it', style: 'cancel' },
                 {
-                  text: 'Cancel battle',
+                  text: 'Cancel challenge',
                   style: 'destructive',
                   onPress: async () => (await run(() => api.cancelBattle(supabase!, b.id))) && onBack(),
                 },

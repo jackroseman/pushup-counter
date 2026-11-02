@@ -372,7 +372,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       version: 2,
       trace: trace.current?.finish() ?? [],
       timeZone: deviceTimeZone(),
-      ...(battleRef.current ? { battleId: battleRef.current.battleId } : {}),
+      ...(battleRef.current ? { challengeId: battleRef.current.battleId } : {}),
       ...(battleRef.current?.format === 'timed' && battleRef.current.durationS
         ? { timerDurationS: battleRef.current.durationS }
         : {}),

@@ -25,33 +25,35 @@ const friendFromRow = (r: FriendRow): Friend => ({
 });
 
 export const api = {
-  myBattles: (c: SupabaseClient) => rpc<Battle[]>(c, 'my_battles'),
+  myBattles: (c: SupabaseClient) => rpc<Battle[]>(c, 'my_challenges'),
   async battle(c: SupabaseClient, id: string): Promise<Res<Battle | null>> {
-    const r = await rpc<Battle[]>(c, 'my_battles', { p_battle: id });
+    // The renamed function kept its argument name, so PostgREST still expects p_battle.
+    const r = await rpc<Battle[]>(c, 'my_challenges', { p_battle: id });
     return r.ok ? { ok: true, data: r.data?.[0] ?? null } : r;
   },
   createBattle: (
     c: SupabaseClient,
     p: {
-      format: 'max_reps' | 'timed' | 'multi_day';
+      kind: 'best_set' | 'total';
+      metric?: string;
       durationS?: number;
-      windowDays?: number;
-      deadlineHours: number;
+      deadlineHours?: number;
+      window?: 'day' | 'week' | 'month' | 'custom';
       friendIds: string[];
       inviteLink: boolean;
     },
-  ) => rpc<{ battleId: string; inviteToken: string | null }>(c, 'create_battle', { p }),
-  async respond(c: SupabaseClient, battleId: string, userId: string, accept: boolean): Promise<Res<null>> {
+  ) => rpc<{ challengeId: string; inviteToken: string | null }>(c, 'create_challenge', { p }),
+  async respond(c: SupabaseClient, challengeId: string, userId: string, accept: boolean): Promise<Res<null>> {
     const { error } = await c
-      .from('battle_participants')
+      .from('challenge_participants')
       .update({ status: accept ? 'accepted' : 'declined' })
-      .eq('battle_id', battleId)
+      .eq('challenge_id', challengeId)
       .eq('user_id', userId)
       .eq('status', 'invited');
     return error ? { ok: false, message: error.message } : { ok: true, data: null };
   },
-  cancelBattle: (c: SupabaseClient, battleId: string) => rpc<null>(c, 'cancel_battle', { p_battle: battleId }),
-  createInviteLink: (c: SupabaseClient, battleId: string) => rpc<string>(c, 'create_invite_link', { p_battle: battleId }),
+  cancelBattle: (c: SupabaseClient, challengeId: string) => rpc<null>(c, 'cancel_challenge', { p_battle: challengeId }),
+  createInviteLink: (c: SupabaseClient, challengeId: string) => rpc<string>(c, 'create_invite_link', { p_battle: challengeId }),
   revokeInviteLink: (c: SupabaseClient, token: string) => rpc<null>(c, 'revoke_invite_link', { p_token: token }),
   invitePreview: (c: SupabaseClient, token: string) => rpc<InvitePreview>(c, 'invite_preview', { p_token: token }),
   redeemInvite: (c: SupabaseClient, token: string, addFriend: boolean) =>
@@ -71,7 +73,7 @@ export const api = {
   removeFriend: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'remove_friend', { p_user: userId }),
   blockUser: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'block_user', { p_user: userId }),
   unblockUser: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'unblock_user', { p_user: userId }),
-  friendRecord: (c: SupabaseClient, userId: string) => rpc<FriendRecord>(c, 'friend_battle_record', { p_user: userId }),
+  friendRecord: (c: SupabaseClient, userId: string) => rpc<FriendRecord>(c, 'friend_challenge_record', { p_user: userId }),
 
   /** Ask the notify function to send queued pushes now (cron does it within a minute anyway). */
   kickNotify(c: SupabaseClient): void {

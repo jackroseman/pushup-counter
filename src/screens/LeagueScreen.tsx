@@ -29,7 +29,7 @@ export function LeagueScreen({
   board: LeagueBoard | null;
   banner: string | null;
   meId: string | null;
-  onBack: () => void;
+  onBack?: () => void;
   onAddFriend: () => void;
   onOpenFriend: (row: LeagueTotalRow | LeagueImprovementRow) => void;
   onProfile: () => void;
@@ -45,11 +45,13 @@ export function LeagueScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} hitSlop={12}>
-          <Text style={styles.back}>‹ Back</Text>
-        </Pressable>
-      </View>
+      {onBack ? (
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} hitSlop={12}>
+            <Text style={styles.back}>‹ Back</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <Text style={styles.title}>League</Text>
 
       {!configured ? <Text style={styles.body}>Sign in with Apple is not available in this build.</Text> : null}

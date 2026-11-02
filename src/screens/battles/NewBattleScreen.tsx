@@ -6,31 +6,29 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 import { api } from '../../battles/api';
-import { challengeFormats, ChallengeFormat } from '../../battles/challengeFromSet';
+import { ChallengeOffer, offerLabel, windowClosingNote } from '../../battles/challengeFromSet';
 import { countedReps } from '../../battles/counting';
 import { Friend, friendlyError, personName } from '../../battles/model';
 import { submitBattleAttempt } from '../../battles/uploader';
+import { deviceTimeZone } from '../../backend/profile';
 import { SessionRecord } from '../../storage/history';
 import { AccountGate, Chip, Header, Row, s, SectionTitle } from './common';
 
-type Format = { format: 'max_reps' } | { format: 'timed'; durationS: number } | { format: 'multi_day' };
+type Metric = 'rep_count' | 'depth_consistency' | 'tempo' | 'form_score';
 
 export function deadlineLabel(h: number): string {
   if (h % 24 === 0) return h === 24 ? '1 day' : `${h / 24} days`;
   return `${h} hours`;
 }
 
-export function windowLabel(days: number): string {
-  return days === 1 ? '1 day' : `${days} days`;
-}
-
 export function NewBattleScreen(props: {
   friendIds?: string[];
-  /** The set that just finished. Creating the battle uses it as your attempt. */
+  /** The set that just finished. Best single set claims it; a window does not. */
   fromSet?: SessionRecord;
+  offer?: ChallengeOffer;
   onBack: () => void;
   onCreated: (
-    battleId: string,
+    challengeId: string,
     share: boolean,
     extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } },
   ) => void;
@@ -40,8 +38,8 @@ export function NewBattleScreen(props: {
 }) {
   return (
     <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-      <Header title={props.fromSet ? 'Challenge a friend' : 'New battle'} onBack={props.onBack} />
-      <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
+      <Header title="New challenge" onBack={props.onBack} />
+      <AccountGate onAccount={props.onAccount} onProfile={props.onProfile} why="Challenges are with friends, so you need an account.">
         <Form {...props} />
       </AccountGate>
     </ScrollView>
@@ -51,11 +49,13 @@ export function NewBattleScreen(props: {
 function Form({
   friendIds,
   fromSet,
+  offer,
   onCreated,
   onFriends,
 }: {
   friendIds?: string[];
   fromSet?: SessionRecord;
+  offer?: ChallengeOffer;
   onCreated: (id: string, share: boolean, extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } }) => void;
   onFriends: () => void;
 }) {
@@ -63,10 +63,9 @@ function Form({
   const { deviceId } = useIdentity();
   const d = appSettings.asyncBattleDefaults;
   const maxInvites = appSettings.asyncMaxParticipants - 1;
-  const offered: ChallengeFormat[] | null = fromSet ? challengeFormats(fromSet, d.timedDurationsS) : null;
-  const [format, setFormat] = useState<Format>({ format: 'max_reps' });
+  const [choice, setChoice] = useState<ChallengeOffer>(offer ?? { kind: 'best_set', durationS: null });
+  const [metric, setMetric] = useState<Metric>('rep_count');
   const [hours, setHours] = useState(d.deadlineHours);
-  const [windowDays, setWindowDays] = useState(d.multiDayWindowDays);
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set(friendIds ?? []));
   const [link, setLink] = useState(!(friendIds && friendIds.length));
@@ -78,7 +77,7 @@ function Form({
     api.friends(supabase).then((r) => (r.ok ? setFriends(r.data.filter((f) => f.relation === 'friend')) : setError(friendlyError(r.message))));
   }, []);
 
-  const options = [...new Set([...d.deadlineOptionsHours, d.deadlineHours])].sort((a, b) => a - b);
+  const options = [...new Set([...d.deadlineOptionsHours, d.deadlineHours])].filter((h) => h <= d.maxDeadlineHours).sort((a, b) => a - b);
   const toggle = (id: string) =>
     setPicked((p) => {
       const n = new Set(p);
@@ -87,17 +86,21 @@ function Form({
       return n;
     });
 
+  const setTimer = fromSet?.timerDurationS ?? null;
+  const claimThisSet = !!fromSet && choice.kind === 'best_set' && (choice.durationS ?? null) === setTimer;
+  const closing = choice.kind === 'total' ? windowClosingNote(choice.window, Date.now(), deviceTimeZone()) : null;
+
   const create = async () => {
     if (!supabase || busy) return;
-    if (offered && offered.length === 0) return setError('This set is already in a battle.');
     if (!picked.size && !link) return setError('Pick a friend or turn on the invite link.');
     setBusy(true);
     setError(null);
     const r = await api.createBattle(supabase, {
-      format: format.format,
-      durationS: format.format === 'timed' ? format.durationS : undefined,
-      windowDays: format.format === 'multi_day' ? windowDays : undefined,
-      deadlineHours: hours,
+      kind: choice.kind,
+      metric: choice.kind === 'best_set' && !choice.durationS ? metric : undefined,
+      durationS: choice.kind === 'best_set' ? choice.durationS ?? undefined : undefined,
+      deadlineHours: choice.kind === 'best_set' ? hours : undefined,
+      window: choice.kind === 'total' ? choice.window : undefined,
       friendIds: [...picked],
       inviteLink: link,
     });
@@ -105,12 +108,12 @@ function Form({
       setBusy(false);
       return setError(friendlyError(r.message));
     }
-    let promptAttempt = !fromSet;
+    let promptAttempt = choice.kind === 'best_set' && !claimThisSet;
     let justPlayed: { reps: number; counted: number } | undefined;
-    if (fromSet) {
-      const rules = format.format === 'timed' ? { format: 'timed' as const, durationS: format.durationS } : { format: 'max_reps' as const, durationS: null };
+    if (claimThisSet && fromSet) {
+      const rules = choice.durationS ? { format: 'timed' as const, durationS: choice.durationS } : { format: 'max_reps' as const, durationS: null };
       try {
-        const flushed = await submitBattleAttempt(fromSet, r.data.battleId, deviceId, { linkFinishedSet: true });
+        const flushed = await submitBattleAttempt(fromSet, r.data.challengeId, deviceId, { linkFinishedSet: true });
         const failed = flushed?.failed.some((f) => f.payload.id === fromSet.id) ?? false;
         if (failed) {
           promptAttempt = true;
@@ -125,65 +128,67 @@ function Form({
     }
     setBusy(false);
     api.kickNotify(supabase);
-    onCreated(r.data.battleId, !!r.data.inviteToken, { promptAttempt, justPlayed });
+    onCreated(r.data.challengeId, !!r.data.inviteToken, { promptAttempt, justPlayed });
   };
 
   return (
     <View>
-      <SectionTitle>Format</SectionTitle>
+      <SectionTitle>Kind</SectionTitle>
       <View style={s.chips}>
-        {offered ? (
-          offered.map((f) => (
-            <Chip
-              key={f.format}
-              label={f.format === 'timed' ? (f.durationS! % 60 === 0 ? `${f.durationS! / 60} min` : `${f.durationS} s`) : f.format === 'multi_day' ? 'Multi-day' : 'Max reps'}
-              on={format.format === f.format}
-              onPress={() => setFormat(f.format === 'timed' ? { format: 'timed', durationS: f.durationS! } : { format: f.format })}
-            />
-          ))
-        ) : (
-          <>
-            <Chip label="Max reps" on={format.format === 'max_reps'} onPress={() => setFormat({ format: 'max_reps' })} />
-            {d.timedDurationsS.map((t) => (
-              <Chip
-                key={t}
-                label={t % 60 === 0 ? `${t / 60} min` : `${t} s`}
-                on={format.format === 'timed' && format.durationS === t}
-                onPress={() => setFormat({ format: 'timed', durationS: t })}
-              />
-            ))}
-          </>
-        )}
+        <Chip label="Best single set" on={choice.kind === 'best_set'} onPress={() => setChoice({ kind: 'best_set', durationS: null })} />
+        <Chip label="Most reps" on={choice.kind === 'total'} onPress={() => setChoice({ kind: 'total', window: 'day' })} />
       </View>
-      <Text style={s.muted}>
-        {fromSet
-          ? format.format === 'multi_day'
-            ? 'This set is your first entry. Every set you do before the window ends counts too. Only good reps count, and your friend sees your score before they go.'
-            : format.format === 'timed'
-              ? `This set becomes your attempt: most good reps in ${format.durationS} seconds. Your friend sees your score before they go.`
-              : "This set becomes your attempt. Only good reps count — shallow reps don't. Your friend sees your score before they go."
-          : format.format === 'timed'
-            ? `Most good reps in ${format.durationS} seconds wins. Shallow reps don't count.`
-            : `Most good reps in one set wins. A set ends after ${d.maxRepsIdleEndS} s without a rep. Shallow reps don't count.`}
-      </Text>
 
-      {format.format === 'multi_day' ? (
+      {choice.kind === 'best_set' ? (
         <>
-          <SectionTitle>Window</SectionTitle>
+          <SectionTitle>Timer</SectionTitle>
           <View style={s.chips}>
-            {d.multiDayWindowOptionsDays.map((days) => (
-              <Chip key={days} label={windowLabel(days)} on={windowDays === days} onPress={() => setWindowDays(days)} />
+            <Chip label="Untimed" on={choice.durationS == null} onPress={() => setChoice({ kind: 'best_set', durationS: null })} />
+            {d.timedDurationsS.map((t) => (
+              <Chip key={t} label={t % 60 === 0 ? `${t / 60} min` : `${t} s`} on={choice.durationS === t} onPress={() => setChoice({ kind: 'best_set', durationS: t })} />
             ))}
           </View>
-        </>
-      ) : (
-        <>
+          {choice.durationS == null && !fromSet ? (
+            <>
+              <SectionTitle>What wins</SectionTitle>
+              <View style={s.chips}>
+                {(
+                  [
+                    ['rep_count', 'Reps'],
+                    ['depth_consistency', 'Depth'],
+                    ['tempo', 'Tempo'],
+                    ['form_score', 'Form'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Chip key={id} label={label} on={metric === id} onPress={() => setMetric(id)} />
+                ))}
+              </View>
+            </>
+          ) : null}
           <SectionTitle>Everyone plays within</SectionTitle>
           <View style={s.chips}>
             {options.map((h) => (
               <Chip key={h} label={deadlineLabel(h)} on={hours === h} onPress={() => setHours(h)} />
             ))}
           </View>
+          <Text style={s.muted}>
+            {claimThisSet
+              ? "We'll use the set you just did."
+              : choice.durationS
+                ? `Most good reps in ${choice.durationS} seconds wins. Shallow reps don't count.`
+                : `Most good reps in one set wins. A set ends after ${d.maxRepsIdleEndS} s without a rep. Shallow reps don't count.`}
+          </Text>
+        </>
+      ) : (
+        <>
+          <SectionTitle>Window</SectionTitle>
+          <View style={s.chips}>
+            <Chip label="Today" on={choice.window === 'day'} onPress={() => setChoice({ kind: 'total', window: 'day' })} />
+            <Chip label="This week" on={choice.window === 'week'} onPress={() => setChoice({ kind: 'total', window: 'week' })} />
+            <Chip label="This month" on={choice.window === 'month'} onPress={() => setChoice({ kind: 'total', window: 'month' })} />
+          </View>
+          <Text style={s.muted}>Every set before the window ends counts, including sets you already did. Shallow reps don't count.</Text>
+          {closing ? <Text style={s.muted}>{closing}</Text> : null}
         </>
       )}
 
@@ -216,11 +221,9 @@ function Form({
       </Row>
 
       {error ? <Text style={s.error}>{error}</Text> : null}
-      {offered && offered.length === 0 ? <Text style={s.error}>This set is already in a battle.</Text> : null}
-      <Button title={busy ? 'Creating…' : fromSet ? 'Send challenge' : 'Create battle'} onPress={create} />
-      {fromSet ? null : (
-        <Text style={[s.muted, { marginTop: 8 }]}>After you create it, do your attempt. A set you already finished is not included.</Text>
-      )}
+      {!picked.size && !link ? <Text style={s.muted}>Pick at least one friend or turn on the invite link.</Text> : null}
+      <Button title={busy ? 'Creating…' : 'Create challenge'} onPress={create} />
+      {fromSet ? <Text style={[s.muted, { marginTop: 8 }]}>{offerLabel(choice)}</Text> : null}
     </View>
   );
 }

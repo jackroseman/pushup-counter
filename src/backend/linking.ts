@@ -1,16 +1,15 @@
 /**
- * Deep links. Custom scheme works in every build: pushupcounter://battle/<id>,
- * pushupcounter://invite/<token>. Universal links (https://<domain>/b/<token>) come later
- * with the invite web page.
+ * Deep links. pushupcounter://challenge/<id> and the older pushupcounter://battle/<id>
+ * both open the challenge. pushupcounter://invite/<token> joins from a link.
  */
 export const APP_SCHEME = 'pushupcounter';
 
 export type AppLink =
-  | { type: 'battle'; battleId: string }
+  | { type: 'challenge'; challengeId: string }
   | { type: 'invite'; token: string }
   | { type: 'history' }
   | { type: 'progress' }
-  | { type: 'battles' }
+  | { type: 'challenges' }
   | { type: 'friends' }
   | { type: 'league' }
   | { type: 'home' };
@@ -35,11 +34,11 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
   if (parts.length === 0) return { type: 'home' };
   const [head, arg] = parts;
   if (head === 'today' && parts.length === 1) return { type: 'home' };
-  if (head === 'battle' && arg && UUID.test(arg)) return { type: 'battle', battleId: arg.toLowerCase() };
+  if ((head === 'challenge' || head === 'battle') && arg && UUID.test(arg)) return { type: 'challenge', challengeId: arg.toLowerCase() };
   if (head === 'invite' && arg && TOKEN.test(arg)) return { type: 'invite', token: arg.toLowerCase() };
   if (head === 'history' && parts.length === 1) return { type: 'history' };
   if (head === 'progress' && parts.length === 1) return { type: 'progress' };
-  if (head === 'battles' && parts.length === 1) return { type: 'battles' };
+  if ((head === 'challenges' || head === 'battles') && parts.length === 1) return { type: 'challenges' };
   if (head === 'friends' && parts.length === 1) return { type: 'friends' };
   if (head === 'league' && parts.length === 1) return { type: 'league' };
   return null;

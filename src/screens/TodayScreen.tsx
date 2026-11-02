@@ -10,31 +10,23 @@ import { colors } from '../theme';
 export function TodayScreen({
   view,
   depth,
-  showBattles,
   howToOpen,
   banner,
   savedSets,
   onStart,
   onGoal,
-  onProgress,
-  onLeague,
   onAccount,
-  onBattles,
   onOpenHowTo,
   onCloseHowTo,
 }: {
   view: TodayModel;
   depth: boolean;
-  showBattles: boolean;
   howToOpen: boolean;
   banner?: string | null;
   savedSets: number;
   onStart: () => void;
   onGoal: () => void;
-  onProgress: () => void;
-  onLeague: () => void;
   onAccount: () => void;
-  onBattles: () => void;
   onOpenHowTo: () => void;
   onCloseHowTo: () => void;
 }) {
@@ -67,9 +59,6 @@ export function TodayScreen({
           <Text style={styles.textButtonLabel}>Set a goal</Text>
         </Pressable>
       ) : null}
-      {showBattles ? <Button title="Battles" kind="secondary" onPress={onBattles} /> : null}
-      <Button title="Progress" kind="secondary" onPress={onProgress} />
-      <Button title="League" kind="secondary" onPress={onLeague} />
       <Pressable accessibilityRole="button" onPress={onOpenHowTo} style={styles.textButton}>
         <Text style={styles.textButtonLabel}>How counting works</Text>
       </Pressable>

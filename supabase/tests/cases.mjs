@@ -38,14 +38,14 @@ export const steps = [
  ['standings (provisional)', `${as(A)} select user_id=('${A}')::uuid as is_a, valid_reps, metric_value, rank, is_winner, attempts_used from battle_standings order by rank; reset role;`],
  ['finalize -> completed', `select finalize_battles(); select status from battles;`],
  ['standings final', `${as(B)} select user_id=('${A}')::uuid as is_a, valid_reps, metric_value, rank, is_winner from battle_standings order by rank; reset role;`],
- ['user_stats A', `${as(A)} select username,total_sets,total_reps,best_set_reps,current_streak_days,battles_played,battles_won,battles_lost from user_stats where user_id='${A}'; reset role;`],
+ ['user_stats A', `${as(A)} select (select count(*) from sets where user_id='${A}') as total_sets, (select count(*) from battle_standings where user_id='${A}' and battle_status='completed' and is_winner) as battles_won; reset role;`],
  ['realtime: B can join battle channel, C cannot', `${as(B)} select set_config('realtime.topic','battle:11111111-1111-4111-8111-111111111111',false); select private.can_join_battle_channel(realtime.topic()); reset role; ${as(C)} select private.can_join_battle_channel('battle:11111111-1111-4111-8111-111111111111'), private.can_join_battle_channel('garbage'); reset role;`],
  ['live battle: create, accept, ready x2 -> starts_at set', `${as(A)} insert into battles(id,created_by,mode,format,metric,duration_s,invite_expires_at) values ('22222222-2222-4222-8222-222222222222','${A}','live','timed','rep_count',60,now()+interval '10 minutes'); insert into battle_participants(battle_id,user_id,invited_by) values ('22222222-2222-4222-8222-222222222222','${B}','${A}'); reset role; ${as(B)} update battle_participants set status='accepted', responded_at=now() where battle_id='22222222-2222-4222-8222-222222222222' and user_id='${B}'; update battle_participants set ready_at=now() where battle_id='22222222-2222-4222-8222-222222222222' and user_id='${B}'; reset role; ${as(A)} update battle_participants set ready_at=now() where battle_id='22222222-2222-4222-8222-222222222222' and user_id='${A}'; select status, starts_at is not null from battles where id='22222222-2222-4222-8222-222222222222'; reset role;`],
  ['live: ready after start (expect ERR)', `${as(A)} update battle_participants set ready_at=null where battle_id='22222222-2222-4222-8222-222222222222' and user_id='${A}'; reset role;`],
  ['live timed: B set started on time is valid; timed window caps reps', `update battles set starts_at = now() - interval '61 seconds' where id='22222222-2222-4222-8222-222222222222'; select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('live-b',40,1600,[0.14,0.15],{start:Date.now()-61000}),battleId:'22222222-2222-4222-8222-222222222222',userId:B})}) is not null; reset role; ${as(B)} select valid_reps, metric_value from battle_standings where battle_id='22222222-2222-4222-8222-222222222222' and user_id='${B}'; reset role;`],
  ['A finally submits async attempt -> finalize completes', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('b1-a',15,1400,[0.14]),battleId:'11111111-1111-4111-8111-111111111111',userId:A})}) is not null; reset role; select finalize_battles(); select status from battles where id='11111111-1111-4111-8111-111111111111';`],
  ['A second attempt (expect ERR no attempts left)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q({...rec('b1-a2',25,1400,[0.14]),battleId:'11111111-1111-4111-8111-111111111111',userId:A})}); reset role;`],
- ['final standings + stats', `${as(A)} select user_id=('${A}')::uuid as is_a, valid_reps, rank, is_winner from battle_standings where battle_id='11111111-1111-4111-8111-111111111111' order by rank; select battles_played, battles_won, battles_lost from user_stats where user_id='${B}'; reset role;`],
+ ['final standings + stats', `${as(A)} select user_id=('${A}')::uuid as is_a, valid_reps, rank, is_winner from battle_standings where battle_id='11111111-1111-4111-8111-111111111111' order by rank; select count(*) filter (where battle_status='completed') as battles_played, count(*) filter (where is_winner) as battles_won, count(*) filter (where battle_status='completed' and not is_winner and not (rank = 1 and metric_value is not null)) as battles_lost from battle_standings where user_id='${B}'; reset role;`],
  ['check constraint: live multi_day as superuser (expect ERR)', `insert into battles(created_by,mode,format,invite_expires_at,ends_at) values ('${A}','live','multi_day',now()+interval '1 hour',now()+interval '7 days');`],
  ['bad-trace cheat: reps not in trace flagged', `select set_config('request.jwt.claim.sub','',false); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('33333333-3333-4333-8333-333333333333','${A}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); set role service_role; select public.submit_set(${q({...rec('cheat',30,700,[0.14],{badTrace:true}),battleId:'33333333-3333-4333-8333-333333333333',userId:A})}) is not null; reset role; select implausible_reason, count(*) from rep_metrics rm join sets s on s.id=rm.set_id where s.client_set_id='cheat' group by 1;`],
 
@@ -58,7 +58,7 @@ export const steps = [
  ['service role cannot update locked result (expect ERR)', `set role service_role; update battle_results set is_winner = not is_winner where battle_id='44444444-4444-4444-8444-444444444444'; reset role;`],
  ['user cannot insert into battle_results (expect ERR)', `${as(A)} insert into battle_results(battle_id,user_id,participant_status,valid_reps,rank,is_winner,metric,scoring_version,attempts_used) values ('44444444-4444-4444-8444-444444444444','${A}','accepted',99,1,true,'rep_count',1,1); reset role;`],
  ['B sees locked result; C does not', `${as(B)} select count(*) from battle_standings where battle_id='44444444-4444-4444-8444-444444444444'; reset role; ${as(C)} select count(*) from battle_standings where battle_id='44444444-4444-4444-8444-444444444444'; select count(*) from battle_results; reset role;`],
- ['draw: identical sets -> no winner, stats count draw', `select set_config('request.jwt.claim.sub','',false); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('55555555-5555-4555-8555-555555555555','${A}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); insert into battle_participants(battle_id,user_id,invited_by) values ('55555555-5555-4555-8555-555555555555','${B}','${A}'); update battle_participants set status='accepted', responded_at=now() where battle_id='55555555-5555-4555-8555-555555555555' and user_id='${B}'; set role service_role; select public.submit_set(${q({...rec('dd-a',10,1500,[0.14]),battleId:'55555555-5555-4555-8555-555555555555',userId:A})}) is not null; select public.submit_set(${q({...rec('dd-b',10,1500,[0.14]),battleId:'55555555-5555-4555-8555-555555555555',userId:B})}) is not null; reset role; select finalize_battles(); select rank, is_winner from battle_standings where battle_id='55555555-5555-4555-8555-555555555555'; ${as(A)} select battles_played, battles_won, battles_drawn, battles_lost from user_stats where user_id='${A}'; reset role;`],
+ ['draw: identical sets -> no winner, stats count draw', `select set_config('request.jwt.claim.sub','',false); insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('55555555-5555-4555-8555-555555555555','${A}','async','max_reps','rep_count',now()+interval '1 day',now()+interval '1 day'); insert into battle_participants(battle_id,user_id,invited_by) values ('55555555-5555-4555-8555-555555555555','${B}','${A}'); update battle_participants set status='accepted', responded_at=now() where battle_id='55555555-5555-4555-8555-555555555555' and user_id='${B}'; set role service_role; select public.submit_set(${q({...rec('dd-a',10,1500,[0.14]),battleId:'55555555-5555-4555-8555-555555555555',userId:A})}) is not null; select public.submit_set(${q({...rec('dd-b',10,1500,[0.14]),battleId:'55555555-5555-4555-8555-555555555555',userId:B})}) is not null; reset role; select finalize_battles(); select rank, is_winner from battle_standings where battle_id='55555555-5555-4555-8555-555555555555'; ${as(A)} select count(*) filter (where battle_status='completed') as battles_played, count(*) filter (where is_winner) as battles_won, count(*) filter (where battle_status='completed' and not is_winner and rank = 1 and metric_value is not null) as battles_drawn, count(*) filter (where battle_status='completed' and not is_winner and not (rank = 1 and metric_value is not null)) as battles_lost from battle_standings where user_id='${A}'; reset role;`],
  ['shallow reps never count (B async set had 11 shallow of 22)', `select valid_reps from battle_standings where battle_id='11111111-1111-4111-8111-111111111111' and user_id='${B}';`],
  ['settings: anon can read app settings', `set role anon; select value from app_settings where key='async_max_participants'; reset role;`],
  ['settings: battle copies form weights at creation; later change does not alter it', `select set_config('request.jwt.claim.sub','',false); update app_settings set value='{"depth":0.6,"consistency":0.2,"tempo":0.2}' where key='form_score_weights'; insert into battles(id,created_by,mode,format,metric,invite_expires_at,ends_at) values ('66666666-6666-4666-8666-666666666666','${A}','async','max_reps','form_score',now()+interval '1 day',now()+interval '1 day'); update app_settings set value='{"depth":0.5,"consistency":0.3,"tempo":0.2}' where key='form_score_weights'; select form_weights->>'depth' as depth from battles where id='66666666-6666-4666-8666-666666666666';`],
@@ -365,4 +365,95 @@ Object.assign(checks, {
   },
   'claim: the refused fresh set was not stored': (r) => ok(Number(r[0][0].n) === 0, 'old fresh stored'),
   'claim: restore the default window': (r) => ok(r[r.length - 1][0].age === '1800', 'age not restored'),
+});
+
+// ---- Slice 3: zone, goals, my_progress. Battle views stay; user_stats is gone. ----
+const P = 'abababab-abab-4aba-8aba-abababababab';
+const Q = 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd';
+const isoDate = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+const progressDoc = (r) => {
+  const row = r.map((set) => set[0]).reverse().find((x) => x && x.my_progress != null);
+  const raw = row.my_progress;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+};
+steps.push(
+  ['progress: programs are readable by anon', `set role anon; select count(*)::int as n from programs; select count(*)::int as n from program_segments; reset role;`],
+  ['progress: anon cannot insert a program (expect ERR)', `set role anon; insert into programs (id, name, summary, completion_rule, maintains_after, sort_order) values ('nope','x','x','finish_schedule',false,9); reset role;`],
+  ['progress: seed matches the three ramps', `select id, completion_rule, completion_set_reps, maintains_after, (select jsonb_agg(jsonb_build_object('from', day_from, 'to', day_to, 'target', daily_target, 'rest', rest_weekday, 'marker', set_marker) order by segment_index) from program_segments s where s.program_id = p.id) as segs from programs p where active order by sort_order;`],
+  ['progress: an omitted zone is the profile zone, and the set stays on that date', `${as(D)} select submit_set(${q(rec('zone-ny', 3, 1500, [0.15], { start: Date.parse('2026-11-01T22:00:00.000Z') }))}) is not null; reset role; select recorded_time_zone as zone, (started_at at time zone recorded_time_zone)::date as local_date from sets where client_set_id='zone-ny';`],
+  ['progress: an explicit zone is stored', `${as(D)} select submit_set(${q({ ...rec('zone-tokyo', 2, 1500, [0.15]), timeZone: 'Asia/Tokyo' })}) is not null; reset role; select recorded_time_zone as zone from sets where client_set_id='zone-tokyo';`],
+  ['progress: an unknown zone is rejected (expect ERR)', `${as(D)} select submit_set(${q({ ...rec('zone-bad', 2, 1500, [0.15]), timeZone: 'Not/AZone' })}); reset role;`],
+  ['progress: a client cannot write an enrollment (expect ERR)', `${as(D)} insert into goal_enrollments (user_id, custom_daily_reps, started_on, recorded_time_zone) values ('${D}', 30, current_date, 'UTC'); reset role;`],
+  ['progress: switching today rewrites the open row', `${as(D)} select enroll_goal('{"customDailyReps":30}')->>'customDailyReps' as custom; select enroll_goal('{"programId":"first_20"}')->>'programId' as program; select count(*)::int as n from goal_enrollments where user_id='${D}'; reset role;`],
+  ['progress: a custom goal outside the settings is rejected (expect ERR)', `${as(D)} select enroll_goal('{"customDailyReps":4}'); reset role;`],
+  ['progress: switching on a later day closes yesterday', `update goal_enrollments set started_on = (now() at time zone 'America/New_York')::date - 1 where user_id='${D}' and ended_on is null; ${as(D)} select enroll_goal('{"programId":"fifty_a_day"}')->>'programId' as program; select count(*)::int as n, (select ended_on from goal_enrollments where user_id='${D}' and program_id='first_20') as closed from goal_enrollments where user_id='${D}'; reset role;`],
+  ['progress: someone else cannot read the goal', `${as(B)} select count(*)::int as n from goal_enrollments; reset role;`],
+  ['progress: anon cannot call my_progress (expect ERR)', `set role anon; select my_progress(); reset role;`],
+  ['progress: setup P', `insert into auth.users values ('${P}'); ${as(P)} insert into profiles(id, username, time_zone) values ('${P}', 'pat', 'UTC'); select enroll_goal('{"customDailyReps":10}')->>'customDailyReps' as custom; reset role; update goal_enrollments set started_on = (now() at time zone 'UTC')::date - 80 where user_id='${P}' and ended_on is null;`],
+  ['progress: a late set counts in the total and not the streak', `${as(P)} select submit_set(${q(rec('p-late', 40, 1500, [0.15], { start: Date.now() - 70 * 86400000 }))}) is not null; select my_progress() as my_progress; reset role;`],
+  ['progress: today on a second call is the same ring', `${as(P)} select submit_set(${q(rec('p-today', 10, 1500, [0.15]))}) is not null; select my_progress() as my_progress; reset role;`],
+  ['progress: another user does not see those totals', `${as(B)} select count(*)::int as n from daily_totals where user_id='${P}'; reset role;`],
+  ['progress: twenty counted reps completes First 20', `insert into auth.users values ('${Q}'); ${as(Q)} insert into profiles(id, username, time_zone) values ('${Q}', 'quinn', 'UTC'); select submit_set(${q(rec('q-twenty', 20, 1500, [0.15]))}) is not null; select enroll_goal('{"programId":"first_20"}')->>'programId' as program; select my_progress() as my_progress; reset role;`],
+);
+Object.assign(checks, {
+  'progress: programs are readable by anon': (r) => ok(Number(r[0][0].n) === 3 && Number(r[1][0].n) === 12, 'seed counts ' + JSON.stringify(r)),
+  'progress: seed matches the three ramps': (r) => {
+    const rows = r[0].map((row) => ({ ...row, segs: typeof row.segs === 'string' ? JSON.parse(row.segs) : row.segs }));
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    const seg = (row) => row.segs.map((s) => ({ from: Number(s.from), to: Number(s.to), target: Number(s.target), rest: s.rest == null ? null : Number(s.rest), marker: s.marker == null ? null : Number(s.marker) }));
+    ok(byId.first_20.completion_rule === 'single_set' && Number(byId.first_20.completion_set_reps) === 20 && byId.first_20.maintains_after === true, 'first 20');
+    ok(JSON.stringify(seg(byId.first_20)) === JSON.stringify([
+      { from: 1, to: 7, target: 10, rest: 7, marker: 5 },
+      { from: 8, to: 14, target: 15, rest: 7, marker: 10 },
+      { from: 15, to: 21, target: 20, rest: 7, marker: 15 },
+      { from: 22, to: 28, target: 25, rest: 7, marker: 20 },
+    ]), 'first 20 ramp ' + JSON.stringify(seg(byId.first_20)));
+    ok(byId.fifty_a_day.completion_rule === 'finish_schedule' && byId.fifty_a_day.maintains_after === true, 'fifty');
+    ok(JSON.stringify(seg(byId.fifty_a_day)) === JSON.stringify([
+      { from: 1, to: 7, target: 20, rest: null, marker: null },
+      { from: 8, to: 14, target: 30, rest: null, marker: null },
+      { from: 15, to: 21, target: 40, rest: null, marker: null },
+      { from: 22, to: 28, target: 50, rest: null, marker: null },
+    ]), 'fifty ramp');
+    ok(byId.hundred_in_30.completion_rule === 'finish_schedule', 'hundred');
+    ok(JSON.stringify(seg(byId.hundred_in_30)) === JSON.stringify([
+      { from: 1, to: 7, target: 40, rest: null, marker: null },
+      { from: 8, to: 14, target: 55, rest: null, marker: null },
+      { from: 15, to: 21, target: 70, rest: null, marker: null },
+      { from: 22, to: 30, target: 100, rest: null, marker: null },
+    ]), 'hundred ramp');
+  },
+  'progress: an omitted zone is the profile zone, and the set stays on that date': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.zone === 'Europe/Paris' && isoDate(row.local_date) === '2026-11-01', 'zone ' + JSON.stringify(row));
+  },
+  'progress: an explicit zone is stored': (r) => ok(r[r.length - 1][0].zone === 'Asia/Tokyo', 'tokyo'),
+  'progress: switching today rewrites the open row': (r) => {
+    ok(Number(r[0][0].custom) === 30 && r[1][0].program === 'first_20' && Number(r[2][0].n) === 1, 'switch ' + JSON.stringify(r));
+  },
+  'progress: switching on a later day closes yesterday': (r) => {
+    const row = r[r.length - 1][0];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    ok(r[0][0].program === 'fifty_a_day' && Number(row.n) === 2 && isoDate(row.closed) === today, 'close ' + JSON.stringify(r));
+  },
+  'progress: someone else cannot read the goal': (r) => ok(Number(r[0][0].n) === 0, 'goal leak'),
+  'progress: a late set counts in the total and not the streak': (r) => {
+    const d = progressDoc(r);
+    ok(Number(d.lifetimeReps) === 40 && Number(d.longestStreak) === 0 && Number(d.currentStreak) === 0, 'late ' + JSON.stringify({ life: d.lifetimeReps, longest: d.longestStreak, current: d.currentStreak }));
+    ok(Number(d.records.bestSet.reps) === 40 && Number(d.badges[0].remaining) === 960, 'records ' + JSON.stringify(d.records.bestSet));
+  },
+  'progress: today on a second call is the same ring': (r) => {
+    const d = progressDoc(r);
+    ok(Number(d.todayReps) === 10 && d.goalMet === true && Number(d.target) === 10 && d.rest === false, 'ring ' + JSON.stringify({ reps: d.todayReps, met: d.goalMet, target: d.target }));
+    ok(Number(d.currentStreak) === 1 && Number(d.longestStreak) === 1 && Number(d.lifetimeReps) === 50, 'streak ' + JSON.stringify({ current: d.currentStreak, longest: d.longestStreak, life: d.lifetimeReps }));
+    ok(d.charts.day.length === 14 && d.charts.week.length === 12 && d.charts.month.length === 12, 'charts');
+    ok(Number(d.charts.day[13].reps) === 10 && d.program.detail === '10 a day', 'today bar ' + d.program.detail);
+    ok(Number(d.badges[0].remaining) === 950 && d.badges[0].earnedOn == null, 'badge');
+    ok(d.sets.length === 2, 'sets for the other phone');
+  },
+  'progress: another user does not see those totals': (r) => ok(Number(r[0][0].n) === 0, 'totals leak'),
+  'progress: twenty counted reps completes First 20': (r) => {
+    const d = progressDoc(r);
+    ok(d.program.status === 'complete' && d.program.detail === 'Complete' && d.program.name === 'First 20 in a row', 'complete ' + JSON.stringify(d.program));
+  },
 });

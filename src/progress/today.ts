@@ -100,14 +100,16 @@ function usualLineFor(workouts: readonly Workout[], enrollments: readonly GoalEn
     samples.push(repsOn(workouts, date, zone, false));
   }
   if (samples.length < USUAL_MIN) return null;
-  const delta = repsOn(workouts, today, zone, false) - median(samples);
-  const weekday = weekdayName(today);
+  return formatUsual(repsOn(workouts, today, zone, false) - median(samples), weekdayName(today));
+}
+
+export function formatUsual(delta: number, weekday: string): string {
   if (delta === 0) return `Even with your usual ${weekday}`;
   const abs = Number.isInteger(delta) ? String(Math.abs(delta)) : String(Math.round(Math.abs(delta) * 10) / 10);
   return delta > 0 ? `+${abs} vs your usual ${weekday}` : `−${abs} vs your usual ${weekday}`;
 }
 
-function travelLine(workouts: readonly Workout[], zone: string): string | null {
+export function travelLine(workouts: readonly Workout[], zone: string): string | null {
   const newest = [...workouts].sort((a, b) => b.startedAt - a.startedAt)[0];
   if (!newest?.timeZone || newest.timeZone === zone) return null;
   return "Yesterday's workout stays on yesterday at home.";
@@ -123,9 +125,27 @@ export function buildToday(input: {
   const goal = goalForDate(enrollments, today);
   const reps = repsOn(workouts, today, timeZone, false);
   const { current } = streaks(workouts, enrollments, today, timeZone);
-  const usualLine = usualLineFor(workouts, enrollments, today, timeZone);
-  const travel = travelLine(workouts, timeZone);
-  if (!goal) {
+  return presentToday({
+    reps,
+    target: goal ? goal.target : null,
+    rest: goal?.rest ?? false,
+    currentStreak: current,
+    usualLine: usualLineFor(workouts, enrollments, today, timeZone),
+    travelLine: travelLine(workouts, timeZone),
+  });
+}
+
+/** The ring, caption, and streak line. The phone and `my_progress` both end here. */
+export function presentToday(input: {
+  reps: number;
+  target: number | null;
+  rest: boolean;
+  currentStreak: number;
+  usualLine: string | null;
+  travelLine: string | null;
+}): TodayModel {
+  const { reps, target, rest, currentStreak, usualLine, travelLine } = input;
+  if (target == null) {
     return {
       reps,
       target: null,
@@ -135,11 +155,11 @@ export function buildToday(input: {
       ringProgress: null,
       streakLine: 'Set a goal to start a streak',
       usualLine,
-      travelLine: travel,
+      travelLine,
       showSetGoal: true,
     };
   }
-  if (goal.rest) {
+  if (rest) {
     return {
       reps,
       target: 0,
@@ -147,23 +167,23 @@ export function buildToday(input: {
       ringText: String(reps),
       ringCaption: 'Rest day',
       ringProgress: null,
-      streakLine: `${current} day streak`,
+      streakLine: `${currentStreak} day streak`,
       usualLine,
-      travelLine: travel,
+      travelLine,
       showSetGoal: false,
     };
   }
-  const past = reps - goal.target;
+  const past = reps - target;
   return {
     reps,
-    target: goal.target,
+    target,
     rest: false,
-    ringText: `${reps} / ${goal.target}`,
+    ringText: `${reps} / ${target}`,
     ringCaption: past > 0 ? `+${past} past your goal` : past === 0 ? 'Goal met' : '',
-    ringProgress: Math.max(0, Math.min(1, goal.target === 0 ? 1 : reps / goal.target)),
-    streakLine: `${current} day streak`,
+    ringProgress: Math.max(0, Math.min(1, target === 0 ? 1 : reps / target)),
+    streakLine: `${currentStreak} day streak`,
     usualLine,
-    travelLine: travel,
+    travelLine,
     showSetGoal: false,
   };
 }

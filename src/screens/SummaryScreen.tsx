@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
-import { Celebration, formatFormScore } from '../progress';
+import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
@@ -38,12 +38,15 @@ export function SummaryScreen({
   record,
   onDone,
   fromHistory,
+  syncedLate,
   onChallenge,
   progress,
 }: {
   record: SessionRecord;
   onDone: () => void;
   fromHistory?: boolean;
+  /** The server received this set too late for the streak. Totals still include it. */
+  syncedLate?: boolean;
   /** Just-finished solo set: start a battle that uses this set as your attempt. */
   onChallenge?: () => void;
   /** Present for a set that just finished. History stays on the analysis. */
@@ -71,7 +74,8 @@ export function SummaryScreen({
     <View style={styles.container}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
         <Text style={styles.title}>{fromHistory ? 'Set analysis' : 'Set complete'}</Text>
-        <Text style={styles.date}>{new Date(record.startedAt).toLocaleString()}</Text>
+        <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{new Date(record.startedAt).toLocaleString()}</Text>
+        {syncedLate ? <Text style={styles.late}>{SYNCED_LATE}</Text> : null}
         {progress ? (
           <View style={styles.card}>
             <Text style={styles.progressValue}>{progress.counted} counted</Text>
@@ -222,6 +226,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 8 },
   date: { color: colors.muted, fontSize: 14, marginBottom: 12 },
+  dateBeforeLate: { marginBottom: 4 },
+  late: { color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   row: { flexDirection: 'row', marginHorizontal: -4 },
   card: { backgroundColor: colors.card, borderRadius: 14, padding: 14, marginTop: 8 },
   tip: { color: colors.text, fontSize: 15, lineHeight: 21, marginVertical: 2 },

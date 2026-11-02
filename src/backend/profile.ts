@@ -78,6 +78,22 @@ export function profileErrorResult(error: { code?: string; message: string }): S
   return { ok: false, reason: 'error', message: error.message };
 }
 
+/**
+ * Launch and resume write the phone's IANA zone onto the profile when it differs.
+ * Old sets keep the zone stored on each row.
+ */
+export async function syncProfileTimeZone(client: SupabaseClient, profile: Profile, phoneZone: string = deviceTimeZone()): Promise<Profile> {
+  if (!phoneZone || profile.timeZone === phoneZone) return profile;
+  const { data, error } = await client
+    .from('profiles')
+    .update({ time_zone: phoneZone })
+    .eq('id', profile.id)
+    .select('id, username, display_name, time_zone')
+    .single<Row>();
+  if (error || !data) return profile;
+  return fromRow(data);
+}
+
 /** Create (first time) or update the caller's profile. */
 export async function saveProfile(
   client: SupabaseClient,

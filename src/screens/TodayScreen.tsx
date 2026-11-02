@@ -12,6 +12,7 @@ export function TodayScreen({
   depth,
   showBattles,
   howToOpen,
+  banner,
   savedSets,
   onStart,
   onGoal,
@@ -25,6 +26,7 @@ export function TodayScreen({
   depth: boolean;
   showBattles: boolean;
   howToOpen: boolean;
+  banner?: string | null;
   savedSets: number;
   onStart: () => void;
   onGoal: () => void;
@@ -42,6 +44,7 @@ export function TodayScreen({
           <Text style={styles.account}>Account</Text>
         </Pressable>
       </View>
+      {banner ? <Text style={styles.banner}>{banner}</Text> : null}
 
       <View style={styles.hero}>
         <Ring text={view.ringText} caption={view.ringCaption} progress={view.ringProgress} onPress={onGoal} />
@@ -78,6 +81,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   title: { color: colors.text, fontSize: 34, fontWeight: '800' },
   account: { color: colors.accent, fontSize: 16, fontWeight: '700' },
+  banner: { color: colors.muted, fontSize: 15, lineHeight: 21, marginTop: 12 },
   hero: { alignItems: 'center', marginBottom: 8 },
   streak: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: 4 },
   usual: { color: colors.muted, fontSize: 16, marginTop: 6, textAlign: 'center' },

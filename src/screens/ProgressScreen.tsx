@@ -51,11 +51,13 @@ function recordDate(label: string, record: ShelfRecord): string {
 
 export function ProgressScreen({
   view,
+  banner,
   onBack,
   onAllSets,
   onProgram,
 }: {
   view: ProgressModel;
+  banner?: string | null;
   onBack: () => void;
   onAllSets: () => void;
   onProgram: () => void;
@@ -74,6 +76,7 @@ export function ProgressScreen({
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Progress</Text>
+      {banner ? <Text style={styles.banner}>{banner}</Text> : null}
 
       <View style={styles.switch}>
         {RANGES.map((name) => {
@@ -176,6 +179,7 @@ function ShelfRow({ label, value, detail }: { label: string; value: string; deta
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
   title: { color: colors.text, fontSize: 34, fontWeight: '800', marginTop: 12 },
+  banner: { color: colors.muted, fontSize: 15, lineHeight: 21, marginTop: 12 },
   switch: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 12, padding: 4, marginTop: 16 },
   switchItem: { flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center' },
   switchOn: { backgroundColor: colors.accent },

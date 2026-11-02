@@ -114,6 +114,7 @@ export function toSetPayload(r: SessionRecord, ctx: PayloadContext): Record<stri
     appVersion: ctx.appVersion,
     updateId: ctx.updateId,
   };
+  if (typeof r.timerDurationS === 'number') payload.timerDurationS = r.timerDurationS;
   if (version >= 2) {
     payload.detectorConfig = { ...DEFAULT_CONFIG, algorithmVersion: DETECTOR_ALGORITHM_VERSION };
     if (trace.length) {

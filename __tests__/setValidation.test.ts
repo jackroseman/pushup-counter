@@ -74,6 +74,9 @@ describe('statusForDbError', () => {
     expect(statusForDbError('no attempts left', 'P0001')).toBe(409);
     expect(statusForDbError('battle deadline passed', 'P0001')).toBe(409);
     expect(statusForDbError('not an accepted participant', 'P0001')).toBe(409);
+    expect(statusForDbError('set is not recent enough to use', 'P0001')).toBe(409);
+    expect(statusForDbError('timed battle duration must match the set timer', 'P0001')).toBe(409);
+    expect(statusForDbError('set already in a battle', 'P0001')).toBe(409);
     expect(statusForDbError('value too long', '22001')).toBe(400);
     expect(statusForDbError('boom')).toBe(500);
   });

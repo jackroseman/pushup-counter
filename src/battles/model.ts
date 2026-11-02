@@ -89,6 +89,7 @@ export const personName = (p: { username?: string | null; displayName?: string |
 export function battleTitle(b: Pick<Battle, 'format' | 'durationS'>): string {
   if (b.format === 'timed') return `${b.durationS ?? 60} s battle`;
   if (b.format === 'max_reps') return 'Max reps';
+  if (b.format === 'multi_day') return 'Multi-day';
   return 'Battle';
 }
 
@@ -105,7 +106,9 @@ export function canRespond(b: Battle, now: number = Date.now()): boolean {
 /** Can I record my attempt now? (pending battles: only the creator may go first) */
 export function canPlay(b: Battle, now: number = Date.now()): boolean {
   const m = me(b);
-  if (!m || m.status !== 'accepted' || m.attemptsUsed >= b.attemptsAllowed) return false;
+  if (!m || m.status !== 'accepted') return false;
+  // Multi-day counts every set until the window ends; attempts_allowed does not cap it.
+  if (b.format !== 'multi_day' && m.attemptsUsed >= b.attemptsAllowed) return false;
   if (b.endsAt && time(b.endsAt) <= now) return false;
   if (b.status === 'active') return true;
   return b.status === 'pending' && m.userId === b.createdBy;
@@ -180,8 +183,28 @@ export function inviteUrl(token: string, links: { scheme: string; webBaseUrl: st
 }
 
 export function inviteShareMessage(b: Pick<Battle, 'format' | 'durationS'>, from: string, url: string): string {
-  const what = b.format === 'timed' ? `a ${b.durationS ?? 60} second pushup battle` : 'a max-reps pushup battle';
+  const what =
+    b.format === 'timed' ? `a ${b.durationS ?? 60} second pushup battle` : b.format === 'multi_day' ? 'a multi-day pushup battle' : 'a max-reps pushup battle';
   return `${from} challenged you to ${what} on Rep Royale. Open this on your iPhone to join: ${url}`;
+}
+
+/**
+ * After create: celebrate a claimed set only once the server has it (or it is still
+ * uploading). A successful response that did not set battle_id leaves attempts at 0,
+ * and that must look like "you haven't gone yet".
+ */
+export function creatorAttemptCue(input: {
+  promptAttempt?: boolean;
+  justPlayed?: boolean;
+  attemptsUsed: number;
+  uploadPending: boolean;
+  canPlay: boolean;
+}): { showClaimed: boolean; showPrompt: boolean } {
+  const landed = input.attemptsUsed > 0 || input.uploadPending;
+  return {
+    showClaimed: !!input.justPlayed && landed,
+    showPrompt: input.canPlay && input.attemptsUsed === 0 && !input.uploadPending && (!!input.promptAttempt || !!input.justPlayed),
+  };
 }
 
 /** Friends grouped for the friends screen. */
@@ -206,6 +229,12 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('that is you')) return "That's you!";
   if (m.includes('too many pending')) return 'Too many open friend requests. Wait for some answers.';
   if (m.includes('no attempts left')) return 'You already did your attempt.';
+  if (m.includes('not recent')) return 'That set is too old to use. Start a new attempt in the battle.';
+  if (m.includes('already in a battle')) return 'That set is already in a battle.';
+  if (m.includes('must match the set timer')) return 'A timed battle has to use the same timer as the set.';
+  if (m.includes('cannot use a finished set')) return "A live battle can't use a set you already finished.";
+  if (m.includes('cannot be scored')) return "That set can't be used in a battle.";
+  if (m.includes('was not linked')) return "That set wasn't added to the battle.";
   if (m.includes('deadline')) return 'The deadline has passed.';
   if (m.includes('network') || m.includes('fetch')) return "Couldn't reach the server. Check your connection.";
   return message || 'Something went wrong.';

@@ -38,6 +38,11 @@ export interface AsyncBattleDefaults {
   maxRepsIdleEndS: number;
   /** ...or at this total length. */
   maxRepsCapS: number;
+  /** A solo set can be used as the creator's attempt only if it ended within this many seconds. */
+  claimSetMaxAgeS: number;
+  /** Default multi-day window, and the windows the creator can pick (each 1–14 days). */
+  multiDayWindowDays: number;
+  multiDayWindowOptionsDays: number[];
 }
 
 export interface NotificationSettings {
@@ -75,6 +80,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     linkMaxUses: 7,
     maxRepsIdleEndS: 15,
     maxRepsCapS: 600,
+    claimSetMaxAgeS: 1800,
+    multiDayWindowDays: 7,
+    multiDayWindowOptionsDays: [1, 7, 14],
   },
   notifications: { reminderHoursBefore: 2, reminderAtHalfTime: true },
 };
@@ -114,7 +122,21 @@ export function parseAsyncBattleDefaults(v: unknown, fallback = DEFAULT_APP_SETT
     linkMaxUses: int(v.link_max_uses, 1, 50) ?? fallback.linkMaxUses,
     maxRepsIdleEndS: int(v.max_reps_idle_end_s, 5, 120) ?? fallback.maxRepsIdleEndS,
     maxRepsCapS: int(v.max_reps_cap_s, 30, 7200) ?? fallback.maxRepsCapS,
+    claimSetMaxAgeS: int(v.claim_set_max_age_s, 60, 86400) ?? fallback.claimSetMaxAgeS,
+    ...multiDayWindow(v, fallback),
   };
+}
+
+function multiDayWindow(v: Record<string, unknown>, fallback: AsyncBattleDefaults): Pick<AsyncBattleDefaults, 'multiDayWindowDays' | 'multiDayWindowOptionsDays'> {
+  const parsed = intList(v.multi_day_window_options_days, 1, 14);
+  const multiDayWindowOptionsDays = parsed?.length ? parsed : fallback.multiDayWindowOptionsDays;
+  const requested = int(v.multi_day_window_days, 1, 14) ?? fallback.multiDayWindowDays;
+  const multiDayWindowDays = multiDayWindowOptionsDays.includes(requested)
+    ? requested
+    : multiDayWindowOptionsDays.includes(fallback.multiDayWindowDays)
+      ? fallback.multiDayWindowDays
+      : multiDayWindowOptionsDays[0];
+  return { multiDayWindowDays, multiDayWindowOptionsDays };
 }
 
 /** Weights must be non-negative and are normalised to sum to 1; anything invalid -> fallback. */

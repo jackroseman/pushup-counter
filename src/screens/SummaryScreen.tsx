@@ -37,10 +37,13 @@ export function SummaryScreen({
   record,
   onDone,
   fromHistory,
+  onChallenge,
 }: {
   record: SessionRecord;
   onDone: () => void;
   fromHistory?: boolean;
+  /** Just-finished solo set: start a battle that uses this set as your attempt. */
+  onChallenge?: () => void;
 }) {
   const a = useMemo(() => analyzeSet(record.reps, record.startedAt, record.endedAt), [record]);
   const tips = insights(a);
@@ -172,6 +175,12 @@ export function SummaryScreen({
         })}
         <Text style={styles.caption}>Down/Up/Gap in seconds. Gap = time since the previous rep.</Text>
       </ScrollView>
+      {onChallenge ? (
+        <>
+          <Button title="Challenge a friend" kind="secondary" onPress={onChallenge} />
+          <Text style={styles.caption}>Uses this set as your attempt. Only good reps count.</Text>
+        </>
+      ) : null}
       <Button title="Done" onPress={onDone} />
     </View>
   );

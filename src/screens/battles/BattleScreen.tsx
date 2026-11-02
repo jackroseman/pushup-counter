@@ -15,6 +15,7 @@ import {
   battleTitle,
   canPlay,
   canRespond,
+  creatorAttemptCue,
   friendlyError,
   inviteShareMessage,
   inviteUrl,
@@ -33,6 +34,8 @@ export function BattleScreen(props: {
   battleId: string;
   share?: boolean;
   justPlayed?: { reps: number; counted: number };
+  /** Plain create flow: the creator has not played yet and should be told to. */
+  promptAttempt?: boolean;
   onBack: () => void;
   onPlay: (b: Battle) => void;
   onAccount: () => void;
@@ -52,12 +55,14 @@ function BattleDetail({
   battleId,
   share,
   justPlayed,
+  promptAttempt,
   onPlay,
   onBack,
 }: {
   battleId: string;
   share?: boolean;
   justPlayed?: { reps: number; counted: number };
+  promptAttempt?: boolean;
   onPlay: (b: Battle) => void;
   onBack: () => void;
 }) {
@@ -143,7 +148,16 @@ function BattleDetail({
   const rules =
     b.format === 'timed'
       ? `${b.durationS ?? 60} seconds, as many good reps as you can.`
-      : `As many good reps as you can in one set. It ends after ${appSettings.asyncBattleDefaults.maxRepsIdleEndS} s without a rep.`;
+      : b.format === 'multi_day'
+        ? 'Most good reps across every set before the window ends.'
+        : `As many good reps as you can in one set. It ends after ${appSettings.asyncBattleDefaults.maxRepsIdleEndS} s without a rep.`;
+  const cue = creatorAttemptCue({
+    promptAttempt,
+    justPlayed: !!justPlayed,
+    attemptsUsed: mine?.attemptsUsed ?? 0,
+    uploadPending: queued.pending,
+    canPlay: canPlay(b),
+  });
 
   return (
     <View>
@@ -155,12 +169,19 @@ function BattleDetail({
       <View style={s.card}>
         <Text style={s.text}>{rules}</Text>
         <Text style={[s.muted, { marginTop: 6 }]}>
-          Only Good and Full reps count. Shallow reps don't. {b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed} attempts each.`}
+          Only Good and Full reps count. Shallow reps don't.{' '}
+          {b.format === 'multi_day' ? 'Every set in the window counts.' : b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed} attempts each.`}
           {b.endsAt && isOpen(b) ? ` Deadline: ${new Date(b.endsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} (${timeLeft(b.endsAt)}).` : ''}
         </Text>
       </View>
 
-      {justPlayed ? (
+      {cue.showPrompt ? (
+        <Notice
+          title="Do your attempt now"
+          text="This battle starts at zero. A set you already finished is not included — only the attempt you start here counts. Your friend sees that score before they go."
+        />
+      ) : null}
+      {cue.showClaimed && justPlayed ? (
         <Notice
           title={`${justPlayed.counted} good ${justPlayed.counted === 1 ? 'rep' : 'reps'}`}
           text={

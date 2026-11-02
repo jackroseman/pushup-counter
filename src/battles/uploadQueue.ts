@@ -64,6 +64,15 @@ export function isPermanentStatus(status: number): boolean {
   return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
 }
 
+/**
+ * Claim failures are final even if an older submit-set function still maps them to 500.
+ * The message text is the exception raised by submit_set / the claim checks.
+ */
+export function isPermanentFailure(status: number, error: string): boolean {
+  if (isPermanentStatus(status)) return true;
+  return /not recent enough|already in a battle|must match the set timer|cannot use a finished set|cannot be scored|was not linked/i.test(error);
+}
+
 export interface FlushResult {
   uploaded: string[];
   failed: FailedBattleSet[];
@@ -90,7 +99,7 @@ export async function flushBattleQueue(kv: KeyValueStore, submit: Submit): Promi
     }
     if (r.ok) {
       uploaded.push(q.battleId);
-    } else if (isPermanentStatus(r.status) || q.tries + 1 >= MAX_TRIES) {
+    } else if (isPermanentFailure(r.status, r.error) || q.tries + 1 >= MAX_TRIES) {
       failed.push({ ...q, tries: q.tries + 1, error: r.error });
     } else {
       rest.push({ ...q, tries: q.tries + 1 });

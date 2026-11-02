@@ -2,30 +2,45 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, Switch, Text, View } from 'react-native';
 import { supabase } from '../../backend/supabase';
 import { useBackend } from '../../backend/BackendProvider';
+import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 import { api } from '../../battles/api';
+import { challengeFormats, ChallengeFormat } from '../../battles/challengeFromSet';
+import { countedReps } from '../../battles/counting';
 import { Friend, friendlyError, personName } from '../../battles/model';
+import { submitBattleAttempt } from '../../battles/uploader';
+import { SessionRecord } from '../../storage/history';
 import { AccountGate, Chip, Header, Row, s, SectionTitle } from './common';
 
-type Format = { format: 'max_reps' } | { format: 'timed'; durationS: number };
+type Format = { format: 'max_reps' } | { format: 'timed'; durationS: number } | { format: 'multi_day' };
 
 export function deadlineLabel(h: number): string {
   if (h % 24 === 0) return h === 24 ? '1 day' : `${h / 24} days`;
   return `${h} hours`;
 }
 
+export function windowLabel(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
 export function NewBattleScreen(props: {
   friendIds?: string[];
+  /** The set that just finished. Creating the battle uses it as your attempt. */
+  fromSet?: SessionRecord;
   onBack: () => void;
-  onCreated: (battleId: string, share: boolean) => void;
+  onCreated: (
+    battleId: string,
+    share: boolean,
+    extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } },
+  ) => void;
   onFriends: () => void;
   onAccount: () => void;
   onProfile: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-      <Header title="New battle" onBack={props.onBack} />
+      <Header title={props.fromSet ? 'Challenge a friend' : 'New battle'} onBack={props.onBack} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
         <Form {...props} />
       </AccountGate>
@@ -33,12 +48,25 @@ export function NewBattleScreen(props: {
   );
 }
 
-function Form({ friendIds, onCreated, onFriends }: { friendIds?: string[]; onCreated: (id: string, share: boolean) => void; onFriends: () => void }) {
+function Form({
+  friendIds,
+  fromSet,
+  onCreated,
+  onFriends,
+}: {
+  friendIds?: string[];
+  fromSet?: SessionRecord;
+  onCreated: (id: string, share: boolean, extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } }) => void;
+  onFriends: () => void;
+}) {
   const { appSettings } = useBackend();
+  const { deviceId } = useIdentity();
   const d = appSettings.asyncBattleDefaults;
   const maxInvites = appSettings.asyncMaxParticipants - 1;
+  const offered: ChallengeFormat[] | null = fromSet ? challengeFormats(fromSet, d.timedDurationsS) : null;
   const [format, setFormat] = useState<Format>({ format: 'max_reps' });
   const [hours, setHours] = useState(d.deadlineHours);
+  const [windowDays, setWindowDays] = useState(d.multiDayWindowDays);
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set(friendIds ?? []));
   const [link, setLink] = useState(!(friendIds && friendIds.length));
@@ -61,49 +89,103 @@ function Form({ friendIds, onCreated, onFriends }: { friendIds?: string[]; onCre
 
   const create = async () => {
     if (!supabase || busy) return;
+    if (offered && offered.length === 0) return setError('This set is already in a battle.');
     if (!picked.size && !link) return setError('Pick a friend or turn on the invite link.');
     setBusy(true);
     setError(null);
     const r = await api.createBattle(supabase, {
       format: format.format,
       durationS: format.format === 'timed' ? format.durationS : undefined,
+      windowDays: format.format === 'multi_day' ? windowDays : undefined,
       deadlineHours: hours,
       friendIds: [...picked],
       inviteLink: link,
     });
+    if (!r.ok) {
+      setBusy(false);
+      return setError(friendlyError(r.message));
+    }
+    let promptAttempt = !fromSet;
+    let justPlayed: { reps: number; counted: number } | undefined;
+    if (fromSet) {
+      const rules = format.format === 'timed' ? { format: 'timed' as const, durationS: format.durationS } : { format: 'max_reps' as const, durationS: null };
+      try {
+        const flushed = await submitBattleAttempt(fromSet, r.data.battleId, deviceId, { linkFinishedSet: true });
+        const failed = flushed?.failed.some((f) => f.payload.id === fromSet.id) ?? false;
+        if (failed) {
+          promptAttempt = true;
+          setError(friendlyError(flushed?.failed.find((f) => f.payload.id === fromSet.id)?.error));
+        } else {
+          justPlayed = { reps: fromSet.reps.length, counted: countedReps(fromSet.reps, fromSet.startedAt, rules) };
+        }
+      } catch (e) {
+        promptAttempt = true;
+        setError(friendlyError(e instanceof Error ? e.message : String(e)));
+      }
+    }
     setBusy(false);
-    if (!r.ok) return setError(friendlyError(r.message));
     api.kickNotify(supabase);
-    onCreated(r.data.battleId, !!r.data.inviteToken);
+    onCreated(r.data.battleId, !!r.data.inviteToken, { promptAttempt, justPlayed });
   };
 
   return (
     <View>
       <SectionTitle>Format</SectionTitle>
       <View style={s.chips}>
-        <Chip label="Max reps" on={format.format === 'max_reps'} onPress={() => setFormat({ format: 'max_reps' })} />
-        {d.timedDurationsS.map((t) => (
-          <Chip
-            key={t}
-            label={t % 60 === 0 ? `${t / 60} min` : `${t} s`}
-            on={format.format === 'timed' && format.durationS === t}
-            onPress={() => setFormat({ format: 'timed', durationS: t })}
-          />
-        ))}
+        {offered ? (
+          offered.map((f) => (
+            <Chip
+              key={f.format}
+              label={f.format === 'timed' ? (f.durationS! % 60 === 0 ? `${f.durationS! / 60} min` : `${f.durationS} s`) : f.format === 'multi_day' ? 'Multi-day' : 'Max reps'}
+              on={format.format === f.format}
+              onPress={() => setFormat(f.format === 'timed' ? { format: 'timed', durationS: f.durationS! } : { format: f.format })}
+            />
+          ))
+        ) : (
+          <>
+            <Chip label="Max reps" on={format.format === 'max_reps'} onPress={() => setFormat({ format: 'max_reps' })} />
+            {d.timedDurationsS.map((t) => (
+              <Chip
+                key={t}
+                label={t % 60 === 0 ? `${t / 60} min` : `${t} s`}
+                on={format.format === 'timed' && format.durationS === t}
+                onPress={() => setFormat({ format: 'timed', durationS: t })}
+              />
+            ))}
+          </>
+        )}
       </View>
       <Text style={s.muted}>
-        {format.format === 'timed'
-          ? `Most good reps in ${format.durationS} seconds wins.`
-          : `Most good reps in one set wins. A set ends after ${d.maxRepsIdleEndS} s without a rep.`}{' '}
-        Shallow reps don't count.
+        {fromSet
+          ? format.format === 'multi_day'
+            ? 'This set is your first entry. Every set you do before the window ends counts too. Only good reps count, and your friend sees your score before they go.'
+            : format.format === 'timed'
+              ? `This set becomes your attempt: most good reps in ${format.durationS} seconds. Your friend sees your score before they go.`
+              : "This set becomes your attempt. Only good reps count — shallow reps don't. Your friend sees your score before they go."
+          : format.format === 'timed'
+            ? `Most good reps in ${format.durationS} seconds wins. Shallow reps don't count.`
+            : `Most good reps in one set wins. A set ends after ${d.maxRepsIdleEndS} s without a rep. Shallow reps don't count.`}
       </Text>
 
-      <SectionTitle>Everyone plays within</SectionTitle>
-      <View style={s.chips}>
-        {options.map((h) => (
-          <Chip key={h} label={deadlineLabel(h)} on={hours === h} onPress={() => setHours(h)} />
-        ))}
-      </View>
+      {format.format === 'multi_day' ? (
+        <>
+          <SectionTitle>Window</SectionTitle>
+          <View style={s.chips}>
+            {d.multiDayWindowOptionsDays.map((days) => (
+              <Chip key={days} label={windowLabel(days)} on={windowDays === days} onPress={() => setWindowDays(days)} />
+            ))}
+          </View>
+        </>
+      ) : (
+        <>
+          <SectionTitle>Everyone plays within</SectionTitle>
+          <View style={s.chips}>
+            {options.map((h) => (
+              <Chip key={h} label={deadlineLabel(h)} on={hours === h} onPress={() => setHours(h)} />
+            ))}
+          </View>
+        </>
+      )}
 
       <SectionTitle>
         Challenge friends ({picked.size}/{maxInvites})
@@ -134,8 +216,11 @@ function Form({ friendIds, onCreated, onFriends }: { friendIds?: string[]; onCre
       </Row>
 
       {error ? <Text style={s.error}>{error}</Text> : null}
-      <Button title={busy ? 'Creating…' : 'Create battle'} onPress={create} />
-      <Text style={[s.muted, { marginTop: 8 }]}>You can play first. Opponents see your score before they play.</Text>
+      {offered && offered.length === 0 ? <Text style={s.error}>This set is already in a battle.</Text> : null}
+      <Button title={busy ? 'Creating…' : fromSet ? 'Send challenge' : 'Create battle'} onPress={create} />
+      {fromSet ? null : (
+        <Text style={[s.muted, { marginTop: 8 }]}>After you create it, do your attempt. A set you already finished is not included.</Text>
+      )}
     </View>
   );
 }

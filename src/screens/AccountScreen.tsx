@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Button } from '../components/ui';
 import { colors } from '../theme';
@@ -8,17 +8,21 @@ import { useIdentity } from '../backend/IdentityProvider';
 import { isAppleSignInAvailable, signInWithApple } from '../backend/auth';
 import { Settings } from '../storage/settings';
 import { historyStore } from '../session/useSession';
-import { OLD_SETS_NOTE, PERSONAL_BACKFILL_MS } from '../progress';
+import { NudgePrefs, OLD_SETS_NOTE, PERSONAL_BACKFILL_MS, shiftClock } from '../progress';
 
 /** Account: profile, counting preferences, backup, sign out, delete account. */
 export function AccountScreen({
   settings,
   onChangeSettings,
+  nudges,
+  onChangeNudges,
   onEditProfile,
   onBack,
 }: {
   settings: Settings;
   onChangeSettings: (s: Settings) => void;
+  nudges: NudgePrefs;
+  onChangeNudges: (prefs: NudgePrefs) => void;
   onEditProfile: () => void;
   onBack: () => void;
 }) {
@@ -55,6 +59,7 @@ export function AccountScreen({
       <View style={styles.container}>
         <Text style={styles.title}>Account</Text>
         <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
+        <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn={false} />
         <Text style={styles.text}>Sign in with Apple is not available in this build.</Text>
         <Button title="Back" onPress={onBack} />
       </View>
@@ -66,6 +71,7 @@ export function AccountScreen({
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Account</Text>
         <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
+        <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn={false} />
         <Text style={styles.text}>Sign in to back up your sets and challenge friends. Solo counting keeps working without an account.</Text>
         {appleAvailable ? (
           <AppleAuthentication.AppleAuthenticationButton
@@ -119,6 +125,7 @@ export function AccountScreen({
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Account</Text>
       <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
+      <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn />
 
       <View style={styles.card}>
         {profile === undefined ? (
@@ -217,6 +224,66 @@ function CountingCard({ settings, onChangeSettings }: { settings: Settings; onCh
   );
 }
 
+function ReminderCard({
+  nudges,
+  onChangeNudges,
+  signedIn,
+}: {
+  nudges: NudgePrefs;
+  onChangeNudges: (prefs: NudgePrefs) => void;
+  signedIn: boolean;
+}) {
+  const set = (patch: Partial<NudgePrefs>) => onChangeNudges({ ...nudges, ...patch });
+  return (
+    <View style={styles.card}>
+      <Text style={styles.section}>Reminders</Text>
+      <SettingRow
+        label="Daily reminder"
+        hint="On days you have a goal and have not done a set."
+        value={nudges.dailyNudge}
+        onChange={(dailyNudge) => set({ dailyNudge })}
+      />
+      {nudges.dailyNudge ? (
+        <TimeStepper label="Reminder time" value={nudges.nudgeLocalTime} onChange={(nudgeLocalTime) => set({ nudgeLocalTime })} />
+      ) : null}
+      <TimeStepper label="Quiet hours start" value={nudges.quietStart} onChange={(quietStart) => set({ quietStart })} />
+      <TimeStepper label="Quiet hours end" value={nudges.quietEnd} onChange={(quietEnd) => set({ quietEnd })} />
+      <Text style={styles.hint}>Quiet hours hold a reminder until they end. They do not drop it.</Text>
+      {signedIn ? (
+        <>
+          <SettingRow label="Pass ping" hint="When a friend passes you this week." value={nudges.passPing} onChange={(passPing) => set({ passPing })} />
+          <SettingRow
+            label="Sunday recap"
+            hint="A push about the week that just ended."
+            value={nudges.weeklyRecap}
+            onChange={(weeklyRecap) => set({ weeklyRecap })}
+          />
+          {nudges.weeklyRecap ? (
+            <TimeStepper label="Sunday recap time" value={nudges.recapLocalTime} onChange={(recapLocalTime) => set({ recapLocalTime })} />
+          ) : null}
+        </>
+      ) : (
+        <Text style={styles.text}>Pass pings and the Sunday push need an account. This phone still reminds you each day.</Text>
+      )}
+    </View>
+  );
+}
+
+function TimeStepper({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <View style={styles.row}>
+      <Text style={[styles.rowLabel, { flex: 1 }]}>{label}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Earlier ${label}`} hitSlop={8} onPress={() => onChange(shiftClock(value, -30))}>
+        <Text style={styles.step}>−</Text>
+      </Pressable>
+      <Text style={styles.clock}>{value}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Later ${label}`} hitSlop={8} onPress={() => onChange(shiftClock(value, 30))}>
+        <Text style={styles.step}>+</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function SettingRow({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <View style={styles.row}>
@@ -239,6 +306,8 @@ const styles = StyleSheet.create({
   hint: { color: colors.muted, fontSize: 13, marginTop: 2 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   rowLabel: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  clock: { color: colors.text, fontSize: 16, fontWeight: '700', minWidth: 52, textAlign: 'center' },
+  step: { color: colors.accent, fontSize: 22, fontWeight: '700', paddingHorizontal: 10 },
   error: { color: colors.danger, fontSize: 13 },
   apple: { height: 48, width: '100%', marginVertical: 12 },
 });

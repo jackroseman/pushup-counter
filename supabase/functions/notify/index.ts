@@ -10,7 +10,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { buildMessages, parseNotifyRequest, parseSecretKeys, safeEqual, TEST_CONTENT } from '../_shared/expoPush.ts';
 import type { ClaimedNotification } from '../_shared/notificationContent.ts';
-import { deliverClaimed, PushIO, sendMessages } from '../_shared/pushSender.ts';
+import { drainOutbox, PushIO, sendMessages } from '../_shared/pushSender.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -48,17 +48,21 @@ async function drain() {
     const { error } = await admin.rpc('register_notify_url', { p_url: `${SUPABASE_URL}/functions/v1/notify` });
     registered = !error;
   }
-  const totals = { notifications: 0, devices: 0, sent: 0, failed: 0, disabled: 0 };
-  for (let round = 0; round < 5; round++) {
-    const { data, error } = await admin.rpc('claim_notifications', { p_limit: 200 });
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as ClaimedNotification[];
-    if (!rows.length) break;
-    const s = await deliverClaimed(rows, io);
-    for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] += s[k];
-    if (rows.length < 200) break;
-  }
-  return totals;
+  return drainOutbox({
+    async lease(limit) {
+      const { data, error } = await admin.rpc('lease_notifications', { p_limit: limit });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as ClaimedNotification[];
+    },
+    async settle(sent, failed) {
+      const { error } = await admin.rpc('settle_notifications', { p_sent: sent, p_failed: failed });
+      if (error) throw new Error(error.message);
+    },
+    async release(ids) {
+      const { error } = await admin.rpc('release_notifications', { p_ids: ids });
+      if (error) throw new Error(error.message);
+    },
+  }, io);
 }
 
 Deno.serve(async (req) => {

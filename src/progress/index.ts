@@ -32,6 +32,26 @@ export {
   rankLeague,
 } from './league';
 export type { LeagueWeights } from './league';
+export {
+  DAILY_NUDGE_ID,
+  DEFAULT_NUDGE_PREFS,
+  NUDGE_FIRED_KEY,
+  NUDGE_KEY,
+  NUDGE_SYNC_KEY,
+  decideNudgeSync,
+  holdUntil,
+  loadNudges,
+  nextLocalReminder,
+  parseRecapRanks,
+  prefsFromServer,
+  sanitizeNudgeSync,
+  sanitizeNudges,
+  saveNudges,
+  shiftClock,
+  weekCard,
+  weekCardLine,
+} from './nudges';
+export type { NudgePrefs, NudgeSyncAction, NudgeSyncState, WeekCardModel, WeekRanks } from './nudges';
 export { buildToday, celebrate, contributionFor, contributionLine, formatUsual, presentToday, streaks, travelLine } from './today';
 export type { Celebration, TodayModel } from './today';
 export { countedRepList, countsForStreak, PERSONAL_BACKFILL_MS, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';

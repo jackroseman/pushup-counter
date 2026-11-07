@@ -66,6 +66,36 @@ describe('notification text', () => {
     expect(buildNotification(row('challenge_result', { challenge }))).toBeNull();
   });
 
+  it('personal nudges open Today or League and skip a day that already has reps', () => {
+    const daily = buildNotification(row('daily_nudge', { nudge: { target: 30, reps: 0, rest: false } }, null))!;
+    expect(daily.body).toBe('No push-ups yet today. Your goal is 30.');
+    expect(daily.data).toEqual({ type: 'daily_nudge', url: 'pushupcounter://today' });
+    expect(buildNotification(row('daily_nudge', { nudge: { target: 30, reps: 4, rest: false } }, null))).toBeNull();
+    expect(buildNotification(row('daily_nudge', { nudge: { target: 0, reps: 0, rest: true } }, null))).toBeNull();
+
+    const pass = buildNotification(row('pass_ping', { actor: { displayName: 'Alex' }, pass: { board: 'total', theirs: 240, mine: 230 } }, null))!;
+    expect(pass.body).toBe('Alex passed you this week — 240 to your 230.');
+    expect(pass.data).toEqual({ type: 'pass_ping', url: 'pushupcounter://league' });
+    const improvement = buildNotification(row('pass_ping', { actor: { displayName: 'Alex' }, pass: { board: 'improvement', theirs: 80, mine: 40 } }, null))!;
+    expect(improvement.body).toBe('Alex passed you this week on improvement — 80 to your 40.');
+    expect(buildNotification(row('pass_ping', { actor: { displayName: 'Alex' }, pass: { board: 'total', theirs: 10, mine: 10 } }, null))).toBeNull();
+
+    const recap = buildNotification(row('weekly_recap', {
+      recap: { reps: 230, goalDaysHit: 5, goalDaysScheduled: 6, totalRank: 2, improvementRank: 1, totalCrown: false, friends: true },
+    }, null))!;
+    expect(recap.body).toBe('230 push-ups · 5/6 goal days · 2nd on total, 1st on improvement.');
+    const crown = buildNotification(row('weekly_recap', {
+      recap: { reps: 230, goalDaysHit: 5, goalDaysScheduled: 6, totalRank: 1, improvementRank: 2, totalCrown: true, friends: true },
+    }, null))!;
+    expect(crown.body).toBe('230 push-ups · 5/6 goal days · 1st on total, 2nd on improvement. You took the total crown.');
+    expect(buildNotification(row('weekly_recap', { recap: { reps: 12, goalDaysHit: 0, goalDaysScheduled: 0, friends: false } }, null))!.body).toBe('12 push-ups.');
+  });
+
+  it('a team win names the target', () => {
+    const team = { ...challenge, kind: 'team' as const, metric: null };
+    expect(buildNotification(row('challenge_result', { challenge: team, result: { isWinner: true, teamTarget: 500, teamTotal: 540, rank: 1 } }))!.body).toBe('Your team hit 500.');
+  });
+
   it('cancel and expiry', () => {
     expect(buildNotification(row('challenge_cancelled', { challenge: { ...challenge, creator: 'sunny' } }))!.body).toBe('@sunny cancelled the challenge.');
     expect(buildNotification(row('challenge_expired', { challenge: { ...challenge, creatorIsMe: true } }))!.body).toBe('The challenge ended before enough people played.');

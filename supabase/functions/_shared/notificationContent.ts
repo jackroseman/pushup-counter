@@ -5,6 +5,8 @@ import type { PushContent } from './expoPush.ts';
 export const APP_SCHEME = 'pushupcounter';
 export const challengeUrl = (id: string) => `${APP_SCHEME}://challenge/${id}`;
 export const FRIENDS_URL = `${APP_SCHEME}://friends`;
+export const TODAY_URL = `${APP_SCHEME}://today`;
+export const LEAGUE_URL = `${APP_SCHEME}://league`;
 
 export type NotificationKind =
   | 'friend_request'
@@ -17,10 +19,56 @@ export type NotificationKind =
   | 'challenge_expired'
   | 'challenge_cancelled'
   | 'challenge_reminder'
-  | 'challenge_reminder_half';
+  | 'challenge_reminder_half'
+  | 'daily_nudge'
+  | 'pass_ping'
+  | 'weekly_recap';
+
+const KNOWN_KINDS: readonly NotificationKind[] = [
+  'friend_request',
+  'friend_accepted',
+  'challenge_invite',
+  'invite_accepted',
+  'invite_declined',
+  'set_submitted',
+  'challenge_result',
+  'challenge_expired',
+  'challenge_cancelled',
+  'challenge_reminder',
+  'challenge_reminder_half',
+  'daily_nudge',
+  'pass_ping',
+  'weekly_recap',
+];
+
+/** False for a kind this build cannot render. Those rows stay queued for a newer sender. */
+export function isKnownNotificationKind(kind: string): boolean {
+  return (KNOWN_KINDS as readonly string[]).includes(kind);
+}
 
 interface Person { username?: string; displayName?: string }
-interface Score { username?: string; displayName?: string; validReps?: number; metricValue?: number | null; rank?: number; isMe?: boolean; isWinner?: boolean }
+interface Score {
+  username?: string;
+  displayName?: string;
+  validReps?: number;
+  metricValue?: number | null;
+  rank?: number;
+  isMe?: boolean;
+  isWinner?: boolean;
+  teamTotal?: number | null;
+  teamTarget?: number | null;
+}
+interface NudgeFacts { target?: number | null; reps?: number | null; rest?: boolean }
+interface PassFacts { board?: 'total' | 'improvement'; theirs?: number | null; mine?: number | null }
+interface RecapFacts {
+  reps?: number | null;
+  goalDaysHit?: number | null;
+  goalDaysScheduled?: number | null;
+  totalRank?: number | null;
+  improvementRank?: number | null;
+  totalCrown?: boolean;
+  friends?: boolean;
+}
 export interface ChallengeFacts {
   id: string;
   kind?: 'best_set' | 'total' | 'streak' | 'team';
@@ -36,6 +84,9 @@ export interface ChallengeFacts {
 export interface NotificationFacts {
   timeZone?: string;
   actor?: Person;
+  nudge?: NudgeFacts;
+  pass?: PassFacts;
+  recap?: RecapFacts;
   challenge?: ChallengeFacts;
   actorScore?: Score;
   leader?: Score;
@@ -160,13 +211,44 @@ export function buildNotification(n: ClaimedNotification, now: Date = new Date()
       const target = !isWindow(c) && f.leader ? ` to beat ${short(f.leader)}'s ${standingNumber(f.leader, metric)}` : '';
       return { title: 'Challenge reminder', body: `${left}${target}.`, data: data(n.kind) };
     }
+    case 'daily_nudge': {
+      const nudge = f.nudge;
+      if (!nudge || nudge.rest || (nudge.reps ?? 0) > 0 || nudge.target == null || nudge.target <= 0) return null;
+      return {
+        title: 'Today',
+        body: `No push-ups yet today. Your goal is ${nudge.target}.`,
+        data: { type: n.kind, url: TODAY_URL },
+      };
+    }
+    case 'pass_ping': {
+      const pass = f.pass;
+      if (!pass || pass.theirs == null || pass.mine == null || pass.theirs <= pass.mine) return null;
+      const body = pass.board === 'improvement'
+        ? `${short(f.actor)} passed you this week on improvement — ${pass.theirs} to your ${pass.mine}.`
+        : `${short(f.actor)} passed you this week — ${pass.theirs} to your ${pass.mine}.`;
+      return { title: 'League', body, data: { type: n.kind, url: LEAGUE_URL } };
+    }
+    case 'weekly_recap': {
+      const recap = f.recap;
+      if (!recap || recap.reps == null) return null;
+      let body = `${recap.reps} push-ups`;
+      if ((recap.goalDaysScheduled ?? 0) > 0) body += ` · ${recap.goalDaysHit ?? 0}/${recap.goalDaysScheduled} goal days`;
+      if (recap.friends && recap.totalRank && recap.improvementRank) {
+        body += ` · ${ordinal(recap.totalRank)} on total, ${ordinal(recap.improvementRank)} on improvement.`;
+      } else {
+        body += '.';
+      }
+      if (recap.totalCrown) body += ' You took the total crown.';
+      return { title: 'Your week', body, data: { type: n.kind, url: LEAGUE_URL } };
+    }
     case 'challenge_result': {
       const r = f.result;
       if (!c || !r) return null;
       const others = (r.top ?? []).filter((t) => !t.isMe);
       const best = others[0];
       let body: string;
-      if (r.draw && r.rank === 1) body = 'Draw.';
+      if (c.kind === 'team' && r.isWinner) body = `Your team hit ${r.teamTarget ?? r.teamTotal ?? 0}.`;
+      else if (r.draw && r.rank === 1) body = 'Draw.';
       else if (r.isWinner || r.rank === 1) {
         const mine = standingNumber(r, metric);
         body = best ? `You won. ${mine} to ${standingNumber(best, metric)}.` : `You won. ${mine}.`;

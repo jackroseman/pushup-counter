@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState as AppLifecycle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CompositeScreenProps, DarkTheme, LinkingOptions, NavigationContainer, NavigatorScreenParams, useIsFocused } from '@react-navigation/native';
 import { createBottomTabNavigator, BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -37,30 +38,47 @@ import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
 import { enrollGoal, fetchMyProgress } from '../backend/progressClient';
 import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../backend/leagueClient';
+import { fetchNotificationPrefs, fetchRecapRanks, saveNotificationPrefs } from '../backend/nudgeClient';
+import { onHistoryChanged } from '../backend/syncEvents';
 import { supabase } from '../backend/supabase';
 import {
+  DAILY_NUDGE_ID,
+  DEFAULT_NUDGE_PREFS,
   GoalEnrollment,
   GoalSnapshot,
   GOAL_SYNC_KEY,
+  NUDGE_FIRED_KEY,
+  NUDGE_SYNC_KEY,
+  NudgePrefs,
+  NudgeSyncState,
   REFRESH_FAILED,
+  WeekRanks,
   ServerProgress,
   buildProgress,
   buildToday,
   celebrate,
   contributionFor,
   decideGoalSync,
+  decideNudgeSync,
   enrollmentsFromServer,
   formScoreForReps,
   goalSnapshot,
   goalSyncSettled,
   lateSetIds,
+  goalForDate,
   loadGoal,
+  loadNudges,
   localDate,
+  nextLocalReminder,
   phoneCountedReps,
   queueGoalEdit,
   sanitizeGoalSync,
+  sanitizeNudgeSync,
   saveEnrollment,
   saveGoal,
+  saveNudges,
+  weekCard,
+  workoutDate,
   signedInViews,
   workoutFromRecord,
 } from '../progress';
@@ -177,6 +195,8 @@ interface RemoteProgress {
 interface AppState {
   settings: Settings;
   updateSettings: (s: Settings) => void;
+  nudges: NudgePrefs;
+  updateNudges: (prefs: NudgePrefs) => void;
   savedSets: number;
   refreshSavedSets: () => void;
   enrollments: GoalEnrollment[];
@@ -203,6 +223,7 @@ function TodayRoute({ navigation }: TabProps<'Today'>) {
   const focused = useIsFocused();
   const askedFor = useRef<string | null>(null);
   const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
+  const [ranks, setRanks] = useState<WeekRanks | null>(null);
   const reload = useCallback(() => {
     refreshSavedSets();
     refreshRemote();
@@ -217,20 +238,42 @@ function TodayRoute({ navigation }: TabProps<'Today'>) {
     }
   }, [session, profile, navigation]);
   const zone = deviceTimeZone();
-  const today = localDate(Date.now(), zone);
+  const now = Date.now();
+  const today = localDate(now, zone);
   const phone = buildToday({ workouts, enrollments, today, timeZone: zone });
   const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).today : phone;
   const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
+  const weekStart = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks: null })?.weekStart ?? null;
+  useEffect(() => {
+    if (!weekStart || !session || !profile || !supabase) {
+      setRanks(null);
+      return undefined;
+    }
+    let alive = true;
+    fetchRecapRanks(supabase, weekStart)
+      .then((next) => {
+        if (alive) setRanks(next);
+      })
+      .catch(() => {
+        if (alive) setRanks(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [weekStart, session, profile]);
+  const week = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks });
   return (
     <TodayScreen
       view={view}
       banner={banner}
+      week={week}
       depth={faceTrackingSupported()}
       howToOpen={howToOpen && focused}
       savedSets={savedSets}
       onStart={() => navigation.navigate('Session')}
       onGoal={() => navigation.navigate('GoalSetup')}
       onAccount={() => navigation.navigate('Account')}
+      onWeek={week ? () => navigation.navigate(week.destination === 'league' ? 'League' : 'Progress') : undefined}
       onOpenHowTo={openHowTo}
       onCloseHowTo={closeHowTo}
     />
@@ -533,11 +576,13 @@ function HistoryRoute({ navigation }: Props<'History'>) {
 }
 
 function AccountRoute({ navigation }: Props<'Account'>) {
-  const { settings, updateSettings } = useAppState();
+  const { settings, updateSettings, nudges, updateNudges } = useAppState();
   return (
     <AccountScreen
       settings={settings}
       onChangeSettings={updateSettings}
+      nudges={nudges}
+      onChangeNudges={updateNudges}
       onEditProfile={() => navigation.navigate('ProfileSetup')}
       onBack={() => navigation.goBack()}
     />
@@ -598,8 +643,12 @@ function openServerEnrollment(doc: ServerProgress | null): GoalSnapshot | null {
 
 export function RootNavigator() {
   const { appSettings, session } = useBackend();
+  const { profile, push } = useIdentity();
   webBaseUrl = appSettings.inviteLinks.webBaseUrl;
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [nudges, setNudges] = useState<NudgePrefs>(DEFAULT_NUDGE_PREFS);
+  const [nudgesReady, setNudgesReady] = useState(false);
+  const [reminderTick, setReminderTick] = useState(0);
   const [savedSets, setSavedSets] = useState(0);
   const [enrollments, setEnrollments] = useState<GoalEnrollment[]>([]);
   const [remote, setRemote] = useState<RemoteProgress>({ doc: null, status: 'idle' });
@@ -614,6 +663,15 @@ export function RootNavigator() {
   const enrollmentsRef = useRef(enrollments);
   enrollmentsRef.current = enrollments;
   const goalEpoch = useRef(0);
+  const nudgeSyncRef = useRef<NudgeSyncState | null>(null);
+  const nudgeGen = useRef(0);
+  const nudgesRef = useRef(nudges);
+  nudgesRef.current = nudges;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const askedReminder = useRef(false);
+  const firedRef = useRef<string | null>(null);
+  const reminderFlight = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     loadSettings(AsyncStorage).then(setSettings);
@@ -629,6 +687,18 @@ export function RootNavigator() {
         if (typeof parsed.userId === 'string') goalSyncRef.current = sanitizeGoalSync(parsed, parsed.userId);
       })
       .catch(() => {});
+    loadNudges(AsyncStorage)
+      .then((prefs) => {
+        setNudges(prefs);
+        setNudgesReady(true);
+      })
+      .catch(() => setNudgesReady(true));
+    AsyncStorage.getItem(NUDGE_SYNC_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        nudgeSyncRef.current = sanitizeNudgeSync(JSON.parse(raw));
+      })
+      .catch(() => {});
     AsyncStorage.getItem(HOWTO_KEY)
       .then((v) => setHowToOpen(v !== '1'))
       .catch(() => setHowToOpen(true));
@@ -642,6 +712,124 @@ export function RootNavigator() {
     setSettings(s);
     saveSettings(AsyncStorage, s).catch(() => {});
   }, []);
+
+  const updateNudges = useCallback((prefs: NudgePrefs) => {
+    nudgeGen.current += 1;
+    setNudges(prefs);
+    saveNudges(AsyncStorage, prefs).catch(() => {});
+    const userId = sessionRef.current?.user.id;
+    if (!userId || !profileRef.current || !supabase) return;
+    const settled = { userId, settled: true };
+    nudgeSyncRef.current = settled;
+    AsyncStorage.setItem(NUDGE_SYNC_KEY, JSON.stringify(settled)).catch(() => {});
+    saveNotificationPrefs(supabase, userId, prefs).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!nudgesReady || !userId || !profile || !supabase) return undefined;
+    const gen = nudgeGen.current;
+    const client = supabase;
+    let alive = true;
+    fetchNotificationPrefs(client)
+      .then(async (server) => {
+        if (!alive || gen !== nudgeGen.current) return;
+        const decision = decideNudgeSync({
+          userId,
+          local: nudgesRef.current,
+          server,
+          sync: nudgeSyncRef.current,
+        });
+        nudgeSyncRef.current = decision.next;
+        await AsyncStorage.setItem(NUDGE_SYNC_KEY, JSON.stringify(decision.next));
+        if (!alive || gen !== nudgeGen.current) return;
+        if (decision.action.type === 'adopt') {
+          setNudges(decision.action.prefs);
+          await saveNudges(AsyncStorage, decision.action.prefs);
+        } else if (decision.action.type === 'upload') {
+          await saveNotificationPrefs(client, userId, decision.action.prefs);
+          if (!alive || gen !== nudgeGen.current) return;
+          const settled = { userId, settled: true };
+          nudgeSyncRef.current = settled;
+          await AsyncStorage.setItem(NUDGE_SYNC_KEY, JSON.stringify(settled));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [nudgesReady, session?.user.id, profile]);
+
+  useEffect(() => {
+    const off = onHistoryChanged(() => setReminderTick((n) => n + 1));
+    const sub = AppLifecycle.addEventListener('change', (state) => {
+      if (state === 'active') setReminderTick((n) => n + 1);
+    });
+    return () => {
+      off();
+      sub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!nudgesReady) return undefined;
+    let alive = true;
+    const run = async () => {
+      const zone = deviceTimeZone();
+      const now = Date.now();
+      const today = localDate(now, zone);
+      const rows = await historyStore.load().catch(() => []);
+      if (!alive) return;
+      const repsToday = rows
+        .map(workoutFromRecord)
+        .filter((workout) => workoutDate(workout, zone) === today)
+        .reduce((sum, workout) => sum + workout.countedReps, 0);
+      if (firedRef.current == null) firedRef.current = await AsyncStorage.getItem(NUDGE_FIRED_KEY);
+      const when = nextLocalReminder({
+        prefs: nudgesRef.current,
+        timeZone: zone,
+        signedIn: !!sessionRef.current,
+        pushRegistered: push.registered,
+        enrollments: enrollmentsRef.current,
+        repsToday,
+        lastFiredDate: firedRef.current,
+        now,
+      });
+      await Notifications.cancelScheduledNotificationAsync(DAILY_NUDGE_ID).catch(() => {});
+      if (!alive || !when) return;
+      const permission = await Notifications.getPermissionsAsync().catch(() => null);
+      let granted = permission?.granted === true;
+      if (!granted && permission?.canAskAgain && nudgesRef.current.dailyNudge && !askedReminder.current) {
+        askedReminder.current = true;
+        const asked = await Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } }).catch(() => null);
+        granted = asked?.granted === true;
+      }
+      if (!alive || !granted) return;
+      const day = localDate(when.getTime(), zone);
+      const goal = goalForDate(enrollmentsRef.current, day);
+      const target = goal && goal.target > 0 ? goal.target : null;
+      if (!target) return;
+      const immediate = when.getTime() <= Date.now();
+      if (immediate) {
+        firedRef.current = today;
+        await AsyncStorage.setItem(NUDGE_FIRED_KEY, today);
+      }
+      await Notifications.scheduleNotificationAsync({
+        identifier: DAILY_NUDGE_ID,
+        content: {
+          title: 'Today',
+          body: `No push-ups yet today. Your goal is ${target}.`,
+          data: { type: 'daily_nudge', url: 'pushupcounter://today' },
+        },
+        trigger: immediate ? null : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: when },
+      }).catch(() => {});
+    };
+    const flight = reminderFlight.current.then(run, run);
+    reminderFlight.current = flight;
+    return () => {
+      alive = false;
+    };
+  }, [nudgesReady, nudges, enrollments, push.registered, session?.user.id, reminderTick]);
 
   const refreshRemote = useCallback(() => {
     const gen = ++refreshGen.current;
@@ -765,6 +953,8 @@ export function RootNavigator() {
     () => ({
       settings,
       updateSettings,
+      nudges,
+      updateNudges,
       savedSets,
       refreshSavedSets,
       enrollments,
@@ -776,7 +966,7 @@ export function RootNavigator() {
       openHowTo,
       closeHowTo,
     }),
-    [settings, updateSettings, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote, howToOpen, openHowTo, closeHowTo],
+    [settings, updateSettings, nudges, updateNudges, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote, howToOpen, openHowTo, closeHowTo],
   );
 
   return (

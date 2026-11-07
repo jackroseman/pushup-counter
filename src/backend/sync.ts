@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIG } from '../core/types';
+import { deviceTimeZone } from './profile';
 import type { KeyValueStore, SessionRecord } from '../storage/history';
 
 /**
@@ -51,7 +52,7 @@ export const saveSyncState = (kv: KeyValueStore, s: SyncState) => kv.setItem(SYN
 
 /** Why a set is never uploaded (decided on the phone), or null if it should be. */
 export function skipReason(r: SessionRecord): string | null {
-  if (r.battleId) return 'battle set (uploaded with the battle)';
+  if (r.challengeId || r.battleId) return 'challenge set (uploaded with the challenge)';
   if (!r.reps.length) return 'no reps';
   if (!Number.isFinite(r.startedAt) || !Number.isFinite(r.endedAt) || r.endedAt < r.startedAt) return 'bad times';
   if (r.endedAt - r.startedAt > MAX_SET_MS) return 'longer than 2 hours';
@@ -106,6 +107,7 @@ export function toSetPayload(r: SessionRecord, ctx: PayloadContext): Record<stri
     id: r.id,
     startedAt: r.startedAt,
     endedAt: r.endedAt,
+    timeZone: r.timeZone?.trim() || deviceTimeZone(),
     version,
     depthTracking: r.depthTracking,
     calibratedTopDistance: typeof top === 'number' && top >= 0.15 && top <= 1.2 ? top : null,
@@ -114,6 +116,7 @@ export function toSetPayload(r: SessionRecord, ctx: PayloadContext): Record<stri
     appVersion: ctx.appVersion,
     updateId: ctx.updateId,
   };
+  if (typeof r.timerDurationS === 'number') payload.timerDurationS = r.timerDurationS;
   if (version >= 2) {
     payload.detectorConfig = { ...DEFAULT_CONFIG, algorithmVersion: DETECTOR_ALGORITHM_VERSION };
     if (trace.length) {

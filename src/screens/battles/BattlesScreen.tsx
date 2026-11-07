@@ -19,7 +19,7 @@ export function BattlesScreen({
   onAccount,
   onProfile,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   onOpen: (id: string) => void;
   onNew: () => void;
   onFriends: () => void;
@@ -43,7 +43,7 @@ export function BattlesScreen({
         />
       }
     >
-      <Header title="Battles" onBack={onBack} />
+      <Header title="Challenges" onBack={onBack} />
       <AccountGate onAccount={onAccount} onProfile={onProfile}>
         <BattleList onOpen={onOpen} onNew={onNew} onFriends={onFriends} reload={reload} />
       </AccountGate>
@@ -66,15 +66,17 @@ function BattleList({
   const [battles, setBattles] = useState<Battle[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const hadList = useRef(false);
 
   const load = useCallback(async () => {
     if (!supabase) return;
     flushBattleUploads().catch(() => {});
     const r = await api.myBattles(supabase);
     if (r.ok) {
+      hadList.current = true;
       setBattles(r.data ?? []);
       setError(null);
-    } else setError(friendlyError(r.message));
+    } else setError(hadList.current ? "Couldn't refresh." : friendlyError(r.message));
   }, []);
   reload.current = load;
 
@@ -108,12 +110,12 @@ function BattleList({
 
   return (
     <View>
-      <Button title="New battle" onPress={onNew} />
+      <Button title="New challenge" onPress={onNew} />
       <Button title="Friends" kind="secondary" onPress={onFriends} />
 
       {push.permission !== 'granted' ? (
         <View style={{ marginTop: 12 }}>
-          <Notice title="Get battle notifications" text="Know when a friend challenges you, when the deadline is close, and who won.">
+          <Notice title="Get challenge notifications" text="Know when a friend challenges you, when the deadline is close, and who won.">
             <Button
               title="Turn on notifications"
               kind="secondary"
@@ -130,7 +132,7 @@ function BattleList({
       {error ? <Text style={s.error}>{error}</Text> : null}
       {battles === null && !error ? <Text style={[s.muted, { marginTop: 16 }]}>Loading…</Text> : null}
       {battles && battles.length === 0 ? (
-        <Text style={[s.muted, { marginTop: 16 }]}>No battles yet. Start one and challenge a friend, or share an invite link.</Text>
+        <Text style={[s.muted, { marginTop: 16 }]}>Challenge a friend after a set, or start one here.</Text>
       ) : null}
       {g.yourMove.length ? <SectionTitle>Your move</SectionTitle> : null}
       {g.yourMove.map(item)}

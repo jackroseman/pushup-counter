@@ -10,8 +10,8 @@ export const BATTLE_QUEUE_KEY = 'battleUploads.v1';
 const MAX_TRIES = 20;
 
 export interface QueuedBattleSet {
-  battleId: string;
-  /** The set payload (toSetPayload) plus battleId. */
+  challengeId: string;
+  /** The set payload (toSetPayload) plus challengeId. Older queues used battleId. */
   payload: Record<string, unknown>;
   tries: number;
   queuedAt: number;
@@ -37,8 +37,18 @@ export async function loadBattleQueue(kv: KeyValueStore): Promise<BattleQueueSta
     const raw = await kv.getItem(BATTLE_QUEUE_KEY);
     if (!raw) return { pending: [], failed: [] };
     const v = JSON.parse(raw);
-    const ok = (x: unknown): x is QueuedBattleSet =>
-      typeof x === 'object' && x !== null && typeof (x as QueuedBattleSet).battleId === 'string' && typeof (x as QueuedBattleSet).payload === 'object';
+    const ok = (x: unknown): x is QueuedBattleSet => {
+      if (typeof x !== 'object' || x === null) return false;
+      const row = x as { challengeId?: unknown; battleId?: unknown; payload?: unknown };
+      const id = typeof row.challengeId === 'string' ? row.challengeId : typeof row.battleId === 'string' ? row.battleId : null;
+      if (!id || typeof row.payload !== 'object' || row.payload === null) return false;
+      const payload = { ...(row.payload as Record<string, unknown>) };
+      delete payload.battleId;
+      payload.challengeId = id;
+      (x as QueuedBattleSet).challengeId = id;
+      (x as QueuedBattleSet).payload = payload;
+      return true;
+    };
     return {
       pending: Array.isArray(v?.pending) ? v.pending.filter(ok) : [],
       failed: Array.isArray(v?.failed) ? v.failed.filter(ok).slice(-20) : [],
@@ -51,17 +61,28 @@ export async function loadBattleQueue(kv: KeyValueStore): Promise<BattleQueueSta
 const save = (kv: KeyValueStore, s: BattleQueueState) => kv.setItem(BATTLE_QUEUE_KEY, JSON.stringify(s));
 
 /** Adds a set (replacing a queued copy with the same set id). */
-export async function enqueueBattleSet(kv: KeyValueStore, battleId: string, payload: Record<string, unknown>, now = Date.now()) {
+export async function enqueueBattleSet(kv: KeyValueStore, challengeId: string, payload: Record<string, unknown>, now = Date.now()) {
   const s = await loadBattleQueue(kv);
   const id = payload.id;
   s.pending = s.pending.filter((q) => q.payload.id !== id);
-  s.pending.push({ battleId, payload: { ...payload, battleId }, tries: 0, queuedAt: now });
+  const body: Record<string, unknown> = { ...payload, challengeId };
+  delete body.battleId;
+  s.pending.push({ challengeId, payload: body, tries: 0, queuedAt: now });
   await save(kv, s);
 }
 
 /** 4xx (except 401/408/429) means the server will never accept it; anything else is retried. */
 export function isPermanentStatus(status: number): boolean {
   return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
+}
+
+/**
+ * Claim failures are final even if an older submit-set function still maps them to 500.
+ * The message text is the exception raised by submit_set / the claim checks.
+ */
+export function isPermanentFailure(status: number, error: string): boolean {
+  if (isPermanentStatus(status)) return true;
+  return /not recent enough|already in a battle|must match the set timer|cannot use a finished set|cannot be scored|was not linked|only a best-set/i.test(error);
 }
 
 export interface FlushResult {
@@ -89,8 +110,8 @@ export async function flushBattleQueue(kv: KeyValueStore, submit: Submit): Promi
       r = { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
     }
     if (r.ok) {
-      uploaded.push(q.battleId);
-    } else if (isPermanentStatus(r.status) || q.tries + 1 >= MAX_TRIES) {
+      uploaded.push(q.challengeId);
+    } else if (isPermanentFailure(r.status, r.error) || q.tries + 1 >= MAX_TRIES) {
       failed.push({ ...q, tries: q.tries + 1, error: r.error });
     } else {
       rest.push({ ...q, tries: q.tries + 1 });
@@ -102,4 +123,4 @@ export async function flushBattleQueue(kv: KeyValueStore, submit: Submit): Promi
 }
 
 /** Battles with an attempt that is recorded on this phone but not on the server yet. */
-export const pendingBattleIds = (s: BattleQueueState) => new Set(s.pending.map((q) => q.battleId));
+export const pendingBattleIds = (s: BattleQueueState) => new Set(s.pending.map((q) => q.challengeId));

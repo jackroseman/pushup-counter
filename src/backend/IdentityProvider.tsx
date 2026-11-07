@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { useBackend } from './BackendProvider';
 import { PENDING_DISPLAY_NAME_KEY } from './auth';
 import { supabase } from './supabase';
-import { fetchProfile, Profile } from './profile';
+import { fetchProfile, Profile, syncProfileTimeZone } from './profile';
 import {
   deleteAccount as deleteAccountApi,
   getPushPermission,
@@ -84,9 +84,18 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
     setDeviceId(null);
     setRegistered(false);
     if (!supabase || !userId) return;
+    const client = supabase;
     let alive = true;
-    fetchProfile(supabase, userId).then(
-      (p) => alive && setProfile(p),
+    fetchProfile(client, userId).then(
+      async (p) => {
+        if (!alive) return;
+        if (!p) {
+          setProfile(null);
+          return;
+        }
+        const next = await syncProfileTimeZone(client, p).catch(() => p);
+        if (alive) setProfile(next);
+      },
       (e: Error) => alive && setProfileError(e.message),
     );
     return () => {
@@ -95,6 +104,31 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   }, [userId, profileNonce]);
 
   const hasProfile = !!profile && profile.id === userId;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
+  // The phone zone follows the person. A zone change does not move sets already recorded.
+  useEffect(() => {
+    if (!supabase || !userId || !hasProfile) return;
+    const client = supabase;
+    let alive = true;
+    const syncZone = () => {
+      const current = profileRef.current;
+      if (!current || current.id !== userId) return;
+      syncProfileTimeZone(client, current)
+        .then((next) => {
+          if (alive && next.timeZone !== current.timeZone) setProfile(next);
+        })
+        .catch(() => {});
+    };
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncZone();
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, [userId, hasProfile]);
 
   // Device row + silent push registration once the profile exists.
   useEffect(() => {

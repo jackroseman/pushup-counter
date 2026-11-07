@@ -7,6 +7,7 @@ import { normalizeUsername } from '../../backend/profile';
 import { colors } from '../../theme';
 import { api } from '../../battles/api';
 import { Friend, friendlyError, groupFriends, personName } from '../../battles/model';
+import { FRIENDS_LEAGUE_COPY } from '../../progress';
 import { AccountGate, Header, Row, s, SectionTitle, SmallButton } from './common';
 
 export function FriendsScreen(props: {
@@ -91,7 +92,7 @@ function Friends({ onOpenFriend }: { onOpenFriend: (f: Friend) => void }) {
   return (
     <View>
       <Text style={[s.muted, { marginBottom: 8 }]}>
-        You're @{profile?.username}. Friends can challenge each other and see each other's battle results. Nothing else is shared.
+        You're @{profile?.username}. {FRIENDS_LEAGUE_COPY}
       </Text>
       <TextInput
         style={s.input}
@@ -134,7 +135,7 @@ function Friends({ onOpenFriend }: { onOpenFriend: (f: Friend) => void }) {
 
       <SectionTitle>Friends</SectionTitle>
       {rows === null ? <Text style={s.muted}>Loading…</Text> : null}
-      {rows && g.friends.length === 0 ? <Text style={s.muted}>No friends yet. Search above, or send someone a battle invite link.</Text> : null}
+      {rows && g.friends.length === 0 ? <Text style={s.muted}>No friends yet. Search above, or send someone a challenge invite link.</Text> : null}
       {g.friends.map((f) => (
         <Row key={f.userId} onPress={() => onOpenFriend(f)}>
           {name(f)}

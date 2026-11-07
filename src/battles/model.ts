@@ -2,7 +2,8 @@
  * Battle + friend data as returned by the phase-3 RPCs (my_battles, my_friends, ...), and the
  * pure helpers the screens use. No React or native imports, so it is unit-tested.
  */
-export type BattleFormat = 'max_reps' | 'timed' | 'multi_day';
+export type ChallengeKind = 'best_set' | 'total' | 'streak' | 'team';
+export type ChallengeWindow = 'day' | 'week' | 'month' | 'custom';
 export type BattleMetric = 'rep_count' | 'depth_consistency' | 'tempo' | 'form_score';
 export type BattleStatus = 'pending' | 'active' | 'completed' | 'cancelled' | 'expired';
 export type ParticipantStatus = 'invited' | 'accepted' | 'declined' | 'expired' | 'forfeited';
@@ -20,6 +21,15 @@ export interface Participant {
   tempoScore: number | null;
   rank: number | null;
   isWinner: boolean;
+  /** Frozen daily bar for a streak face-off. Null until they accept. */
+  streakFloorReps?: number | null;
+  /** Closed days they hit before the first miss. */
+  daysSurvived?: number | null;
+  /** Local date they went out. Null while they are still in. */
+  eliminatedOn?: string | null;
+  /** Shared counted total on a team goal. */
+  teamTotal?: number | null;
+  teamTarget?: number | null;
 }
 
 export interface InviteLink {
@@ -32,14 +42,17 @@ export interface InviteLink {
 export interface Battle {
   id: string;
   mode: 'async' | 'live';
-  format: BattleFormat;
-  metric: BattleMetric;
+  kind: ChallengeKind;
+  windowUnit: ChallengeWindow | null;
+  metric: BattleMetric | null;
   status: BattleStatus;
   durationS: number | null;
-  attemptsAllowed: number;
+  attemptsAllowed: number | null;
+  targetReps: number | null;
   maxParticipants: number;
   minQuality: string;
   inviteExpiresAt: string;
+  startsAt: string | null;
   endsAt: string | null;
   createdAt: string;
   finishedAt: string | null;
@@ -64,10 +77,11 @@ export interface FriendRecord {
   drawn: number;
   lost: number;
   recent: {
-    battleId: string;
+    challengeId: string;
     finishedAt: string;
-    format: BattleFormat;
-    metric: BattleMetric;
+    kind: ChallengeKind;
+    windowUnit: ChallengeWindow | null;
+    metric: BattleMetric | null;
     durationS: number | null;
     players: number;
     me: { rank: number | null; validReps: number | null; metricValue: number | null; isWinner: boolean };
@@ -77,7 +91,19 @@ export interface FriendRecord {
 
 export interface InvitePreview {
   status: 'ok' | 'not_found' | 'revoked' | 'closed' | 'expired' | 'used_up' | 'full';
-  battle?: { id: string; format: BattleFormat; metric: BattleMetric; durationS: number | null; status: BattleStatus; endsAt: string | null; players: number; maxParticipants: number };
+  challenge?: {
+    id: string;
+    kind: ChallengeKind;
+    windowUnit?: ChallengeWindow | null;
+    metric: BattleMetric | null;
+    durationS: number | null;
+    status: BattleStatus;
+    endsAt: string | null;
+    startsAt?: string | null;
+    targetReps?: number | null;
+    players: number;
+    maxParticipants: number;
+  };
   creator?: { username: string; displayName: string | null };
   scores?: { username: string; displayName: string | null; validReps: number | null; metricValue: number | null }[];
   member?: boolean;
@@ -86,10 +112,35 @@ export interface InvitePreview {
 export const personName = (p: { username?: string | null; displayName?: string | null } | null | undefined) =>
   p?.displayName?.trim() || (p?.username ? `@${p.username}` : 'Someone');
 
-export function battleTitle(b: Pick<Battle, 'format' | 'durationS'>): string {
-  if (b.format === 'timed') return `${b.durationS ?? 60} s battle`;
-  if (b.format === 'max_reps') return 'Max reps';
-  return 'Battle';
+/** Calendar length of a streak window. Daylight saving still rounds to the chosen day count. */
+export function streakDayCount(b: { startsAt?: string | null; endsAt?: string | null }): number | null {
+  if (!b.startsAt || !b.endsAt) return null;
+  const ms = new Date(b.endsAt).getTime() - new Date(b.startsAt).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return Math.max(1, Math.round(ms / 86_400_000));
+}
+
+export function battleTitle(b: {
+  kind: ChallengeKind;
+  windowUnit?: ChallengeWindow | null;
+  durationS: number | null;
+  targetReps?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+}): string {
+  if (b.kind === 'best_set') return b.durationS ? `Best set · ${b.durationS} s` : 'Best set';
+  if (b.kind === 'total') {
+    if (b.windowUnit === 'day') return 'Most reps today';
+    if (b.windowUnit === 'week') return 'Most reps this week';
+    if (b.windowUnit === 'month') return 'Most reps this month';
+    return 'Most reps';
+  }
+  if (b.kind === 'streak') {
+    const days = streakDayCount(b);
+    return days ? `Streak · ${days} day${days === 1 ? '' : 's'}` : 'Streak face-off';
+  }
+  if (b.kind === 'team') return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
+  return 'Challenge';
 }
 
 export const me = (b: Battle) => b.participants.find((p) => p.isMe) ?? null;
@@ -102,10 +153,12 @@ export function canRespond(b: Battle, now: number = Date.now()): boolean {
   return !!m && m.status === 'invited' && (b.status === 'pending' || b.status === 'active') && time(b.inviteExpiresAt) > now;
 }
 
-/** Can I record my attempt now? (pending battles: only the creator may go first) */
+/** Can I start a best-set attempt now? Window kinds have no special session. */
 export function canPlay(b: Battle, now: number = Date.now()): boolean {
   const m = me(b);
-  if (!m || m.status !== 'accepted' || m.attemptsUsed >= b.attemptsAllowed) return false;
+  if (!m || m.status !== 'accepted') return false;
+  if (b.kind !== 'best_set') return false;
+  if (m.attemptsUsed >= (b.attemptsAllowed ?? 1)) return false;
   if (b.endsAt && time(b.endsAt) <= now) return false;
   if (b.status === 'active') return true;
   return b.status === 'pending' && m.userId === b.createdBy;
@@ -150,7 +203,19 @@ export function timeLeft(iso: string | null | undefined, now: number = Date.now(
   return `${Math.floor(h / 24)} days left`;
 }
 
-export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'attemptsUsed'>, metric: BattleMetric): string {
+/** One line under a name on a streak face-off. */
+export function streakStandingLine(p: Pick<Participant, 'status' | 'eliminatedOn' | 'streakFloorReps'>): string {
+  if (p.status === 'invited') return 'invited';
+  if (p.status === 'declined') return 'declined';
+  if (p.status === 'expired') return 'invite expired';
+  if (p.status === 'forfeited') return p.eliminatedOn ? `Out · ${p.eliminatedOn}` : 'Out';
+  if (p.eliminatedOn) return `Out · ${p.eliminatedOn}`;
+  if (p.status === 'accepted') return p.streakFloorReps ? `Still in · ${p.streakFloorReps} a day` : 'Still in';
+  return p.status;
+}
+
+export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'attemptsUsed'>, metric: BattleMetric | null): string {
+  if (metric == null) return `${p.validReps ?? 0}`;
   if (!p.attemptsUsed) return '-';
   if (metric === 'rep_count') return `${p.validReps ?? 0}`;
   return p.metricValue == null ? '-' : `${Math.round(p.metricValue)}`;
@@ -160,18 +225,28 @@ export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'a
 export function battleSubtitle(b: Battle, now: number = Date.now()): string {
   const m = me(b);
   if (b.status === 'completed') {
+    if (b.kind === 'team') {
+      if (m?.isWinner) return 'You won';
+      if (!b.participants.some((p) => p.isWinner)) return 'Missed the goal';
+      return 'Finished';
+    }
     if (!m || m.rank == null) return 'Finished';
     const players = b.participants.filter((p) => p.rank != null).length;
     const tied = b.participants.filter((p) => p.rank === 1).length > 1;
     if (m.rank === 1) return tied ? 'Draw' : 'You won';
     return `You came ${m.rank} of ${players}`;
   }
-  if (b.status === 'expired') return 'Expired';
-  if (b.status === 'cancelled') return 'Cancelled';
+  if (b.status === 'expired') return 'Ended — not enough people played.';
+  if (b.status === 'cancelled') return 'Cancelled.';
   if (canRespond(b, now)) return `Invite · ${timeLeft(b.inviteExpiresAt, now)}`;
   if (canPlay(b, now)) return `Your move · ${timeLeft(b.endsAt, now)}`;
-  const waitingOn = b.participants.filter((p) => p.status === 'invited' || (p.status === 'accepted' && p.attemptsUsed < b.attemptsAllowed));
-  return waitingOn.length ? `Waiting on ${waitingOn.length} · ${timeLeft(b.endsAt, now)}` : `Results soon`;
+  const cap = b.attemptsAllowed ?? 1;
+  const waitingOn = b.participants.filter(
+    (p) => p.status === 'invited' || (b.kind === 'best_set' && p.status === 'accepted' && p.attemptsUsed < cap),
+  );
+  if (waitingOn.length) return `Waiting on ${waitingOn.length} · ${timeLeft(b.endsAt, now)}`;
+  if (b.kind !== 'best_set') return timeLeft(b.endsAt, now) || 'Results soon';
+  return 'Results soon';
 }
 
 /** The share link for an invite token: universal link once a web domain is configured, else the custom scheme. */
@@ -179,9 +254,31 @@ export function inviteUrl(token: string, links: { scheme: string; webBaseUrl: st
   return links.webBaseUrl ? `${links.webBaseUrl}/b/${token}` : `${links.scheme}://invite/${token}`;
 }
 
-export function inviteShareMessage(b: Pick<Battle, 'format' | 'durationS'>, from: string, url: string): string {
-  const what = b.format === 'timed' ? `a ${b.durationS ?? 60} second pushup battle` : 'a max-reps pushup battle';
-  return `${from} challenged you to ${what} on Rep Royale. Open this on your iPhone to join: ${url}`;
+export function inviteShareMessage(
+  b: { kind: ChallengeKind; windowUnit?: ChallengeWindow | null; durationS: number | null; targetReps?: number | null },
+  from: string,
+  url: string,
+): string {
+  return `${from} challenged you: ${battleTitle(b)} on Rep Royale. Open this on your iPhone to join: ${url}`;
+}
+
+/**
+ * After create: celebrate a claimed set only once the server has it (or it is still
+ * uploading). A successful response that did not set battle_id leaves attempts at 0,
+ * and that must look like "you haven't gone yet".
+ */
+export function creatorAttemptCue(input: {
+  promptAttempt?: boolean;
+  justPlayed?: boolean;
+  attemptsUsed: number;
+  uploadPending: boolean;
+  canPlay: boolean;
+}): { showClaimed: boolean; showPrompt: boolean } {
+  const landed = input.attemptsUsed > 0 || input.uploadPending;
+  return {
+    showClaimed: !!input.justPlayed && landed,
+    showPrompt: input.canPlay && input.attemptsUsed === 0 && !input.uploadPending && (!!input.promptAttempt || !!input.justPlayed),
+  };
 }
 
 /** Friends grouped for the friends screen. */
@@ -196,16 +293,23 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('not signed in')) return 'Sign in first.';
   if (m.includes('pick a username')) return 'Pick a username first (Account).';
   if (m.includes('user not found')) return 'No one with that username.';
-  if (m.includes('battle is full')) return 'That battle is full.';
+  if (m.includes('battle is full') || m.includes('challenge is full')) return 'That challenge is full.';
   if (m.includes('invite expired') || m.includes('invite no longer open')) return 'That invite has expired.';
   if (m.includes('invite revoked')) return 'That invite link was turned off.';
   if (m.includes('invite used up')) return 'That invite link has been used up.';
-  if (m.includes('invite closed')) return 'That battle is over.';
+  if (m.includes('invite closed')) return 'That challenge is over.';
   if (m.includes('invite not')) return "That invite isn't available.";
+  if (m.includes('needs a goal')) return 'Set a daily goal first.';
   if (m.includes('not friends')) return 'You can only challenge friends.';
   if (m.includes('that is you')) return "That's you!";
   if (m.includes('too many pending')) return 'Too many open friend requests. Wait for some answers.';
   if (m.includes('no attempts left')) return 'You already did your attempt.';
+  if (m.includes('not recent')) return 'That set is too old to use. Start a new attempt in the challenge.';
+  if (m.includes('already in a battle')) return 'That set is already in a challenge.';
+  if (m.includes('must match the set timer')) return 'A timed challenge has to use the same timer as the set.';
+  if (m.includes('cannot use a finished set')) return "A live challenge can't use a set you already finished.";
+  if (m.includes('cannot be scored')) return "That set can't be used in a challenge.";
+  if (m.includes('was not linked')) return "That set wasn't added to the challenge.";
   if (m.includes('deadline')) return 'The deadline has passed.';
   if (m.includes('network') || m.includes('fetch')) return "Couldn't reach the server. Check your connection.";
   return message || 'Something went wrong.';

@@ -3,6 +3,8 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
+import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
+import { ChallengeOffer, offerLabel } from '../battles/challengeFromSet';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
@@ -37,10 +39,31 @@ export function SummaryScreen({
   record,
   onDone,
   fromHistory,
+  syncedLate,
+  offers,
+  onPickChallenge,
+  onSignIn,
+  progress,
 }: {
   record: SessionRecord;
   onDone: () => void;
   fromHistory?: boolean;
+  /** The server received this set too late for the streak. Totals still include it. */
+  syncedLate?: boolean;
+  /** Just-finished set. History does not pass these. */
+  offers?: ChallengeOffer[];
+  onPickChallenge?: (offer: ChallengeOffer) => void;
+  /** Signed out: Challenge a friend opens sign in. */
+  onSignIn?: () => void;
+  /** Present for a set that just finished. History stays on the analysis. */
+  progress?: {
+    counted: number;
+    shallow: number;
+    formScore: number | null;
+    tempoCaption: string | null;
+    contribution: string;
+    celebration: Celebration | null;
+  } | null;
 }) {
   const a = useMemo(() => analyzeSet(record.reps, record.startedAt, record.endedAt), [record]);
   const tips = insights(a);
@@ -57,7 +80,29 @@ export function SummaryScreen({
     <View style={styles.container}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
         <Text style={styles.title}>{fromHistory ? 'Set analysis' : 'Set complete'}</Text>
-        <Text style={styles.date}>{new Date(record.startedAt).toLocaleString()}</Text>
+        <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{new Date(record.startedAt).toLocaleString()}</Text>
+        {syncedLate ? <Text style={styles.late}>{SYNCED_LATE}</Text> : null}
+        {progress ? (
+          <View style={styles.card}>
+            <Text style={styles.progressValue}>{progress.counted} counted</Text>
+            <Text style={styles.caption}>
+              {progress.shallow === 0
+                ? 'Shallow reps are not counted.'
+                : progress.shallow === 1
+                  ? '1 shallow rep is not counted.'
+                  : `${progress.shallow} shallow reps are not counted.`}
+            </Text>
+            <Text style={styles.progressValue}>Form score {formatFormScore(progress.formScore)}</Text>
+            {progress.tempoCaption ? <Text style={styles.caption}>{progress.tempoCaption}</Text> : null}
+            <Text style={styles.contribution}>{progress.contribution}</Text>
+            {progress.celebration ? (
+              <View style={styles.celebrate}>
+                <Text style={styles.celebrateTitle}>{progress.celebration.title}</Text>
+                {progress.celebration.also ? <Text style={styles.celebrateAlso}>{progress.celebration.also}</Text> : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.row}>
           <Stat label="Reps" value={String(a.totalReps)} />
@@ -172,6 +217,15 @@ export function SummaryScreen({
         })}
         <Text style={styles.caption}>Down/Up/Gap in seconds. Gap = time since the previous rep.</Text>
       </ScrollView>
+      {onSignIn ? <Button title="Challenge a friend" kind="secondary" onPress={onSignIn} /> : null}
+      {onPickChallenge && offers?.length ? (
+        <>
+          <Text style={styles.section}>Challenge a friend</Text>
+          {offers.map((offer) => (
+            <Button key={offerLabel(offer)} title={offerLabel(offer)} kind="secondary" onPress={() => onPickChallenge(offer)} />
+          ))}
+        </>
+      ) : null}
       <Button title="Done" onPress={onDone} />
     </View>
   );
@@ -181,11 +235,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 8 },
   date: { color: colors.muted, fontSize: 14, marginBottom: 12 },
+  dateBeforeLate: { marginBottom: 4 },
+  late: { color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   row: { flexDirection: 'row', marginHorizontal: -4 },
   card: { backgroundColor: colors.card, borderRadius: 14, padding: 14, marginTop: 8 },
   tip: { color: colors.text, fontSize: 15, lineHeight: 21, marginVertical: 2 },
   section: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 22, marginBottom: 6 },
   caption: { color: colors.muted, fontSize: 13, marginVertical: 6 },
+  progressValue: { color: colors.text, fontSize: 22, fontWeight: '800', marginTop: 8 },
+  contribution: { color: colors.text, fontSize: 16, marginTop: 10 },
+  celebrate: { backgroundColor: colors.bg, borderRadius: 12, padding: 12, marginTop: 12 },
+  celebrateTitle: { color: colors.accent, fontSize: 18, fontWeight: '800' },
+  celebrateAlso: { color: colors.text, fontSize: 15, marginTop: 4 },
   repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   cell: { color: colors.muted, fontSize: 14, fontVariant: ['tabular-nums'] },

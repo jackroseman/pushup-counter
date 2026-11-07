@@ -1,8 +1,12 @@
 import {
   Battle,
   battleSubtitle,
+  battleTitle,
+  streakDayCount,
+  streakStandingLine,
   canPlay,
   canRespond,
+  creatorAttemptCue,
   Friend,
   friendlyError,
   groupBattles,
@@ -20,6 +24,7 @@ import {
   BATTLE_QUEUE_KEY,
   enqueueBattleSet,
   flushBattleQueue,
+  isPermanentFailure,
   isPermanentStatus,
   loadBattleQueue,
   pendingBattleIds,
@@ -51,14 +56,17 @@ const person = (userId: string, extra: Partial<Participant> = {}): Participant =
 const battle = (extra: Partial<Battle> = {}, participants?: Participant[]): Battle => ({
   id: 'b1',
   mode: 'async',
-  format: 'max_reps',
+  kind: 'best_set',
+  windowUnit: null,
   metric: 'rep_count',
   status: 'active',
   durationS: null,
   attemptsAllowed: 1,
+  targetReps: null,
   maxParticipants: 8,
   minQuality: 'good',
   inviteExpiresAt: iso(10 * H),
+  startsAt: null,
   endsAt: iso(20 * H),
   createdAt: iso(-H),
   finishedAt: null,
@@ -76,6 +84,30 @@ describe('battle model', () => {
     expect(canPlay(battle({}, [person('alice'), person('me', { isMe: true, attemptsUsed: 1 })]), NOW)).toBe(false);
     expect(canPlay(battle({}, [person('alice'), person('me', { isMe: true, status: 'invited' })]), NOW)).toBe(false);
     expect(canPlay(battle({ status: 'completed' }), NOW)).toBe(false);
+  });
+
+  it('does not start a special session for a total', () => {
+    const md = battle({ kind: 'total', windowUnit: 'week', metric: null, attemptsAllowed: null }, [person('alice'), person('me', { isMe: true, attemptsUsed: 3 })]);
+    expect(canPlay(md, NOW)).toBe(false);
+    expect(canPlay(battle({ kind: 'total', windowUnit: 'day', endsAt: iso(H) }, [person('me', { isMe: true })]), NOW)).toBe(false);
+    expect(battleTitle({ kind: 'total', windowUnit: 'week', durationS: null })).toBe('Most reps this week');
+    expect(battleTitle({ kind: 'best_set', durationS: 60 })).toBe('Best set · 60 s');
+    expect(battleTitle({ kind: 'total', windowUnit: 'custom', durationS: null })).toBe('Most reps');
+    expect(battleTitle({ kind: 'streak', durationS: null, startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-16T00:00:00Z' })).toBe('Streak · 14 days');
+    expect(battleTitle({ kind: 'team', durationS: null, targetReps: 500 })).toBe('Team · 500');
+    expect(streakDayCount({ startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-09T00:00:00Z' })).toBe(7);
+    expect(canPlay(battle({ kind: 'streak', metric: null, attemptsAllowed: null }), NOW)).toBe(false);
+    expect(canPlay(battle({ kind: 'team', metric: null, attemptsAllowed: null, targetReps: 500 }), NOW)).toBe(false);
+    expect(streakStandingLine({ status: 'accepted', streakFloorReps: 30, eliminatedOn: null })).toBe('Still in · 30 a day');
+    expect(streakStandingLine({ status: 'accepted', eliminatedOn: '2026-11-04' })).toBe('Out · 2026-11-04');
+    const teamWin = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
+      person('me', { isMe: true, isWinner: true, rank: null, validReps: 0 }),
+    ]);
+    expect(battleSubtitle(teamWin, NOW)).toBe('You won');
+    const teamMiss = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
+      person('me', { isMe: true, isWinner: false, rank: null, validReps: 12 }),
+    ]);
+    expect(battleSubtitle(teamMiss, NOW)).toBe('Missed the goal');
   });
 
   it('only the creator may go first while a battle is pending', () => {
@@ -113,7 +145,7 @@ describe('battle model', () => {
     expect(battleSubtitle(third, NOW)).toBe('You came 3 of 3');
     const waiting = battle({}, [person('alice', { status: 'invited' }), person('me', { isMe: true, attemptsUsed: 1 })]);
     expect(battleSubtitle(waiting, NOW)).toBe('Waiting on 1 · 20 h 0 m left');
-    expect(battleSubtitle(battle({ status: 'expired' }), NOW)).toBe('Expired');
+    expect(battleSubtitle(battle({ status: 'expired' }), NOW)).toBe('Ended — not enough people played.');
   });
 
   it('formats time left and scores', () => {
@@ -131,7 +163,8 @@ describe('battle model', () => {
     const t = 'a'.repeat(32);
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: null })).toBe(`pushupcounter://invite/${t}`);
     expect(inviteUrl(t, { scheme: 'pushupcounter', webBaseUrl: 'https://pushup.example.app' })).toBe(`https://pushup.example.app/b/${t}`);
-    expect(inviteShareMessage({ format: 'timed', durationS: 60 }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Jack challenged you to a 60 second pushup battle.*pushupcounter:\/\/invite\/x/);
+    expect(inviteShareMessage({ kind: 'best_set', durationS: 60 }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Jack challenged you: Best set · 60 s.*pushupcounter:\/\/invite\/x/);
+    expect(inviteShareMessage({ kind: 'total', windowUnit: 'week', durationS: null }, 'Jack', 'pushupcounter://invite/x')).toMatch(/Most reps this week/);
   });
 
   it('names people and groups friends', () => {
@@ -146,8 +179,20 @@ describe('battle model', () => {
     expect(g.blocked.map((x) => x.username)).toEqual(['dan']);
   });
 
+  it('does not celebrate a claimed set until the server has it', () => {
+    const base = { attemptsUsed: 0, uploadPending: false, canPlay: true };
+    expect(creatorAttemptCue({ ...base, promptAttempt: true })).toEqual({ showClaimed: false, showPrompt: true });
+    expect(creatorAttemptCue({ ...base, justPlayed: true })).toEqual({ showClaimed: false, showPrompt: true });
+    expect(creatorAttemptCue({ ...base, justPlayed: true, attemptsUsed: 1 })).toEqual({ showClaimed: true, showPrompt: false });
+    expect(creatorAttemptCue({ ...base, justPlayed: true, uploadPending: true })).toEqual({ showClaimed: true, showPrompt: false });
+    expect(creatorAttemptCue({ ...base, promptAttempt: true, canPlay: false })).toEqual({ showClaimed: false, showPrompt: false });
+  });
+
   it('turns server errors into plain messages', () => {
+    expect(friendlyError('a streak face-off needs a goal')).toBe('Set a daily goal first.');
     expect(friendlyError('not friends')).toMatch(/only challenge friends/);
+    expect(friendlyError('set is not recent enough to use')).toMatch(/too old/);
+    expect(friendlyError('timed battle duration must match the set timer')).toMatch(/same timer/);
     expect(friendlyError('invite expired')).toMatch(/expired/);
     expect(friendlyError('that is you')).toBe("That's you!");
     expect(friendlyError('TypeError: Network request failed')).toMatch(/connection/);
@@ -222,6 +267,9 @@ describe('battle upload queue', () => {
     expect(isPermanentStatus(429)).toBe(false);
     expect(isPermanentStatus(500)).toBe(false);
     expect(isPermanentStatus(0)).toBe(false);
+    expect(isPermanentFailure(500, 'set is not recent enough to use')).toBe(true);
+    expect(isPermanentFailure(500, 'timed battle duration must match the set timer')).toBe(true);
+    expect(isPermanentFailure(500, 'network down')).toBe(false);
   });
 
   it('queues, dedupes and uploads oldest first', async () => {
@@ -231,7 +279,8 @@ describe('battle upload queue', () => {
     await enqueueBattleSet(kv, 'b1', { id: 's1', reps: [1] }, 3);
     const q = await loadBattleQueue(kv);
     expect(q.pending.map((p) => p.payload.id)).toEqual(['s2', 's1']);
-    expect(q.pending[1].payload).toEqual({ id: 's1', reps: [1], battleId: 'b1' });
+    expect(q.pending[1].payload).toEqual({ id: 's1', reps: [1], challengeId: 'b1' });
+    expect(q.pending[1].challengeId).toBe('b1');
     expect(pendingBattleIds(q)).toEqual(new Set(['b1', 'b2']));
 
     const sent: unknown[] = [];
@@ -258,6 +307,14 @@ describe('battle upload queue', () => {
       ['after', 0],
     ]);
     expect(q.failed.map((f) => [f.payload.id, f.error])).toEqual([['late', 'deadline passed']]);
+  });
+
+  it('reads a queue saved before challenges renamed battleId', async () => {
+    const kv = new MemoryKV();
+    await kv.setItem(BATTLE_QUEUE_KEY, JSON.stringify({ pending: [{ battleId: 'b9', payload: { id: 'old', battleId: 'b9' }, tries: 0, queuedAt: 1 }], failed: [] }));
+    const q = await loadBattleQueue(kv);
+    expect(q.pending[0].challengeId).toBe('b9');
+    expect(q.pending[0].payload).toEqual({ id: 'old', challengeId: 'b9' });
   });
 
   it('survives corrupt storage', async () => {

@@ -93,7 +93,7 @@ export function supabaseSyncBackend(client: SupabaseClient): SyncBackend {
           .from('sets')
           .select('client_set_id')
           .eq('user_id', userId)
-          .is('battle_id', null)
+          .is('challenge_id', null)
           .range(from, from + 999);
         if (error) throw new Error(error.message);
         ids.push(...(data ?? []).map((r) => r.client_set_id as string));

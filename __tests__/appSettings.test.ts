@@ -4,7 +4,12 @@ const seed = [
   { key: 'form_score_weights', value: { depth: 0.5, consistency: 0.3, tempo: 0.2 } },
   { key: 'async_max_participants', value: 8 },
   { key: 'live_max_participants', value: 2 },
-  { key: 'friends_visibility', value: 'battle_results_only' },
+  { key: 'friends_visibility', value: 'league_and_challenge_results' },
+  { key: 'upload_grace_s', value: 900 },
+  {
+    key: 'league_improvement_weights',
+    value: { per_rep_above_usual: 1, per_goal_day: 20, perfect_week: 30, baseline_weeks: 8, baseline_min_weeks: 3 },
+  },
   { key: 'solo_account_mode', value: 'anonymous_optional_sign_in' },
   { key: 'sign_in_prompt', value: { enabled: true, after_sets: 3, snooze_days: 14 } },
   { key: 'invite_links', value: { scheme: 'pushupcounter', web_base_url: null } },
@@ -40,6 +45,15 @@ describe('app settings', () => {
     expect(s.asyncMaxParticipants).toBe(12);
     expect(s.signInPrompt).toEqual({ enabled: false, afterSets: 5, snoozeDays: 7 });
     expect(s.inviteLinks.webBaseUrl).toBe('https://pushup.example.app');
+    const tuned = parseAppSettings([
+      { key: 'streak_lengths', value: { options_days: [7, 14], min_days: 3, max_days: 40 } },
+      { key: 'team_targets', value: { options: [100, 200], min: 10, max: 1000, default: 200, default_window: 'day' } },
+      { key: 'challenge_custom_max_days', value: 30 },
+    ]);
+    expect(tuned.streakLengths).toEqual({ optionsDays: [7, 14], minDays: 3, maxDays: 40 });
+    expect(tuned.teamTargets.defaultTarget).toBe(200);
+    expect(tuned.teamTargets.defaultWindow).toBe('day');
+    expect(tuned.challengeCustomMaxDays).toBe(30);
   });
 
   it('keeps defaults for invalid values and ignores unknown keys', () => {
@@ -52,7 +66,7 @@ describe('app settings', () => {
     ]);
     expect(s.asyncMaxParticipants).toBe(8);
     expect(s.liveMaxParticipants).toBe(2);
-    expect(s.friendsVisibility).toBe('battle_results_only');
+    expect(s.friendsVisibility).toBe('league_and_challenge_results');
     expect(s.inviteLinks).toEqual({ scheme: 'pushupcounter', webBaseUrl: null });
   });
 

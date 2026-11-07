@@ -5,9 +5,12 @@ import {
   normalizeUsername,
   profileErrorResult,
   suggestUsername,
+  syncProfileTimeZone,
   usernameError,
   USERNAME_RE,
+  type Profile,
 } from '../src/backend/profile';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getInstallationId, INSTALLATION_ID_KEY, newInstallationId } from '../src/backend/installation';
 import {
   DETECTOR_ALGORITHM_VERSION,
@@ -97,6 +100,47 @@ describe('profile helpers', () => {
   });
 });
 
+describe('profile time zone', () => {
+  const profile: Profile = { id: 'user-1', username: 'ada', displayName: 'Ada', timeZone: 'UTC' };
+
+  function clientFor(fail = false) {
+    const updates: string[] = [];
+    const client = {
+      from: () => ({
+        update: (patch: { time_zone: string }) => {
+          updates.push(patch.time_zone);
+          return {
+            eq: () => ({
+              select: () => ({
+                single: async () =>
+                  fail
+                    ? { data: null, error: { message: 'offline' } }
+                    : { data: { id: profile.id, username: profile.username, display_name: profile.displayName, time_zone: patch.time_zone }, error: null },
+              }),
+            }),
+          };
+        },
+      }),
+    };
+    return { client: client as unknown as SupabaseClient, updates };
+  }
+
+  it('writes the phone zone when the profile zone differs', async () => {
+    const { client, updates } = clientFor();
+    const next = await syncProfileTimeZone(client, profile, 'America/New_York');
+    expect(updates).toEqual(['America/New_York']);
+    expect(next.timeZone).toBe('America/New_York');
+  });
+
+  it('leaves the profile alone when the zone already matches or the write fails', async () => {
+    const same = clientFor();
+    expect(await syncProfileTimeZone(same.client, profile, 'UTC')).toBe(profile);
+    expect(same.updates).toEqual([]);
+    const failed = clientFor(true);
+    expect(await syncProfileTimeZone(failed.client, profile, 'Europe/Paris')).toBe(profile);
+  });
+});
+
 describe('installation id', () => {
   it('is created once and reused', async () => {
     const kv = new MemoryKV();
@@ -121,6 +165,13 @@ describe('set payload', () => {
     ]);
     expect(p.traceResolutionMs).toBe(100);
     expect((p.reps as unknown[]).length).toBe(3);
+  });
+
+  it('sends the set zone, and the phone zone when an older set has none', () => {
+    expect(toSetPayload(record('s1', T0, 2, { timeZone: 'Asia/Tokyo' }), ctx).timeZone).toBe('Asia/Tokyo');
+    const fallback = toSetPayload(record('s1', T0), ctx).timeZone;
+    expect(typeof fallback).toBe('string');
+    expect(fallback).not.toBe('');
   });
 
   it('sends legacy v1 records without detector config', () => {
@@ -165,7 +216,7 @@ describe('set payload', () => {
     expect(skipReason(record('b', T0, 0))).toBe('no reps');
     expect(skipReason({ ...record('c', T0), endedAt: T0 - 1 })).toBe('bad times');
     expect(skipReason({ ...record('d', T0), endedAt: T0 + 3 * 3600_000 })).toMatch(/2 hours/);
-    expect(skipReason({ ...record('e', T0), battleId: '11111111-1111-4111-8111-111111111111' })).toMatch(/battle/);
+    expect(skipReason({ ...record('e', T0), battleId: '11111111-1111-4111-8111-111111111111' })).toMatch(/challenge/);
   });
 
   it('classifies errors', () => {

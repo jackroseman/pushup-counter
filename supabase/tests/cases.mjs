@@ -750,3 +750,158 @@ Object.assign(checks, {
     ok(Number(seen.seen) === 0, 'raw set leaked ' + JSON.stringify(seen));
   },
 });
+
+const NA = 'a7a7a7a7-a7a7-4a7a-8a7a-a7a7a7a7a7a7';
+const NB = 'b8b8b8b8-b8b8-4b8b-8b8b-b8b8b8b8b8b8';
+const NC = 'c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c9c9';
+const ND = 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0';
+
+steps.push(
+  ['slice7: nudge helpers stay private and anon cannot read prefs (expect ERR)', `
+    select count(*)::int as exposed from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname in ('queue_personal_nudges', 'league_board', 'nudge_pref');
+    set role anon; select * from notification_prefs; reset role;
+  `],
+  ['slice7: setup accounts, tokens, and prefs', `
+    insert into auth.users values ('${NA}'),('${NB}'),('${NC}'),('${ND}');
+    ${as(NA)} insert into profiles(id, username, display_name, time_zone) values ('${NA}', 'nina', 'Nina', 'UTC'); reset role;
+    ${as(NB)} insert into profiles(id, username, display_name, time_zone) values ('${NB}', 'nate', 'Nate', 'UTC'); reset role;
+    ${as(NC)} insert into profiles(id, username, display_name, time_zone) values ('${NC}', 'cleo', 'Cleo', 'UTC'); reset role;
+    ${as(ND)} insert into profiles(id, username, display_name, time_zone) values ('${ND}', 'drew', 'Drew', 'UTC'); reset role;
+    insert into goal_enrollments (user_id, custom_daily_reps, started_on, recorded_time_zone) values
+      ('${NB}', 10, (now() at time zone 'UTC')::date - 3, 'UTC'),
+      ('${NC}', 4, (now() at time zone 'UTC')::date - 3, 'UTC'),
+      ('${ND}', 30, (now() at time zone 'UTC')::date - 1, 'UTC');
+    ${as(NA)} select register_push_token(register_device('nudge-na','iPhone17,1','26.1'), 'ExponentPushToken[nudgena]'); reset role;
+    ${as(NB)} select register_push_token(register_device('nudge-nb','iPhone17,1','26.1'), 'ExponentPushToken[nudgenb]'); reset role;
+    ${as(ND)} select register_push_token(register_device('nudge-nd','iPhone17,1','26.1'), 'ExponentPushToken[nudgend]'); reset role;
+    insert into notification_prefs (user_id, daily_nudge, pass_ping, weekly_recap, quiet_start, quiet_end, nudge_local_time, recap_weekday, recap_local_time)
+    values
+      ('${NA}', true, true, false, '21:00', '08:00', '18:00', 7, '18:00'),
+      ('${NB}', true, true, false, '21:00', '08:00', '18:00', 7, '18:00'),
+      ('${ND}', true, false, true,
+        ((now() at time zone 'UTC') - interval '2 hours')::time,
+        ((now() at time zone 'UTC') + interval '2 hours')::time,
+        '00:00', extract(isodow from (now() at time zone 'UTC'))::smallint, '00:00');
+    ${as(NA)} select send_friend_request('nate'); reset role;
+    ${as(NB)} select respond_friend_request('${NA}', true); reset role;
+    ${as(NA)} select send_friend_request('cleo'); reset role;
+    ${as(NC)} select respond_friend_request('${NA}', true); reset role;
+  `],
+  ['slice7: a person cannot read or write someone else prefs', `
+    ${as(NA)} select count(*)::int as mine from notification_prefs where user_id = '${NA}';
+    select count(*)::int as drew from notification_prefs where user_id = '${ND}'; reset role;
+    ${as(NA)} update notification_prefs set daily_nudge = false where user_id = '${ND}'; reset role;
+    select daily_nudge as drew_still from notification_prefs where user_id = '${ND}';
+  `],
+  ['slice7: daily nudge waits out quiet hours, then sends once', `
+    select public.finalize_challenges();
+    select count(*)::int as queued, bool_and(not_before is not null) as held
+      from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
+    select set_config('request.jwt.claim.sub','',false); set role service_role;
+    select count(*)::int as claimed from public.claim_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
+    reset role;
+    select sent_at is null as still_waiting from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
+    update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${ND}';
+    select set_config('request.jwt.claim.sub','',false); set role service_role;
+    select kind, (facts->'nudge'->>'target')::int as target, (facts->'nudge'->>'reps')::int as reps
+      from public.claim_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
+    reset role;
+    select public.finalize_challenges();
+    select count(*)::int as still_one from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
+  `],
+  ['slice7: no token and no goal means no server daily reminder', `
+    select count(*)::int as cleo from private.notification_outbox where kind = 'daily_nudge' and user_id = '${NC}';
+    select count(*)::int as nina from private.notification_outbox where kind = 'daily_nudge' and user_id = '${NA}';
+  `],
+  ['slice7: a pass on both boards sends only total, and improvement is its own ping', `
+    ${solo('nudge-na', 5, NA)}
+    ${solo('nudge-nb', 12, NB)}
+    ${solo('nudge-nc', 4, NC)}
+    select public.finalize_challenges();
+    select public.finalize_challenges();
+    select actor_id::text = '${NB}' as nate, dedupe_key like 'total:%' as total_key
+      from private.notification_outbox where kind = 'pass_ping' and user_id = '${NA}' and actor_id = '${NB}';
+    select actor_id::text = '${NC}' as cleo, dedupe_key like 'improvement:%' as imp_key
+      from private.notification_outbox where kind = 'pass_ping' and user_id = '${NA}' and actor_id = '${NC}';
+    select count(*)::int as n from private.notification_outbox where kind = 'pass_ping' and user_id = '${NA}';
+  `],
+  ['slice7: the pass board matches my_league', `
+    ${as(NA)} select my_league() as my_league; reset role;
+    select user_id::text = '${NA}' as me, reps, points from private.league_board('${NA}', now()) where user_id = '${NA}';
+  `],
+  ['slice7: Sunday recap is once per week and names the week', `
+    select dedupe_key = (
+      ((now() at time zone 'UTC')::date - (extract(isodow from (now() at time zone 'UTC')::date)::int - 1))
+    )::text as week_key
+    from private.notification_outbox where kind = 'weekly_recap' and user_id = '${ND}';
+    select count(*)::int as n from private.notification_outbox where kind = 'weekly_recap' and user_id = '${ND}';
+  `],
+  ['slice7: a window challenge pings once per friend per day', `
+    ${as(NA)} ${create('nwin', { kind: 'total', window: 'week' }, [NB])} reset role;
+    ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nwin')}::uuid and user_id = '${NB}'; reset role;
+    ${solo('nudge-win-1', 6, NA)}
+    ${solo('nudge-win-2', 6, NA)}
+    select count(*)::int as n, min(dedupe_key) as dedupe
+      from private.notification_outbox
+     where kind = 'set_submitted' and user_id = '${NB}' and challenge_id = ${ctx('nwin')}::uuid;
+  `],
+  ['slice7: ranks are only the caller aggregate', `
+    ${as(NA)} select my_recap_ranks(null) as ranks; reset role;
+    ${as(NC)} select my_recap_ranks(null) as ranks; reset role;
+  `],
+);
+
+Object.assign(checks, {
+  'slice7: a person cannot read or write someone else prefs': (r) => {
+    ok(r[0][0].mine === 1, 'own row ' + JSON.stringify(r[0]));
+    ok(r[1][0].drew === 0, 'other row visible ' + JSON.stringify(r[1]));
+    ok(r[2][0].drew_still === true, 'other row changed ' + JSON.stringify(r[2]));
+  },
+  'slice7: daily nudge waits out quiet hours, then sends once': (r) => {
+    const queued = r.find((set) => set[0] && 'queued' in set[0])[0];
+    ok(queued.queued === 1 && queued.held === true, 'queue ' + JSON.stringify(queued));
+    const claimed = r.find((set) => set[0] && 'claimed' in set[0])[0];
+    ok(claimed.claimed === 0, 'sent during quiet hours ' + JSON.stringify(claimed));
+    const waiting = r.find((set) => set[0] && 'still_waiting' in set[0])[0];
+    ok(waiting.still_waiting === true, 'quiet hours deleted it ' + JSON.stringify(waiting));
+    const sent = r.find((set) => set[0] && 'target' in set[0])[0];
+    ok(sent.kind === 'daily_nudge' && sent.target === 30 && sent.reps === 0, 'text facts ' + JSON.stringify(sent));
+    const once = r.find((set) => set[0] && 'still_one' in set[0])[0];
+    ok(once.still_one === 1, 'dedupe ' + JSON.stringify(once));
+  },
+  'slice7: no token and no goal means no server daily reminder': (r) => {
+    ok(r[0][0].cleo === 0 && r[1][0].nina === 0, JSON.stringify(r));
+  },
+  'slice7: a pass on both boards sends only total, and improvement is its own ping': (r) => {
+    const nate = r.find((set) => set[0] && 'nate' in set[0])[0];
+    const cleo = r.find((set) => set[0] && 'cleo' in set[0])[0];
+    const n = r.find((set) => set[0] && 'n' in set[0] && !('nate' in set[0]))[0];
+    ok(nate.nate === true && nate.total_key === true, 'total ' + JSON.stringify(nate));
+    ok(cleo.cleo === true && cleo.imp_key === true, 'improvement ' + JSON.stringify(cleo));
+    ok(n.n === 2, 'count ' + JSON.stringify(n));
+  },
+  'slice7: the pass board matches my_league': (r) => {
+    const doc = leagueDoc(r);
+    const nina = doc.total.find((row) => row.userId === NA);
+    const ninaImp = doc.improvement.find((row) => row.userId === NA);
+    const board = r.map((set) => set[0]).reverse().find((row) => row && row.me != null);
+    ok(Number(nina.reps) === Number(board.reps), 'reps ' + JSON.stringify({ nina, board }));
+    ok(Number(ninaImp.points) === Number(board.points), 'points ' + JSON.stringify({ ninaImp, board }));
+  },
+  'slice7: Sunday recap is once per week and names the week': (r) => {
+    ok(r[0][0].week_key === true, 'key ' + JSON.stringify(r[0]));
+    ok(r[1][0].n === 1, 'count ' + JSON.stringify(r[1]));
+  },
+  'slice7: a window challenge pings once per friend per day': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.n === 1 && /^\d{4}-\d{2}-\d{2}$/.test(row.dedupe), 'window ' + JSON.stringify(row));
+  },
+  'slice7: ranks are only the caller aggregate': (r) => {
+    const nina = typeof r[0][0].ranks === 'string' ? JSON.parse(r[0][0].ranks) : r[0][0].ranks;
+    const cleo = typeof r[1][0].ranks === 'string' ? JSON.parse(r[1][0].ranks) : r[1][0].ranks;
+    ok(nina.friends === true && nina.totalRank >= 1 && !('reps' in nina), 'nina ' + JSON.stringify(nina));
+    ok(cleo.friends === true && !('userId' in cleo), 'cleo ' + JSON.stringify(cleo));
+  },
+});

@@ -4,7 +4,7 @@ import { Button } from '../components/ui';
 import { HowToSheet } from '../components/HowToSheet';
 import { Ring } from '../components/Ring';
 import { SignInCard } from '../components/SignInCard';
-import { TodayModel } from '../progress';
+import { TodayModel, WeekCardModel, weekCardLine } from '../progress';
 import { colors } from '../theme';
 
 export function TodayScreen({
@@ -12,10 +12,12 @@ export function TodayScreen({
   depth,
   howToOpen,
   banner,
+  week,
   savedSets,
   onStart,
   onGoal,
   onAccount,
+  onWeek,
   onOpenHowTo,
   onCloseHowTo,
 }: {
@@ -23,6 +25,8 @@ export function TodayScreen({
   depth: boolean;
   howToOpen: boolean;
   banner?: string | null;
+  week?: WeekCardModel | null;
+  onWeek?: () => void;
   savedSets: number;
   onStart: () => void;
   onGoal: () => void;
@@ -46,6 +50,14 @@ export function TodayScreen({
         {view.usualLine ? <Text style={styles.usual}>{view.usualLine}</Text> : null}
         {view.travelLine ? <Text style={styles.note}>{view.travelLine}</Text> : null}
       </View>
+
+      {week && onWeek ? (
+        <Pressable accessibilityRole="button" onPress={onWeek} style={styles.week}>
+          <Text style={styles.weekTitle}>{week.title}</Text>
+          <Text style={styles.weekLine}>{weekCardLine(week)}</Text>
+          {week.ranks ? <Text style={styles.weekRanks}>{week.ranks}</Text> : null}
+        </Pressable>
+      ) : null}
 
       {!depth ? (
         <Text style={styles.warn}>
@@ -78,6 +90,10 @@ const styles = StyleSheet.create({
   streak: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: 4 },
   usual: { color: colors.muted, fontSize: 16, marginTop: 6, textAlign: 'center' },
   note: { color: colors.muted, fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  week: { backgroundColor: colors.card, borderRadius: 16, padding: 16, marginTop: 8, marginBottom: 8 },
+  weekTitle: { color: colors.muted, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  weekLine: { color: colors.text, fontSize: 18, fontWeight: '700', marginTop: 4 },
+  weekRanks: { color: colors.muted, fontSize: 15, marginTop: 4 },
   warn: { color: colors.danger, fontSize: 15, lineHeight: 21, marginTop: 12 },
   textButton: { alignItems: 'center', paddingVertical: 12 },
   textButtonLabel: { color: colors.accent, fontSize: 16, fontWeight: '700' },

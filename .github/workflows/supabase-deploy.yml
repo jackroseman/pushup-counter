@@ -67,6 +67,14 @@ jobs:
         if: steps.secrets.outputs.ready == 'true'
         run: supabase db push --linked --yes
 
+      # Order is safe either way. This job applies the migration first, then the functions.
+      # claim_notifications is what the already-deployed notify calls, and it does not
+      # select daily_nudge, pass_ping, or weekly_recap, so that gap cannot mark them sent.
+      # The function deployed below leases a row and sets sent_at only after Expo was
+      # called with real text. Unknown kinds are released, not dropped. Deploying the
+      # function first would make drain fail until lease_notifications exists; it would
+      # not mark a row sent.
+
       # Edge Functions authorize requests themselves (see each index.ts), so the platform JWT
       # check is off. --use-api bundles on Supabase's side (no Docker needed).
       # `version: latest` is CLI v3, which will not deploy in CI unless --yes is passed:

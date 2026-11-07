@@ -755,6 +755,8 @@ const NA = 'a7a7a7a7-a7a7-4a7a-8a7a-a7a7a7a7a7a7';
 const NB = 'b8b8b8b8-b8b8-4b8b-8b8b-b8b8b8b8b8b8';
 const NC = 'c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c9c9';
 const ND = 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0';
+const NE = 'e4e4e4e4-e4e4-4e4e-8e4e-e4e4e4e4e4e4';
+const NG = 'f5f5f5f5-f5f5-4f5f-8f5f-f5f5f5f5f5f5';
 
 steps.push(
   ['slice7: nudge helpers stay private and anon cannot read prefs (expect ERR)', `
@@ -783,7 +785,16 @@ steps.push(
       ('${ND}', true, false, true,
         ((now() at time zone 'UTC') - interval '2 hours')::time,
         ((now() at time zone 'UTC') + interval '2 hours')::time,
-        '00:00', extract(isodow from (now() at time zone 'UTC'))::smallint, '00:00');
+        '00:00', extract(isodow from (now() at time zone 'UTC'))::smallint, '00:00')
+    on conflict (user_id) do update set
+      daily_nudge = excluded.daily_nudge,
+      pass_ping = excluded.pass_ping,
+      weekly_recap = excluded.weekly_recap,
+      quiet_start = excluded.quiet_start,
+      quiet_end = excluded.quiet_end,
+      nudge_local_time = excluded.nudge_local_time,
+      recap_weekday = excluded.recap_weekday,
+      recap_local_time = excluded.recap_local_time;
     ${as(NA)} select send_friend_request('nate'); reset role;
     ${as(NB)} select respond_friend_request('${NA}', true); reset role;
     ${as(NA)} select send_friend_request('cleo'); reset role;
@@ -800,14 +811,18 @@ steps.push(
     select count(*)::int as queued, bool_and(not_before is not null) as held
       from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
     select set_config('request.jwt.claim.sub','',false); set role service_role;
-    select count(*)::int as claimed from public.claim_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
+    select count(*)::int as claimed from public.lease_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
     reset role;
     select sent_at is null as still_waiting from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
     update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${ND}';
     select set_config('request.jwt.claim.sub','',false); set role service_role;
     select kind, (facts->'nudge'->>'target')::int as target, (facts->'nudge'->>'reps')::int as reps
-      from public.claim_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
+      from public.lease_notifications(50) where user_id = '${ND}' and kind = 'daily_nudge';
     reset role;
+    select public.settle_notifications(
+      array(select o.id from private.notification_outbox o where o.kind = 'daily_nudge' and o.user_id = '${ND}'),
+      '{}'::bigint[]);
+    select sent_at is not null as marked_sent from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
     select public.finalize_challenges();
     select count(*)::int as still_one from private.notification_outbox where kind = 'daily_nudge' and user_id = '${ND}';
   `],
@@ -851,6 +866,58 @@ steps.push(
     ${as(NA)} select my_recap_ranks(null) as ranks; reset role;
     ${as(NC)} select my_recap_ranks(null) as ranks; reset role;
   `],
+  ['slice7: anon cannot lease or settle (expect ERR)', `
+    set role anon; select * from public.lease_notifications(1); reset role;
+  `],
+  ['slice7: the old claim leaves a new kind unsent, and settle records the attempt', `
+    update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${NA}';
+    insert into private.notification_outbox (kind, user_id, dedupe_key) values
+      ('friend_request', '${NA}', 'hold-old'),
+      ('daily_nudge', '${NA}', '1970-01-01');
+    select set_config('request.jwt.claim.sub','',false); set role service_role;
+    select count(*)::int as claimed_nudge from public.claim_notifications(1000) where kind = 'daily_nudge';
+    reset role;
+    select sent_at is null as nudge_unsent, failed_at is null as nudge_open
+      from private.notification_outbox where kind = 'daily_nudge' and user_id = '${NA}' and dedupe_key = '1970-01-01';
+    select sent_at is not null as old_kind_sent
+      from private.notification_outbox where kind = 'friend_request' and user_id = '${NA}' and dedupe_key = 'hold-old';
+    select set_config('request.jwt.claim.sub','',false); set role service_role;
+    select count(*)::int as leased from public.lease_notifications(50)
+     where user_id = '${NA}' and kind = 'daily_nudge';
+    select count(*)::int as second from public.lease_notifications(50)
+     where user_id = '${NA}' and kind = 'daily_nudge';
+    reset role;
+    select sent_at is null as leased_not_sent, leased_until is not null as held
+      from private.notification_outbox where kind = 'daily_nudge' and user_id = '${NA}' and dedupe_key = '1970-01-01';
+    select public.release_notifications(array(
+      select o.id from private.notification_outbox o
+       where o.kind = 'daily_nudge' and o.user_id = '${NA}' and o.dedupe_key = '1970-01-01'));
+    select set_config('request.jwt.claim.sub','',false); set role service_role;
+    select count(*)::int as again from public.lease_notifications(50)
+     where user_id = '${NA}' and kind = 'daily_nudge';
+    reset role;
+    select public.settle_notifications('{}'::bigint[], array(
+      select o.id from private.notification_outbox o
+       where o.kind = 'daily_nudge' and o.user_id = '${NA}' and o.dedupe_key = '1970-01-01'));
+    select sent_at is null as not_sent, failed_at is not null as failed
+      from private.notification_outbox where kind = 'daily_nudge' and user_id = '${NA}' and dedupe_key = '1970-01-01';
+  `],
+  ['slice7: a lead from before prefs exist does not ping, a later pass does', `
+    insert into auth.users values ('${NE}'),('${NG}');
+    ${as(NE)} insert into profiles(id, username, display_name, time_zone) values ('${NE}', 'elle', 'Elle', 'UTC'); reset role;
+    ${as(NG)} insert into profiles(id, username, display_name, time_zone) values ('${NG}', 'gabe', 'Gabe', 'UTC'); reset role;
+    ${as(NE)} select register_push_token(register_device('nudge-ne','iPhone17,1','26.1'), 'ExponentPushToken[nudgene]'); reset role;
+    ${as(NE)} select send_friend_request('nate'); reset role;
+    ${as(NB)} select respond_friend_request('${NE}', true); reset role;
+    ${as(NE)} select send_friend_request('gabe'); reset role;
+    ${as(NG)} select respond_friend_request('${NE}', true); reset role;
+    select public.finalize_challenges();
+    select count(*)::int as historical from private.notification_outbox where kind = 'pass_ping' and user_id = '${NE}';
+    ${solo('nudge-ng', 8, NG)}
+    select public.finalize_challenges();
+    select count(*)::int as later, bool_or(actor_id::text = '${NG}') as gabe, bool_and(dedupe_key like 'total:%') as total_key
+      from private.notification_outbox where kind = 'pass_ping' and user_id = '${NE}';
+  `],
 );
 
 Object.assign(checks, {
@@ -870,6 +937,8 @@ Object.assign(checks, {
     ok(sent.kind === 'daily_nudge' && sent.target === 30 && sent.reps === 0, 'text facts ' + JSON.stringify(sent));
     const once = r.find((set) => set[0] && 'still_one' in set[0])[0];
     ok(once.still_one === 1, 'dedupe ' + JSON.stringify(once));
+    const marked = r.find((set) => set[0] && 'marked_sent' in set[0])[0];
+    ok(marked.marked_sent === true, 'sent before settle ' + JSON.stringify(marked));
   },
   'slice7: no token and no goal means no server daily reminder': (r) => {
     ok(r[0][0].cleo === 0 && r[1][0].nina === 0, JSON.stringify(r));
@@ -903,5 +972,28 @@ Object.assign(checks, {
     const cleo = typeof r[1][0].ranks === 'string' ? JSON.parse(r[1][0].ranks) : r[1][0].ranks;
     ok(nina.friends === true && nina.totalRank >= 1 && !('reps' in nina), 'nina ' + JSON.stringify(nina));
     ok(cleo.friends === true && !('userId' in cleo), 'cleo ' + JSON.stringify(cleo));
+  },
+  'slice7: the old claim leaves a new kind unsent, and settle records the attempt': (r) => {
+    const claimed = r.find((set) => set[0] && 'claimed_nudge' in set[0])[0];
+    const nudge = r.find((set) => set[0] && 'nudge_unsent' in set[0])[0];
+    const oldKind = r.find((set) => set[0] && 'old_kind_sent' in set[0])[0];
+    const leased = r.find((set) => set[0] && 'leased' in set[0])[0];
+    const second = r.find((set) => set[0] && 'second' in set[0])[0];
+    const held = r.find((set) => set[0] && 'held' in set[0])[0];
+    const again = r.find((set) => set[0] && 'again' in set[0])[0];
+    const failed = r.find((set) => set[0] && 'failed' in set[0])[0];
+    ok(claimed.claimed_nudge === 0, 'old claim took the nudge ' + JSON.stringify(claimed));
+    ok(nudge.nudge_unsent === true && nudge.nudge_open === true, 'nudge dropped ' + JSON.stringify(nudge));
+    ok(oldKind.old_kind_sent === true, 'old kind not claimed ' + JSON.stringify(oldKind));
+    ok(leased.leased === 1 && second.second === 0, 'lease ' + JSON.stringify({ leased, second }));
+    ok(held.leased_not_sent === true && held.held === true, 'lease marked sent ' + JSON.stringify(held));
+    ok(again.again === 1, 'release ' + JSON.stringify(again));
+    ok(failed.not_sent === true && failed.failed === true, 'fail ' + JSON.stringify(failed));
+  },
+  'slice7: a lead from before prefs exist does not ping, a later pass does': (r) => {
+    const historical = r.find((set) => set[0] && 'historical' in set[0])[0];
+    const later = r.find((set) => set[0] && 'later' in set[0])[0];
+    ok(historical.historical === 0, 'backlog ' + JSON.stringify(historical));
+    ok(later.later === 1 && later.gabe === true && later.total_key === true, 'later ' + JSON.stringify(later));
   },
 });

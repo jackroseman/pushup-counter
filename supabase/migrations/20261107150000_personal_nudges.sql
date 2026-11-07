@@ -1,7 +1,9 @@
 -- Slice 7: personal nudges. Expand-only for the app that is already installed.
 -- notification_prefs is a new table. dedupe_key defaults to '' so rows that were
 -- unique before stay unique. Old outbox kinds stay valid. claim_notifications keeps
--- its arguments and its result columns. Quiet hours and not_before only delay a row.
+-- its arguments and its result columns, and it only claims kinds the previous notify
+-- function can send. Quiet hours and not_before only delay a row. sent_at is set
+-- only after a push was attempted with real text.
 
 insert into public.app_settings (key, value, description) values
   ('notification_defaults',
@@ -21,6 +23,7 @@ create table public.notification_prefs (
   nudge_local_time time not null default '18:00',
   recap_weekday    smallint not null default 7 check (recap_weekday between 1 and 7),
   recap_local_time time not null default '18:00',
+  created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 
@@ -61,9 +64,32 @@ create policy notification_prefs_delete on public.notification_prefs
 revoke all on public.notification_prefs from public, anon, authenticated;
 grant select, insert, update, delete on public.notification_prefs to authenticated;
 
+-- Existing accounts start at this migration. New accounts start when the profile is created.
+-- A pass ping only fires for a crossing set received at or after that instant.
+create or replace function private.tg_profile_notification_prefs()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.notification_prefs (user_id) values (new.id) on conflict do nothing;
+  return new;
+end $$;
+
+create trigger profile_notification_prefs
+  after insert on public.profiles
+  for each row execute function private.tg_profile_notification_prefs();
+
+insert into public.notification_prefs (user_id)
+select id from public.profiles
+on conflict do nothing;
+
 alter table private.notification_outbox
   add column dedupe_key text not null default '',
-  add column not_before timestamptz;
+  add column not_before timestamptz,
+  add column failed_at timestamptz,
+  add column leased_until timestamptz;
 
 do $$
 declare cname text;
@@ -502,6 +528,7 @@ declare
   me record;
   led record;
   v_zone text;
+  v_live timestamptz;
   v_today date;
   v_week date;
   v_local time;
@@ -553,22 +580,35 @@ begin
       on conflict do nothing;
     end if;
 
+    -- A pass is a set that crosses after this account's prefs exist. Someone who was
+    -- already ahead when the feature went live does not get a backlog ping this week.
     if pref.pass_ping then
+      select n.created_at into v_live from public.notification_prefs n where n.user_id = r.id;
       select * into me from private.league_board(r.id, now()) b where b.user_id = r.id;
-      if me.user_id is not null then
+      if v_live is not null and me.user_id is not null then
         for pal in
           select * from private.league_board(r.id, now()) b where b.user_id <> r.id
         loop
           if pal.reps > me.reps or pal.points > me.points then
             select * into led from private.lead_set(pal.user_id, now(), me.reps, me.points);
-            if pal.reps > me.reps and led.total_set is not null then
+            if pal.reps > me.reps and led.total_set is not null
+               and exists (
+                 select 1 from public.sets s
+                  where s.id = led.total_set and s.received_at >= v_live
+               )
+            then
               insert into private.notification_outbox (kind, user_id, actor_id, dedupe_key, not_before)
               values ('pass_ping', r.id, pal.user_id, 'total:' || to_char(me.week_start, 'YYYY-MM-DD'), now())
               on conflict do nothing;
             end if;
             -- The same set on both boards sends only the Total ping.
             if pal.points > me.points and led.improvement_set is not null
-               and not (pal.reps > me.reps and led.total_set is not distinct from led.improvement_set) then
+               and not (pal.reps > me.reps and led.total_set is not distinct from led.improvement_set)
+               and exists (
+                 select 1 from public.sets s
+                  where s.id = led.improvement_set and s.received_at >= v_live
+               )
+            then
               insert into private.notification_outbox (kind, user_id, actor_id, dedupe_key, not_before)
               values ('pass_ping', r.id, pal.user_id, 'improvement:' || to_char(me.week_start, 'YYYY-MM-DD'), now())
               on conflict do nothing;
@@ -1033,6 +1073,27 @@ as $$
   ));
 $$;
 
+-- A row older than a day, or kept 30 days, is not a successful send.
+create function private.expire_notifications()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update private.notification_outbox o
+     set failed_at = now(),
+         leased_until = null
+   where o.sent_at is null
+     and o.failed_at is null
+     and o.created_at <= now() - interval '1 day'
+     and (o.not_before is null or o.not_before <= now());
+  delete from private.notification_outbox o where o.created_at < now() - interval '30 days';
+end $$;
+
+-- Kinds the notify function already in production can turn into text. The migration
+-- runs before that function is replaced, and the old function marks whatever this
+-- claim returns as sent. Personal nudges stay out of it so that gap cannot drop them.
 create function public.claim_notifications(p_limit integer default 200)
 returns table (id bigint, user_id uuid, kind text, challenge_id uuid, facts jsonb)
 language plpgsql
@@ -1040,15 +1101,17 @@ security definer
 set search_path = public
 as $$
 begin
-  update private.notification_outbox o set sent_at = now()
-   where o.sent_at is null
-     and o.created_at <= now() - interval '1 day'
-     and (o.not_before is null or o.not_before <= now());
-  delete from private.notification_outbox o where o.created_at < now() - interval '30 days';
+  perform private.expire_notifications();
   return query
     with picked as (
       select o.id from private.notification_outbox o
        where o.sent_at is null
+         and o.failed_at is null
+         and o.kind in (
+           'friend_request', 'friend_accepted', 'challenge_invite',
+           'invite_accepted', 'invite_declined', 'set_submitted', 'challenge_result',
+           'challenge_expired', 'challenge_cancelled', 'challenge_reminder', 'challenge_reminder_half'
+         )
          and (o.not_before is null or o.not_before <= now())
          and not coalesce(private.in_quiet(o.user_id, now()), false)
        order by o.id
@@ -1064,8 +1127,85 @@ begin
       from done d order by d.id;
 end $$;
 
+-- Holds due rows without calling them sent. A crashed drain leases them again
+-- after the hold expires. sent_at is a later, separate decision.
+create function public.lease_notifications(p_limit integer default 200)
+returns table (id bigint, user_id uuid, kind text, challenge_id uuid, facts jsonb)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform private.expire_notifications();
+  return query
+    with picked as (
+      select o.id from private.notification_outbox o
+       where o.sent_at is null
+         and o.failed_at is null
+         and (o.leased_until is null or o.leased_until <= now())
+         and (o.not_before is null or o.not_before <= now())
+         and not coalesce(private.in_quiet(o.user_id, now()), false)
+       order by o.id
+       limit least(greatest(coalesce(p_limit, 200), 1), 1000)
+       for update skip locked
+    ), held as (
+      update private.notification_outbox o
+         set leased_until = now() + interval '10 minutes'
+        from picked
+       where o.id = picked.id
+      returning o.id, o.user_id, o.kind, o.challenge_id, o.actor_id, o.dedupe_key
+    )
+    select h.id, h.user_id, h.kind, h.challenge_id,
+           private.notification_facts(h.kind, h.user_id, h.challenge_id, h.actor_id, h.dedupe_key)
+      from held h order by h.id;
+end $$;
+
+-- p_sent: Expo was called with real text. p_failed: a known kind had nothing to send.
+create function public.settle_notifications(p_sent bigint[], p_failed bigint[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update private.notification_outbox o
+     set sent_at = now(),
+         leased_until = null
+   where o.id = any(coalesce(p_sent, '{}'::bigint[]))
+     and o.sent_at is null
+     and o.failed_at is null;
+  update private.notification_outbox o
+     set failed_at = now(),
+         leased_until = null
+   where o.id = any(coalesce(p_failed, '{}'::bigint[]))
+     and o.sent_at is null
+     and o.failed_at is null
+     and not (o.id = any(coalesce(p_sent, '{}'::bigint[])));
+end $$;
+
+-- Unknown kinds and attempts that never reached Expo stay queued.
+create function public.release_notifications(p_ids bigint[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update private.notification_outbox o
+     set leased_until = null
+   where o.id = any(coalesce(p_ids, '{}'::bigint[]))
+     and o.sent_at is null
+     and o.failed_at is null;
+end $$;
+
 revoke all on function public.claim_notifications(integer) from public, anon, authenticated;
 grant execute on function public.claim_notifications(integer) to service_role;
+revoke all on function public.lease_notifications(integer) from public, anon, authenticated;
+grant execute on function public.lease_notifications(integer) to service_role;
+revoke all on function public.settle_notifications(bigint[], bigint[]) from public, anon, authenticated;
+grant execute on function public.settle_notifications(bigint[], bigint[]) to service_role;
+revoke all on function public.release_notifications(bigint[]) from public, anon, authenticated;
+grant execute on function public.release_notifications(bigint[]) to service_role;
 
 revoke all on function
   private.nudge_pref(uuid),
@@ -1076,6 +1216,8 @@ revoke all on function
   private.queue_personal_nudges(),
   private.tg_notify_window_set(),
   private.tg_notification_prefs_touch(),
+  private.tg_profile_notification_prefs(),
+  private.expire_notifications(),
   private.daily_nudge_facts(uuid),
   private.pass_facts(uuid, uuid, text),
   private.recap_facts(uuid, text),

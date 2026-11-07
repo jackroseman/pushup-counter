@@ -24,6 +24,28 @@ export type NotificationKind =
   | 'pass_ping'
   | 'weekly_recap';
 
+const KNOWN_KINDS: readonly NotificationKind[] = [
+  'friend_request',
+  'friend_accepted',
+  'challenge_invite',
+  'invite_accepted',
+  'invite_declined',
+  'set_submitted',
+  'challenge_result',
+  'challenge_expired',
+  'challenge_cancelled',
+  'challenge_reminder',
+  'challenge_reminder_half',
+  'daily_nudge',
+  'pass_ping',
+  'weekly_recap',
+];
+
+/** False for a kind this build cannot render. Those rows stay queued for a newer sender. */
+export function isKnownNotificationKind(kind: string): boolean {
+  return (KNOWN_KINDS as readonly string[]).includes(kind);
+}
+
 interface Person { username?: string; displayName?: string }
 interface Score {
   username?: string;

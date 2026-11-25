@@ -188,6 +188,9 @@ steps.push(
   ['p3: F plays first while pending', `${battleSet('p3-f', 20, 'b1', F)} select ${outbox('set_submitted', G, 'b1')} n;`],
   ['p3: users cannot claim notifications (expect ERR)', `${as(F)} select * from claim_notifications(10); reset role;`],
   ['p3: users cannot read the outbox (expect ERR)', `${as(F)} select count(*) from private.notification_outbox; reset role;`],
+  // claim_notifications skips quiet hours (default 21:00-08:00 local). Turn them off for
+  // everyone here so these claims do not depend on the time of day the suite runs.
+  ['p3: quiet hours off for claim tests', `insert into notification_prefs (user_id, quiet_start, quiet_end) select id, '00:00', '00:00' from profiles on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;`],
   ['p3: claim_notifications returns facts once', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) order by id; select count(*) from claim_notifications(100); reset role;`],
   ['p3: G accepts -> active; creator notified', `${as(G)} update challenge_participants set status='accepted' where challenge_id=${ctx('b1')}::uuid and user_id='${G}'; reset role; select status from challenges where id=${ctx('b1')}::uuid; select ${outbox('invite_accepted', F, 'b1')} n;`],
   ['p3: G plays; battle stays open while the link is usable', `${battleSet('p3-g', 15, 'b1', G)} select finalize_challenges(); select status from challenges where id=${ctx('b1')}::uuid;`],
@@ -195,6 +198,9 @@ steps.push(
   ['p3: F revokes the link', `${as(F)} select revoke_invite_link(${ctx('t1')}); reset role; set role anon; select invite_preview(${ctx('t1')})->>'status' s; reset role;`],
   ['p3: C cannot redeem a revoked link (expect ERR)', `${as(C)} select redeem_invite(${ctx('t1')}); reset role;`],
   ['p3: H plays -> everyone done -> completed and locked', `${battleSet('p3-h', 25, 'b1', H)} select finalize_challenges(); select status from challenges where id=${ctx('b1')}::uuid; select user_id::text u, rank, is_winner, valid_reps from challenge_results where challenge_id=${ctx('b1')}::uuid order by rank; select ${outbox('challenge_result', F, 'b1')} + ${outbox('challenge_result', G, 'b1')} + ${outbox('challenge_result', H, 'b1')} n;`],
+  // claim_notifications skips quiet hours (default 21:00-08:00 local). Turn them off for
+  // everyone here so these claims do not depend on the time of day the suite runs.
+  ['p3: quiet hours off for result claims', `insert into notification_prefs (user_id, quiet_start, quiet_end) select id, '00:00', '00:00' from profiles on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;`],
   ['p3: result facts', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) where kind='challenge_result' order by user_id; reset role;`],
   ['p3: my_challenges detail for G', `${as(G)} select my_challenges(${ctx('b1')}::uuid) b; select jsonb_array_length(my_challenges()) n; reset role;`],
   ['p3: C does not see the battle', `${as(C)} select my_challenges(${ctx('b1')}::uuid) b; reset role;`],
@@ -1130,4 +1136,67 @@ steps.push(
 Object.assign(checks, {
   'end reason: an omitted reason is user': (r) => ok(r[r.length - 1][0].end_reason === 'user', JSON.stringify(r)),
   'end reason: tilt is stored': (r) => ok(r[r.length - 1][0].end_reason === 'tilt', JSON.stringify(r)),
+});
+
+// pg_cron wakes notify only when a drain has something to send or to expire.
+const WK = '70000000-0000-4000-8000-00000000c0de';
+const wakeRow = (key, col, val) => col
+  ? `insert into private.notification_outbox (kind, user_id, dedupe_key, ${col}) values ('friend_request', '${WK}', '${key}', ${val});`
+  : `insert into private.notification_outbox (kind, user_id, dedupe_key) values ('friend_request', '${WK}', '${key}');`;
+steps.push(
+  ['wake: setup a recipient with an empty outbox', `
+    delete from private.notification_outbox;
+    insert into auth.users values ('${WK}');
+    ${as(WK)} insert into profiles(id, username, display_name, time_zone) values ('${WK}', 'wanda', 'Wanda', 'UTC'); reset role;
+    insert into notification_prefs (user_id, quiet_start, quiet_end) values ('${WK}', '00:00', '00:00')
+      on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: a sendable row wakes, a sent one does not', `
+    ${wakeRow('w-send')}
+    select private.has_unsent_notifications() as wake;
+    update private.notification_outbox set sent_at = now() where dedupe_key = 'w-send';
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: failed, leased, not-yet-due and quiet-hour rows do not wake', `
+    ${wakeRow('w-failed', 'failed_at', 'now()')}
+    ${wakeRow('w-leased', 'leased_until', "now() + interval '5 minutes'")}
+    ${wakeRow('w-later', 'not_before', "now() + interval '1 hour'")}
+    select private.has_unsent_notifications() as wake;
+    update notification_prefs set
+      quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
+      quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
+     where user_id = '${WK}';
+    ${wakeRow('w-quiet')}
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: an expired lease wakes again', `
+    update private.notification_outbox set leased_until = now() - interval '1 minute' where dedupe_key = 'w-leased';
+    update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${WK}';
+    select private.has_unsent_notifications() as wake;
+    delete from private.notification_outbox where dedupe_key in ('w-leased', 'w-quiet');
+  `],
+  ['wake: a stale row wakes once, then expiry stops the wakes', `
+    update notification_prefs set
+      quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
+      quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
+     where user_id = '${WK}';
+    ${wakeRow('w-stale', 'created_at', "now() - interval '2 days'")}
+    select private.has_unsent_notifications() as wake;
+    select private.expire_notifications();
+    select failed_at is not null as expired from private.notification_outbox where dedupe_key = 'w-stale';
+    select private.has_unsent_notifications() as wake;
+  `],
+);
+
+const wakes = (r) => r.filter((set) => set[0] && 'wake' in set[0]).map((set) => set[0].wake);
+Object.assign(checks, {
+  'wake: setup a recipient with an empty outbox': (r) => ok(JSON.stringify(wakes(r)) === '[false]', JSON.stringify(r)),
+  'wake: a sendable row wakes, a sent one does not': (r) => ok(JSON.stringify(wakes(r)) === '[true,false]', JSON.stringify(wakes(r))),
+  'wake: failed, leased, not-yet-due and quiet-hour rows do not wake': (r) => ok(JSON.stringify(wakes(r)) === '[false,false]', JSON.stringify(wakes(r))),
+  'wake: an expired lease wakes again': (r) => ok(JSON.stringify(wakes(r)) === '[true]', JSON.stringify(wakes(r))),
+  'wake: a stale row wakes once, then expiry stops the wakes': (r) => {
+    ok(JSON.stringify(wakes(r)) === '[true,false]', JSON.stringify(wakes(r)));
+    ok(r.find((set) => set[0] && 'expired' in set[0])[0].expired === true, 'not expired ' + JSON.stringify(r));
+  },
 });

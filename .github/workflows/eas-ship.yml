@@ -1,0 +1,87 @@
+# Ship the app after a merge: push to dev -> "development" channel, push to main -> "production".
+# Runs scripts/eas-ship.sh on a GitHub runner, so a JS-only merge publishes an OTA update in a
+# few minutes with no EAS build and no wait in the EAS free-plan queue. A native change
+# starts the manual-only EAS build workflow instead (.eas/workflows/build-*.yml).
+# Never runs on pull requests (PR code never gets EXPO_TOKEN). See docs/RELEASING.md.
+#
+# Secret: EXPO_TOKEN (repo secret; an Expo robot or personal access token for
+# jackroseman33s-team). Without it the job warns and does nothing.
+name: EAS ship
+
+on:
+  push:
+    branches: [dev, main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'supabase/**'
+      - '__tests__/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/supabase-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      rollout:
+        description: 'OTA rollout percentage (1-100). Empty = 100.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Only print what would happen.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One ship per branch at a time; a newer merge replaces a queued or running one (it ships
+# the same branch head, so nothing is lost and nobody has to cancel duplicates by hand).
+concurrency:
+  group: eas-ship-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ship:
+    name: ship (${{ github.ref_name == 'main' && 'production' || 'development' }})
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Check secret
+        id: secret
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning::EXPO_TOKEN is not set; nothing was shipped. Add it as a repo secret."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secret.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.secret.outputs.ready == 'true'
+        # eas-cli is pinned (the fingerprint it computes was checked against EAS builds);
+        # keep it in step with eas.json cli.version.
+        run: |
+          npm ci
+          npm install -g eas-cli@27.11.0
+
+      - name: Ship
+        if: steps.secret.outputs.ready == 'true'
+        env:
+          PROFILE: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+          ROLLOUT: ${{ inputs.rollout }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=("$PROFILE")
+          [ -n "$ROLLOUT" ] && args+=(--rollout "$ROLLOUT")
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          scripts/eas-ship.sh "${args[@]}"

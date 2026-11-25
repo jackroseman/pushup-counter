@@ -13,8 +13,9 @@ set), depth per rep, and other metrics. All of it is saved with the set.
 > PRs and required CI checks, CD (OTA vs native builds), the dev client with hot reload, and
 > rollbacks.
 
-> **Planned: push-up battles.** Design docs (not built yet): [spec](docs/battles/SPEC.md),
-> [architecture & phases](docs/battles/ARCHITECTURE.md), [draft DB schema](docs/battles/schema.sql).
+> **Push-up battles** (friends, challenges, leagues, notifications) run on Supabase. Design
+> docs: [spec](docs/battles/SPEC.md), [architecture & phases](docs/battles/ARCHITECTURE.md).
+> The live schema is `supabase/migrations/`. Releases: [docs/RELEASING.md](docs/RELEASING.md).
 
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict)
 * Custom native code lives in a local Expo Module (`modules/pushup-sensors`, Swift + Kotlin).
@@ -73,11 +74,9 @@ Build profiles (`eas.json`):
 | profile       | what it is                                                     |
 |---------------|----------------------------------------------------------------|
 | `development` | Dev client (loads JS from `expo start`), internal distribution |
-| `preview`     | Standalone release build, internal distribution (ad-hoc)       |
 | `production`  | App Store / TestFlight build (uploaded with `eas submit -p ios`; CD does it automatically) |
 
-For a standalone build that doesn't need your computer running, use
-`eas build --profile preview --platform ios`.
+For the standalone app, install Rep Royale from TestFlight.
 
 Rebuild only when the native code or config changes (`modules/`, `app.json`, or native
 dependencies). For JS/TS-only changes, just reload.
@@ -236,68 +235,21 @@ modules/pushup-sensors (Swift)          src/core (pure TypeScript, unit-tested)
   line with gaps, threshold lines, rep markers), `LiveDistanceChart` (redraws at 12 fps from
   a ref buffer, so sensor events don't re-render the screen) and `RepChart` (line/bar per rep).
 
-## 5. Over-the-air updates (EAS Update)
+## 5. Over-the-air updates (EAS Update) and CI/CD
 
-The project is configured for EAS Update:
+* `updates.url` is the project's `u.expo.dev` URL; the app checks for updates on launch
+  (`ON_LOAD`), downloads in the background and runs the update on the next launch.
+* Channels: `development` (Pushup Dev) and `production` (TestFlight / App Store).
+* Runtime version: `appVersion` for the store app, `fingerprint` for the dev client
+  (`app.config.ts`).
+* **CI** (`.github/workflows/ci.yml`): the required `checks` job runs lint, jest, the
+  database tests, tsc and an `expo export` bundle test on every PR commit.
+* **CD** (`.github/workflows/eas-ship.yml`): after a merge to `dev` or `main`, a JS-only
+  change is published as an OTA update in minutes; a native change starts one EAS build
+  (`.eas/workflows/build-*.yml`). On `main` a native change needs a `version` bump first.
 
-* `updates.url` is set to the project's `u.expo.dev` URL.
-* `runtimeVersion: {policy: "appVersion"}`.
-* The app checks for updates on launch (`ON_LOAD`).
-* Each build profile has a channel: `development`, `preview` and `production`.
-
-Builds made from the `preview` profile pick up updates published to the `preview`
-channel:
-
-```bash
-eas update --channel preview --message "Describe the change" --non-interactive
-```
-
-The update downloads the next time the app launches and is applied on the launch after
-that. Fully close and reopen the app twice.
-
-* **JS/TS and asset changes** (screens, charts, analysis, detector tuning) can be shipped
-  OTA.
-* **Native changes need a new build.** That means `modules/`, new native dependencies,
-  `app.json` native config, or bumping `version`, which changes the runtime version:
-
-  ```bash
-  eas build -p ios --profile preview
-  ```
-
-### CI/CD
-
-* **CI** (GitHub Actions, `.github/workflows/ci.yml`): the `checks` job runs jest, tsc and
-  an `expo export` bundle test on every PR commit. It is required to merge into `main`.
-* **CD** (EAS Workflows): a push to `dev` deploys to the **development** channel (Pushup Dev
-  dev client, `.eas/workflows/deploy-dev.yml`). A push to `main` deploys the released app
-  (**production** channel, TestFlight; `deploy.yml`, below). See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Every push to `main` ships automatically (EAS Workflows)
-
-`.eas/workflows/deploy.yml` runs on every push to `main` of the GitHub repo. The repo is
-linked to the Expo project under expo.dev → project → GitHub. Jest and `tsc` already
-ran in the required GitHub `checks` job, so this workflow does not run them again. Steps:
-
-1. **Fingerprint**: hashes the project's native characteristics (environment `production`).
-2. **Get build**: looks for an existing iOS `production` (App Store) build with that
-   fingerprint. It waits for one that is still in progress.
-3. **If a build exists** (JS-only change): `eas update` to channel `production` (iOS),
-   using the commit message as the update message. TestFlight installs get it on launch.
-4. **If none exists** (native change): ONE new iOS `production` store build, which the
-   `submit` job (EAS Submit, works on the free plan) uploads to App Store Connect / TestFlight
-   using the App Store Connect API key stored in EAS credentials and `ascAppId` in `eas.json`.
-   Retry a failed upload without rebuilding: `eas submit -p ios --id <build id>`. No ad hoc preview build is
-   made any more (`eas build --profile preview` still works by hand).
-
-Run it by hand with `eas workflow:run .eas/workflows/deploy.yml`. Check it with
-`eas workflow:validate .eas/workflows/deploy.yml`.
-
-> **Runtime version note:** the app uses `runtimeVersion: {policy: "appVersion"}`.
-> The workflow decides between build and update by fingerprint, so it detects native
-> changes either way. However, updates are delivered by runtime version (`1.0.0`).
-> **When you make a native change, bump `version` in `app.json` in the same commit.**
-> Otherwise, later OTA updates would also go to older installed builds that don't have
-> the new native code.
+Everything about shipping, including by-hand commands and the release steps, is in
+[docs/RELEASING.md](docs/RELEASING.md).
 
 ## 6. Development
 
@@ -311,6 +263,8 @@ npm run dev                  # or in the foreground, same Wi-Fi: expo start --de
 
 ```bash
 npm test             # Jest (jest-expo): detector, analysis, trace, scoring, calibration, guidance, history/settings
+npm run test:db      # database tests (supabase/migrations on in-process Postgres)
+npm run lint         # expo lint
 npm run typecheck    # tsc --noEmit
 npx expo-doctor
 ```
@@ -344,7 +298,7 @@ __tests__/                    Jest tests
   dropped. Older saved sets still open, but without a distance trace.
 * **Version 1.1.0 needs a new build.** The face view is new native code, so the
   runtime version changed (it follows the app version). 1.0.x builds will not get this as an
-  OTA update. Install the new preview build.
+  OTA update. Install the new build.
 * The left/right centering hint comes from ARKit's camera axes and has not been checked on
   every device yet. If it seems reversed, tell us.
-* Expo Go is not supported (custom native module). Use a development or preview build.
+* Expo Go is not supported (custom native module). Use the Pushup Dev build or TestFlight.

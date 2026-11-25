@@ -1,15 +1,15 @@
-# CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev and feature
-# branches. The "checks" job is the REQUIRED status check in branch protection: keep its
+# CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev (after a
+# merge). Feature branches get CI through their PR only, so a push is not checked twice. The "checks" job is the REQUIRED status check in branch protection: keep its
 # name stable (renaming it means updating the protection rules).
-# Deploys are NOT done here: EAS Workflows (.eas/workflows/) deploy the app and
-# supabase-deploy.yml applies database migrations, both after a merge.
+# Deploys are NOT done here: eas-ship.yml ships the app (OTA, or an EAS build for a native
+# change) and supabase-deploy.yml applies database migrations, both after a merge.
 name: CI
 
 on:
   pull_request:
     branches: [main, dev]
   push:
-    branches-ignore: [main]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:
@@ -34,6 +34,11 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      # 0 errors allowed. The 26 warnings are React Compiler diagnostics (see eslint.config.js);
+      # the cap only goes down: lower it when you fix some, never raise it.
+      - name: Lint (expo lint)
+        run: npm run lint -- --max-warnings 26
 
       - name: Unit tests (jest)
         run: npx jest --ci

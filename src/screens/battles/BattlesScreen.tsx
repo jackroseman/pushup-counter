@@ -7,6 +7,7 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 import { api } from '../../battles/api';
+import { rememberBattles } from '../../battles/battleCache';
 import { Battle, battleSubtitle, battleTitle, friendlyError, groupBattles, personName } from '../../battles/model';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { AccountGate, Header, Notice, Row, s, SectionTitle } from './common';
@@ -20,7 +21,7 @@ export function BattlesScreen({
   onProfile,
 }: {
   onBack?: () => void;
-  onOpen: (id: string) => void;
+  onOpen: (battle: Battle) => void;
   onNew: () => void;
   onFriends: () => void;
   onAccount: () => void;
@@ -57,7 +58,7 @@ function BattleList({
   onFriends,
   reload,
 }: {
-  onOpen: (id: string) => void;
+  onOpen: (battle: Battle) => void;
   onNew: () => void;
   onFriends: () => void;
   reload: React.MutableRefObject<(() => Promise<void>) | null>;
@@ -74,7 +75,9 @@ function BattleList({
     const r = await api.myBattles(supabase);
     if (r.ok) {
       hadList.current = true;
-      setBattles(r.data ?? []);
+      const rows = r.data ?? [];
+      rememberBattles(rows);
+      setBattles(rows);
       setError(null);
     } else setError(hadList.current ? "Couldn't refresh." : friendlyError(r.message));
   }, []);
@@ -96,7 +99,7 @@ function BattleList({
   const item = (b: Battle) => {
     const others = b.participants.filter((p) => !p.isMe).map(personName);
     return (
-      <Row key={b.id} onPress={() => onOpen(b.id)}>
+      <Row key={b.id} onPress={() => onOpen(b)}>
         <View style={{ flex: 1 }}>
           <Text style={s.bold}>
             {battleTitle(b)} · {others.length ? others.slice(0, 3).join(', ') + (others.length > 3 ? ` +${others.length - 3}` : '') : 'just you so far'}

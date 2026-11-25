@@ -31,7 +31,7 @@ import { FriendsScreen } from '../screens/battles/FriendsScreen';
 import { FriendScreen } from '../screens/battles/FriendScreen';
 import { InviteScreen } from '../screens/battles/InviteScreen';
 import type { BattleSessionOptions } from '../session/useSession';
-import type { Friend } from '../battles/model';
+import type { Battle, Friend } from '../battles/model';
 import { summaryChallengeAction, type ChallengeOffer } from '../battles/challengeFromSet';
 import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
@@ -99,7 +99,13 @@ export type RootStackParamList = {
   History: undefined;
   Account: undefined;
   ProfileSetup: undefined;
-  Battle: { challengeId: string; share?: boolean; justPlayed?: { reps: number; counted: number }; promptAttempt?: boolean };
+  Battle: {
+    challengeId: string;
+    battle?: Battle;
+    share?: boolean;
+    justPlayed?: { reps: number; counted: number };
+    promptAttempt?: boolean;
+  };
   NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
   Friends: undefined;
   Friend: { friend: Friend };
@@ -403,7 +409,7 @@ function BattlesRoute({ navigation }: TabProps<'Challenges'>) {
   return (
     <BattlesScreen
       {...gate(navigation)}
-      onOpen={(challengeId) => navigation.navigate('Battle', { challengeId })}
+      onOpen={(battle) => navigation.navigate('Battle', { challengeId: battle.id, battle })}
       onNew={() => navigation.navigate('NewBattle')}
       onFriends={() => navigation.navigate('Friends')}
     />
@@ -422,6 +428,7 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
     <BattleScreen
       {...gate(navigation)}
       battleId={route.params.challengeId}
+      initialBattle={route.params.battle}
       share={route.params.share}
       justPlayed={route.params.justPlayed}
       promptAttempt={route.params.promptAttempt}

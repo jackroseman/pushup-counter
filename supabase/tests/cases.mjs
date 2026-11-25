@@ -119,6 +119,7 @@ steps.push(
   ['identity: register_device is idempotent', `${as(D)} select register_device('install-0001','iPhone17,1','26.1') = register_device('install-0001','iPhone17,1','26.2') same; select count(*), max(os_version) os from devices; reset role;`],
   ['identity: register_device requires sign-in (expect ERR)', `set role authenticated; select set_config('request.jwt.claim.sub','',false); select register_device('install-0001'); reset role;`],
   ['identity: register_push_token', `${as(D)} select register_push_token((select id from devices where installation_id='install-0001'), '${TOKEN}'); select count(*) from push_tokens; reset role;`],
+  ['identity: registering the same token again does not rewrite the row', `create temporary table tok_snap as select ctid as row_tid, updated_at, disabled_at from push_tokens where expo_push_token='${TOKEN}'; ${as(D)} select register_push_token((select id from devices where installation_id='install-0001'), '${TOKEN}'); reset role; select t.ctid = s.row_tid as same_row, t.updated_at = s.updated_at as same_time, t.disabled_at is null as enabled from push_tokens t join tok_snap s on true; update push_tokens set disabled_at = now() where expo_push_token='${TOKEN}'; ${as(D)} select register_push_token((select id from devices where installation_id='install-0001'), '${TOKEN}'); reset role; select (select disabled_at is null from push_tokens where expo_push_token='${TOKEN}') as reenabled, count(*)::int as n from push_tokens where expo_push_token='${TOKEN}'; drop table tok_snap;`],
   ['identity: cannot register a token for someone else device (expect ERR)', `${as(E)} select register_push_token((select id from devices where user_id='${D}' limit 1), '${TOKEN}'); reset role;`],
   ['identity: E cannot see D devices or tokens', `${as(E)} select count(*) from devices; select count(*) from push_tokens; reset role;`],
   ['identity: same phone, other account -> token moves', `${as(E)} select register_push_token(register_device('install-0001','iPhone17,1','26.2'), '${TOKEN}'); reset role; select d.user_id = '${E}'::uuid moved, count(*) over () n from push_tokens t join devices d on d.id = t.device_id;`],
@@ -137,6 +138,12 @@ Object.assign(checks, {
   'identity: user cannot update another profile (0 rows)': (r) => ok(r[0][0].display_name === 'Dana R', 'profile hijack'),
   'identity: register_device is idempotent': (r) => ok(r[0][0].same === true && r[1][0].count === 1 && r[1][0].os === '26.2', 'device upsert'),
   'identity: register_push_token': (r) => ok(r[1][0].count === 1, 'token'),
+  'identity: registering the same token again does not rewrite the row': (r) => {
+    const same = r.find((set) => set[0] && 'same_row' in set[0])[0];
+    const again = r.find((set) => set[0] && 'reenabled' in set[0])[0];
+    ok(same.same_row === true && same.same_time === true && same.enabled === true, 'noop ' + JSON.stringify(same));
+    ok(again.reenabled === true && Number(again.n) === 1, 'reenable ' + JSON.stringify(again));
+  },
   'identity: E cannot see D devices or tokens': (r) => ok(r[0][0].count === 0 && r[1][0].count === 0, 'device RLS'),
   'identity: same phone, other account -> token moves': (r) => { const x = r[r.length - 1]; ok(x.length === 1 && x[0].moved === true, 'token move ' + JSON.stringify(x)); },
   'identity: solo sync upload (v2 + legacy v1)': (r) => ok(r[2].length === 2 && r[2][0].data_version === 1 && r[2][1].data_version === 2, 'sync ' + JSON.stringify(r[2])),
@@ -995,5 +1002,120 @@ Object.assign(checks, {
     const later = r.find((set) => set[0] && 'later' in set[0])[0];
     ok(historical.historical === 0, 'backlog ' + JSON.stringify(historical));
     ok(later.later === 1 && later.gabe === true && later.total_key === true, 'later ' + JSON.stringify(later));
+  },
+});
+
+const windowStart = new Date(Date.now() - 3600 * 1000).toISOString();
+const windowEnd = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+steps.push(
+  ['standings: narrow rep count matches set_metrics for every set', `select count(*)::int as rep_mismatches from sets s join set_metrics m on m.set_id = s.id where m.good_or_better_reps is distinct from private.counted_reps(s.id);`],
+  ['standings: each kind agrees between the view and the single-challenge function', `
+    select set_config('request.jwt.claim.sub','',false);
+    select c.kind::text as kind,
+           count(*)::int as challenges,
+           coalesce(sum(abs(q.view_n - q.fn_n)), 0)::int as count_gap,
+           coalesce(sum(q.value_gap), 0)::int as value_gap
+    from challenges c
+    cross join lateral (
+      select (select count(*) from challenge_standings s where s.challenge_id = c.id) as view_n,
+             (select count(*) from private.challenge_rows(c.id)) as fn_n,
+             (select count(*)
+                from private.challenge_rows(c.id) r
+                join challenge_standings s on s.challenge_id = c.id and s.user_id = r.user_id
+               where s.valid_reps is distinct from r.valid_reps
+                  or s.attempts_used is distinct from r.attempts_used
+                  or s.rank is distinct from r.rank
+                  or s.metric_value is distinct from r.metric_value
+                  or s.days_survived is distinct from r.days_survived
+                  or s.eliminated_on is distinct from r.eliminated_on
+                  or s.team_total is distinct from r.team_total
+                  or s.team_target is distinct from r.team_target
+                  or s.is_winner is distinct from r.is_winner
+                  or s.locked is distinct from r.locked
+                  or s.best_set_id is distinct from r.best_set_id
+                  or s.avg_depth_pct is distinct from r.avg_depth_pct
+                  or s.tempo_score is distinct from r.tempo_score
+                  or s.participant_status is distinct from r.participant_status) as value_gap
+    ) q
+    group by c.kind
+    order by c.kind;
+  `],
+  ['standings: a total counts only in-window good-or-better reps, and my_challenges matches', `
+    ${as(A)} ${create('eqtot', { kind: 'total', window: 'custom', customStartsAt: windowStart, customEndsAt: windowEnd }, [B])} reset role;
+    ${solo('eq-a', 10, A, { bottoms: [0.14, 0.30] })}
+    ${solo('eq-out', 8, A)}
+    update sets set started_at = now() - interval '3 days', ended_at = now() - interval '3 days' + interval '2 minutes', received_at = now() - interval '3 days' + interval '3 minutes' where client_set_id = 'eq-out';
+    select
+      (select valid_reps from challenge_standings where challenge_id = ${ctx('eqtot')}::uuid and user_id = '${A}') as standing,
+      (select coalesce(sum(m.good_or_better_reps), 0)::int
+         from sets s
+         join set_metrics m on m.set_id = s.id
+         join challenges b on b.id = ${ctx('eqtot')}::uuid
+        where s.user_id = '${A}'
+          and s.started_at >= b.starts_at and s.started_at < b.ends_at
+          and s.received_at <= b.ends_at + make_interval(secs => private.upload_grace_s())) as metrics,
+      (select count(*)::int from sets s join challenges b on b.id = ${ctx('eqtot')}::uuid
+        where s.client_set_id = 'eq-out' and s.started_at >= b.starts_at and s.started_at < b.ends_at) as outside_in_window,
+      (select private.counted_reps(id) from sets where client_set_id = 'eq-a') as inside,
+      (select private.counted_reps(id) from sets where client_set_id = 'eq-out') as outside;
+    ${as(A)} select (p->>'validReps')::int as api_reps
+      from jsonb_array_elements(my_challenges(${ctx('eqtot')}::uuid)->0->'participants') p
+      where p->>'userId' = '${A}';
+    reset role;
+  `],
+  ['standings: a team total is the sum of each player window, same as set_metrics', `
+    ${as(A)} ${create('eqteam', { kind: 'team', targetReps: 40, window: 'custom', customStartsAt: windowStart, customEndsAt: windowEnd }, [B])} reset role;
+    ${as(B)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('eqteam')}::uuid and user_id = '${B}'; reset role;
+    ${solo('eq-team-a', 6, A)}
+    ${solo('eq-team-b', 4, B, { bottoms: [0.14, 0.30] })}
+    select
+      (select valid_reps from challenge_standings where challenge_id = ${ctx('eqteam')}::uuid and user_id = '${A}') as a_reps,
+      (select valid_reps from challenge_standings where challenge_id = ${ctx('eqteam')}::uuid and user_id = '${B}') as b_reps,
+      (select max(team_total) from challenge_standings where challenge_id = ${ctx('eqteam')}::uuid) as team_total,
+      (select coalesce(sum(m.good_or_better_reps), 0)::int
+         from sets s join set_metrics m on m.set_id = s.id
+         join challenges b on b.id = ${ctx('eqteam')}::uuid
+         join challenge_participants p on p.challenge_id = b.id and p.user_id = s.user_id and p.status in ('accepted', 'forfeited')
+        where s.user_id = '${A}'
+          and s.started_at >= b.starts_at and s.started_at < b.ends_at
+          and s.received_at <= b.ends_at + make_interval(secs => private.upload_grace_s())
+          and (p.left_at is null or s.started_at < p.left_at)) as a_metrics,
+      (select coalesce(sum(m.good_or_better_reps), 0)::int
+         from sets s join set_metrics m on m.set_id = s.id
+         join challenges b on b.id = ${ctx('eqteam')}::uuid
+         join challenge_participants p on p.challenge_id = b.id and p.user_id = s.user_id and p.status in ('accepted', 'forfeited')
+        where s.user_id = '${B}'
+          and s.started_at >= b.starts_at and s.started_at < b.ends_at
+          and s.received_at <= b.ends_at + make_interval(secs => private.upload_grace_s())
+          and (p.left_at is null or s.started_at < p.left_at)) as b_metrics;
+    ${as(A)} select (p->>'validReps')::int as b_api
+      from jsonb_array_elements(my_challenges(${ctx('eqteam')}::uuid)->0->'participants') p
+      where p->>'userId' = '${B}';
+    reset role;
+  `],
+);
+
+Object.assign(checks, {
+  'standings: narrow rep count matches set_metrics for every set': (r) => ok(Number(r[0][0].rep_mismatches) === 0, 'counted reps ' + JSON.stringify(r[0])),
+  'standings: each kind agrees between the view and the single-challenge function': (r) => {
+    const rows = r.find((set) => set[0] && 'kind' in set[0]);
+    for (const kind of ['best_set', 'total', 'streak', 'team']) {
+      const row = rows.find((x) => x.kind === kind);
+      ok(row && Number(row.challenges) > 0 && Number(row.count_gap) === 0 && Number(row.value_gap) === 0, kind + ' ' + JSON.stringify(rows));
+    }
+  },
+  'standings: a total counts only in-window good-or-better reps, and my_challenges matches': (r) => {
+    const row = r.find((set) => set[0] && 'standing' in set[0])[0];
+    const api = r.find((set) => set[0] && 'api_reps' in set[0])[0];
+    ok(Number(row.inside) > 0 && Number(row.outside) > 0 && Number(row.outside_in_window) === 0, 'sets ' + JSON.stringify(row));
+    ok(Number(row.standing) === Number(row.metrics) && Number(row.standing) >= Number(row.inside), 'window ' + JSON.stringify(row));
+    ok(Number(api.api_reps) === Number(row.standing), 'api ' + JSON.stringify(api));
+  },
+  'standings: a team total is the sum of each player window, same as set_metrics': (r) => {
+    const row = r.find((set) => set[0] && 'team_total' in set[0])[0];
+    const api = r.find((set) => set[0] && 'b_api' in set[0])[0];
+    ok(Number(row.a_reps) === Number(row.a_metrics) && Number(row.b_reps) === Number(row.b_metrics), 'players ' + JSON.stringify(row));
+    ok(Number(row.team_total) === Number(row.a_reps) + Number(row.b_reps), 'team ' + JSON.stringify(row));
+    ok(Number(api.b_api) === Number(row.b_reps), 'api ' + JSON.stringify(api));
   },
 });

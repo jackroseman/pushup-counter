@@ -32,7 +32,7 @@ import { FriendScreen } from '../screens/battles/FriendScreen';
 import { InviteScreen } from '../screens/battles/InviteScreen';
 import type { BattleSessionOptions } from '../session/useSession';
 import type { Friend } from '../battles/model';
-import { challengeOffers, type ChallengeOffer } from '../battles/challengeFromSet';
+import { summaryChallengeAction, type ChallengeOffer } from '../battles/challengeFromSet';
 import { countedReps } from '../battles/counting';
 import { submitBattleAttempt } from '../battles/uploader';
 import { deviceTimeZone } from '../backend/profile';
@@ -93,15 +93,7 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
-  GoalSetup:
-    | {
-        /** After a save, open New challenge. Otherwise return to the screen underneath. */
-        next?: 'new';
-        offer?: ChallengeOffer;
-        fromSet?: SessionRecord;
-        friendIds?: string[];
-      }
-    | undefined;
+  GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };
   History: undefined;
@@ -512,12 +504,10 @@ function SummaryRoute({ navigation, route }: Props<'Summary'>) {
   const record = route.params.record;
   const fromHistory = route.params.from === 'history';
   const fromSession = route.params.from === 'session' && record.reps.length > 0;
-  const offers = fromSession && session
-    ? challengeOffers(record, {
-        timedDurationsS: appSettings.asyncBattleDefaults.timedDurationsS,
-        claimMaxAgeS: appSettings.asyncBattleDefaults.claimSetMaxAgeS,
-      })
-    : undefined;
+  const challenge = summaryChallengeAction(fromSession, !!session, record, {
+    timedDurationsS: appSettings.asyncBattleDefaults.timedDurationsS,
+    claimMaxAgeS: appSettings.asyncBattleDefaults.claimSetMaxAgeS,
+  });
   const [progress, setProgress] = useState<React.ComponentProps<typeof SummaryScreen>['progress']>(null);
   useEffect(() => {
     if (fromHistory) return;
@@ -551,19 +541,14 @@ function SummaryRoute({ navigation, route }: Props<'Summary'>) {
       fromHistory={fromHistory}
       syncedLate={lateIds.has(record.id)}
       progress={fromHistory ? null : progress}
-      offers={offers}
-      onPickChallenge={
-        offers
-          ? (offer) => {
-              if (offer.kind === 'streak' && !openGoal(enrollments)) {
-                navigation.navigate('GoalSetup', { next: 'new', offer, fromSet: record });
-              } else {
-                navigation.navigate('NewBattle', { fromSet: record, offer });
-              }
+      onChallenge={
+        challenge.type === 'none'
+          ? undefined
+          : () => {
+              if (challenge.type === 'sign-in') navigation.navigate('Account');
+              else navigation.navigate('NewBattle', { fromSet: record, offer: challenge.offer });
             }
-          : undefined
       }
-      onSignIn={fromSession && !session ? () => navigation.navigate('Account') : undefined}
       onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
     />
   );
@@ -589,7 +574,7 @@ function AccountRoute({ navigation }: Props<'Account'>) {
   );
 }
 
-function GoalRoute({ navigation, route }: Props<'GoalSetup'>) {
+function GoalRoute({ navigation }: Props<'GoalSetup'>) {
   const { enrollments, saveChoice } = useAppState();
   const zone = deviceTimeZone();
   return (
@@ -597,17 +582,7 @@ function GoalRoute({ navigation, route }: Props<'GoalSetup'>) {
       enrollments={enrollments}
       today={localDate(Date.now(), zone)}
       onSave={(choice) => {
-        void saveChoice(choice).finally(() => {
-          if (route.params?.next === 'new') {
-            navigation.replace('NewBattle', {
-              offer: route.params.offer,
-              fromSet: route.params.fromSet,
-              friendIds: route.params.friendIds,
-            });
-          } else {
-            navigation.goBack();
-          }
-        });
+        void saveChoice(choice).finally(() => navigation.goBack());
       }}
       onClose={() => navigation.goBack()}
     />

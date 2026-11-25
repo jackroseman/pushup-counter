@@ -105,6 +105,8 @@ export type RootStackParamList = {
     share?: boolean;
     justPlayed?: { reps: number; counted: number };
     promptAttempt?: boolean;
+    /** Created, accepted, or joined this challenge on the way here. */
+    promptNotifications?: boolean;
   };
   NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
   Friends: undefined;
@@ -432,6 +434,7 @@ function BattleRoute({ navigation, route }: Props<'Battle'>) {
       share={route.params.share}
       justPlayed={route.params.justPlayed}
       promptAttempt={route.params.promptAttempt}
+      promptNotifications={route.params.promptNotifications}
       hasGoal={openGoal(enrollments)}
       onNeedGoal={() => navigation.navigate('GoalSetup')}
       onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
@@ -463,7 +466,13 @@ function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
       onBack={() => navigation.goBack()}
       onFriends={() => navigation.navigate('Friends')}
       onCreated={(challengeId, share, extras) =>
-        navigation.replace('Battle', { challengeId, share, promptAttempt: extras?.promptAttempt, justPlayed: extras?.justPlayed })
+        navigation.replace('Battle', {
+          challengeId,
+          share,
+          promptAttempt: extras?.promptAttempt,
+          justPlayed: extras?.justPlayed,
+          promptNotifications: true,
+        })
       }
     />
   );
@@ -500,7 +509,7 @@ function InviteRoute({ navigation, route }: Props<'Invite'>) {
       hasGoal={openGoal(enrollments)}
       onNeedGoal={() => navigation.navigate('GoalSetup')}
       onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Today' }))}
-      onJoined={(challengeId) => navigation.replace('Battle', { challengeId })}
+      onJoined={(challengeId, promptNotifications) => navigation.replace('Battle', { challengeId, promptNotifications })}
     />
   );
 }

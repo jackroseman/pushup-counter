@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import { flushBattleUploads } from '../battles/uploader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
@@ -18,6 +18,7 @@ import {
   supabaseSyncBackend,
   unregisterPushToken,
 } from './identity';
+import { notificationTurnOn } from '../notifications/prompt';
 import { loadSyncState, syncSets, syncStatus, SyncStatus } from './sync';
 import { onHistoryChanged } from './syncEvents';
 import { historyStore } from '../session/useSession';
@@ -38,6 +39,8 @@ export interface IdentityState {
   sync: { status: SyncStatus | null; running: boolean; error: string | null; syncNow: () => Promise<void> };
   push: {
     permission: PushPermission;
+    /** False until this launch has read the iOS permission. */
+    checked: boolean;
     registered: boolean;
     enable: () => Promise<{ ok: boolean; message?: string }>;
     sendTest: () => Promise<{ ok: boolean; message: string }>;
@@ -54,7 +57,13 @@ const IdentityContext = createContext<IdentityState>({
   refreshProfile: () => {},
   deviceId: null,
   sync: { status: null, running: false, error: null, syncNow: noop },
-  push: { permission: 'undetermined', registered: false, enable: async () => ({ ok: false }), sendTest: async () => ({ ok: false, message: '' }) },
+  push: {
+    permission: 'undetermined',
+    checked: false,
+    registered: false,
+    enable: async () => ({ ok: false }),
+    sendTest: async () => ({ ok: false, message: '' }),
+  },
   signOut: noop,
   deleteAccount: async () => ({ ok: false }),
 });
@@ -68,6 +77,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   const [profileNonce, setProfileNonce] = useState(0);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [permission, setPermission] = useState<PushPermission>('undetermined');
+  const [permissionChecked, setPermissionChecked] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [syncState, setSyncState] = useState<{ status: SyncStatus | null; running: boolean; error: string | null }>({
     status: null,
@@ -83,6 +93,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
     setProfileError(null);
     setDeviceId(null);
     setRegistered(false);
+    setPermissionChecked(false);
     if (!supabase || !userId) return;
     const client = supabase;
     let alive = true;
@@ -140,6 +151,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
       if (!alive) return;
       setDeviceId(id);
       setPermission(await getPushPermission());
+      setPermissionChecked(true);
       const r = await registerPushToken(client, id, false);
       if (alive) setRegistered(r.ok);
     })().catch(() => {});
@@ -147,6 +159,35 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
       alive = false;
     };
   }, [userId, hasProfile]);
+
+  // A granted permission whose token save failed is tried again on the next
+  // foreground. A save that already succeeded no-ops until the native token changes.
+  useEffect(() => {
+    if (!supabase || !deviceId) return;
+    const client = supabase;
+    let alive = true;
+    const registerIfGranted = () => {
+      void (async () => {
+        const next = await getPushPermission();
+        if (!alive) return;
+        setPermission(next);
+        setPermissionChecked(true);
+        if (next !== 'granted') {
+          setRegistered(false);
+          return;
+        }
+        const r = await registerPushToken(client, deviceId, false);
+        if (alive) setRegistered(r.ok);
+      })();
+    };
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') registerIfGranted();
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, [deviceId]);
 
   // Expo can rotate the native token. Pass that token through; fetching a new
   // device token from inside the listener emits the listener again.
@@ -228,9 +269,16 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
       sync: { ...syncState, syncNow: () => runSync(true) },
       push: {
         permission,
+        checked: permissionChecked,
         registered,
         enable: async () => {
           if (!supabase || !deviceId) return { ok: false, message: 'Finish setting up your account first.' };
+          const current = await getPushPermission();
+          if (notificationTurnOn(current) === 'settings') {
+            setPermission('denied');
+            await Linking.openSettings().catch(() => {});
+            return { ok: false, message: 'Notifications are off for this app. Turn them on in iOS Settings.' };
+          }
           const r = await registerPushToken(supabase, deviceId, true);
           setPermission(r.ok ? 'granted' : r.permission);
           setRegistered(r.ok);
@@ -248,7 +296,7 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
         return r;
       },
     }),
-    [userId, profile, profileError, deviceId, syncState, runSync, permission, registered, signOut],
+    [userId, profile, profileError, deviceId, syncState, runSync, permission, permissionChecked, registered, signOut],
   );
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;

@@ -20,7 +20,7 @@ const PROBLEM: Record<string, string> = {
 export function InviteScreen(props: {
   token: string;
   onBack: () => void;
-  onJoined: (battleId: string) => void;
+  onJoined: (battleId: string, promptNotifications?: boolean) => void;
   onAccount: () => void;
   onProfile: () => void;
   hasGoal: boolean;
@@ -47,7 +47,7 @@ export function InviteScreen(props: {
     setBusy(false);
     if (!r.ok) return setError(friendlyError(r.message));
     api.kickNotify(supabase);
-    onJoined(r.data);
+    onJoined(r.data, true);
   };
 
   const b = preview?.challenge;

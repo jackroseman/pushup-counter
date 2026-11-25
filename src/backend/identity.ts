@@ -112,10 +112,15 @@ async function savePushToken(
       return { ok: true };
     }
     const { error } = await client.rpc('register_push_token', { p_device_id: deviceId, p_token: token });
-    if (error) return { ok: false, permission, message: error.message };
+    if (error) {
+      // A failed save is not "done for this launch". The next call tries again.
+      savedPush = null;
+      return { ok: false, permission, message: error.message };
+    }
     savedPush = { deviceId, token, native: native ?? savedPush?.native ?? null };
     return { ok: true };
   } catch (e) {
+    savedPush = null;
     return { ok: false, permission, message: e instanceof Error ? e.message : String(e) };
   }
 }

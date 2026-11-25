@@ -245,13 +245,10 @@ battles.
 
 ### EAS (app)
 
-* Unchanged: `deploy-dev.yml` (push to `dev`) and `deploy.yml` (push to `main`).
-  * fingerprint → OTA if the native fingerprint matches, otherwise build.
-  * Phases 3–5 are JS-only and ship as OTA updates.
-* **TestFlight** (release 1.2.0): `deploy.yml` now targets the `production` profile
-  (store distribution) and channel instead of `preview`. A native change makes one store
-  build and a `submit` job (EAS Submit) uploads it; a JS-only change is an OTA on `production`.
-  So a release costs at most one build, and the ad hoc `preview` build is manual only.
+* Since 1.2.1: `.github/workflows/eas-ship.yml` ships every merge to `dev`/`main` (OTA when a
+  build has the native fingerprint, otherwise one build via `.eas/workflows/build-dev.yml` /
+  `build-production.yml`, which also uploads to TestFlight). See docs/RELEASING.md.
+  Earlier phases used push-triggered `deploy-dev.yml` / `deploy.yml` EAS workflows.
 * App Store Connect API key for submit: stored in EAS credentials (`eas credentials`), not
   in GitHub.
 

@@ -9,6 +9,7 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 import { api } from '../../battles/api';
+import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
 import {
   Battle,
   battleSubtitle,
@@ -33,6 +34,8 @@ import { AccountGate, Header, Notice, Row, s, SectionTitle, SmallButton } from '
 
 export function BattleScreen(props: {
   battleId: string;
+  /** Challenge row already loaded by the list, so the screen can paint immediately. */
+  initialBattle?: Battle;
   share?: boolean;
   justPlayed?: { reps: number; counted: number };
   /** Plain create flow: the creator has not played yet and should be told to. */
@@ -55,8 +58,14 @@ export function BattleScreen(props: {
   );
 }
 
+function seededBattle(battleId: string, initialBattle?: Battle): Battle | undefined {
+  if (initialBattle?.id === battleId) return initialBattle;
+  return rememberedBattle(battleId);
+}
+
 function BattleDetail({
   battleId,
+  initialBattle,
   share,
   justPlayed,
   promptAttempt,
@@ -66,6 +75,7 @@ function BattleDetail({
   onNeedGoal,
 }: {
   battleId: string;
+  initialBattle?: Battle;
   share?: boolean;
   justPlayed?: { reps: number; counted: number };
   promptAttempt?: boolean;
@@ -76,24 +86,41 @@ function BattleDetail({
 }) {
   const { appSettings } = useBackend();
   const { profile } = useIdentity();
-  const [b, setB] = useState<Battle | null | undefined>(undefined);
+  const [b, setB] = useState<Battle | null | undefined>(() => seededBattle(battleId, initialBattle));
+  const [trackedId, setTrackedId] = useState(battleId);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState<{ pending: boolean; failed: string | null }>({ pending: false, failed: null });
   const shared = useRef(false);
+  const loadSeq = useRef(0);
+  const inFlight = useRef(0);
+  if (trackedId !== battleId) {
+    setTrackedId(battleId);
+    setB(seededBattle(battleId, initialBattle));
+    setError(null);
+  }
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    const q = await loadBattleQueue(AsyncStorage);
-    setQueued({
-      pending: q.pending.some((x) => x.challengeId === battleId),
-      failed: q.failed.filter((x) => x.challengeId === battleId).pop()?.error ?? null,
-    });
-    const r = await api.battle(supabase, battleId);
-    if (r.ok) {
-      setB(r.data);
-      setError(null);
-    } else setError(friendlyError(r.message));
+    const ticket = ++loadSeq.current;
+    inFlight.current += 1;
+    try {
+      const q = await loadBattleQueue(AsyncStorage);
+      if (ticket !== loadSeq.current) return;
+      setQueued({
+        pending: q.pending.some((x) => x.challengeId === battleId),
+        failed: q.failed.filter((x) => x.challengeId === battleId).pop()?.error ?? null,
+      });
+      const r = await api.battle(supabase, battleId);
+      if (ticket !== loadSeq.current) return;
+      if (r.ok) {
+        setB(r.data);
+        setError(null);
+        if (r.data) rememberBattles([r.data]);
+      } else setError(friendlyError(r.message));
+    } finally {
+      inFlight.current = Math.max(0, inFlight.current - 1);
+    }
   }, [battleId]);
 
   useFocusEffect(
@@ -111,9 +138,13 @@ function BattleDetail({
     return () => sub.remove();
   }, [battleId, load]);
   // Standings move while others play; refresh every 20 s while open.
+  // Skip a tick when a load is already running so slow responses don't stack.
   useEffect(() => {
     if (!b || !isOpen(b)) return;
-    const t = setInterval(load, 20_000);
+    const t = setInterval(() => {
+      if (inFlight.current > 0) return;
+      load();
+    }, 20_000);
     return () => clearInterval(t);
   }, [b, load]);
 

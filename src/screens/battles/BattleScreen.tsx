@@ -38,7 +38,7 @@ export function BattleScreen(props: {
   /** Challenge row already loaded by the list, so the screen can paint immediately. */
   initialBattle?: Battle;
   share?: boolean;
-  justPlayed?: { reps: number; counted: number };
+  justPlayed?: { reps: number; counted: number; phoneMoved?: boolean };
   /** Plain create flow: the creator has not played yet and should be told to. */
   promptAttempt?: boolean;
   onBack: () => void;
@@ -88,7 +88,7 @@ function BattleDetail({
   battleId: string;
   initialBattle?: Battle;
   share?: boolean;
-  justPlayed?: { reps: number; counted: number };
+  justPlayed?: { reps: number; counted: number; phoneMoved?: boolean };
   promptAttempt?: boolean;
   onPlay: (b: Battle) => void;
   onBack: () => void;
@@ -237,6 +237,7 @@ function BattleDetail({
           text="This challenge starts at zero. A set you already finished is not included — only the attempt you start here counts. Your friend sees that score before they go."
         />
       ) : null}
+      {justPlayed?.phoneMoved ? <Notice title="Set ended" text="Your phone moved." /> : null}
       {cue.showClaimed && justPlayed ? (
         <Notice
           title={`${justPlayed.counted} good ${justPlayed.counted === 1 ? 'rep' : 'reps'}`}

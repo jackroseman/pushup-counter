@@ -29,6 +29,8 @@ export function validateBattleSet(body: unknown): ValidationResult {
   if (!num(p.startedAt) || !num(p.endedAt) || p.endedAt < p.startedAt) return fail('bad start/end times');
   if (p.endedAt - p.startedAt > MAX_SET_MS) return fail('set is longer than 2 hours');
 
+  if (p.endReason !== undefined && p.endReason !== 'user' && p.endReason !== 'tilt') return fail("endReason must be 'user' or 'tilt'");
+
   const cfg = p.detectorConfig as Record<string, unknown> | undefined;
   if (typeof cfg !== 'object' || cfg === null || !num(cfg.algorithmVersion) || !num(cfg.fullRatio) || !num(cfg.goodRatio) || !num(cfg.minCountRatio) || !num(cfg.minRepIntervalMs)) {
     return fail('a detector config is required');

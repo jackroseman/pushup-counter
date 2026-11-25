@@ -1119,3 +1119,15 @@ Object.assign(checks, {
     ok(Number(api.b_api) === Number(row.b_reps), 'api ' + JSON.stringify(api));
   },
 });
+
+// Hidden end reason (app 1.2.1+). Older builds omit it and get 'user'.
+steps.push(
+  ['end reason: an omitted reason is user', `${as(D)} select submit_set(${q(rec('end-default', 3, 1500, [0.15]))}) is not null; reset role; select end_reason from sets where client_set_id='end-default';`],
+  ['end reason: tilt is stored', `${as(D)} select submit_set(${q({ ...rec('end-tilt', 3, 1500, [0.15]), endReason: 'tilt' })}) is not null; reset role; select end_reason from sets where client_set_id='end-tilt';`],
+  ['end reason: an unknown reason is rejected (expect ERR)', `${as(D)} select submit_set(${q({ ...rec('end-bad', 3, 1500, [0.15]), endReason: 'shake' })}); reset role;`],
+);
+
+Object.assign(checks, {
+  'end reason: an omitted reason is user': (r) => ok(r[r.length - 1][0].end_reason === 'user', JSON.stringify(r)),
+  'end reason: tilt is stored': (r) => ok(r[r.length - 1][0].end_reason === 'tilt', JSON.stringify(r)),
+});

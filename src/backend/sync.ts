@@ -117,6 +117,7 @@ export function toSetPayload(r: SessionRecord, ctx: PayloadContext): Record<stri
     updateId: ctx.updateId,
   };
   if (typeof r.timerDurationS === 'number') payload.timerDurationS = r.timerDurationS;
+  if (r.endReason === 'user' || r.endReason === 'tilt') payload.endReason = r.endReason;
   if (version >= 2) {
     payload.detectorConfig = { ...DEFAULT_CONFIG, algorithmVersion: DETECTOR_ALGORITHM_VERSION };
     if (trace.length) {

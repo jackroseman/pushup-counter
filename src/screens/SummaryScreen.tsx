@@ -7,6 +7,14 @@ import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
+/** Plain line shown when the phone moved and ended the set. */
+export const PHONE_MOVED = 'Your phone moved.';
+
+export function summaryTitle(record: Pick<SessionRecord, 'endReason'>, fromHistory?: boolean): string {
+  if (fromHistory) return 'Set analysis';
+  return record.endReason === 'tilt' ? 'Set ended' : 'Set complete';
+}
+
 const sec = (v: number | null, digits = 1) => (v === null ? '—' : `${v.toFixed(digits)} s`);
 
 function clock(totalSec: number): string {
@@ -73,7 +81,8 @@ export function SummaryScreen({
   return (
     <View style={styles.container}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-        <Text style={styles.title}>{fromHistory ? 'Set analysis' : 'Set complete'}</Text>
+        <Text style={styles.title}>{summaryTitle(record, fromHistory)}</Text>
+        {record.endReason === 'tilt' ? <Text style={styles.moved}>{PHONE_MOVED}</Text> : null}
         <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{new Date(record.startedAt).toLocaleString()}</Text>
         {syncedLate ? <Text style={styles.late}>{SYNCED_LATE}</Text> : null}
         {progress ? (
@@ -221,6 +230,20 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 8 },
   date: { color: colors.muted, fontSize: 14, marginBottom: 12 },
+  moved: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    backgroundColor: 'rgba(255, 176, 32, 0.1)',
+    borderColor: 'rgba(255, 176, 32, 0.35)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
   dateBeforeLate: { marginBottom: 4 },
   late: { color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   row: { flexDirection: 'row', marginHorizontal: -4 },

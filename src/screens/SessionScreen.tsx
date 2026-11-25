@@ -4,8 +4,9 @@ import { FaceMeshView } from '../../modules/pushup-sensors';
 import { Button } from '../components/ui';
 import { LiveDistanceChart } from '../components/charts';
 import { CalibrationPanel } from '../components/calibration';
+import { LevelCard, LevelPanel } from '../components/level';
 import { qualityLabel } from '../core';
-import { BattleSessionOptions, LIVE_WINDOW_MS, useSession } from '../session/useSession';
+import { BattleSessionOptions, LIVE_WINDOW_MS, PLACE_FLAT_MESSAGE, useSession } from '../session/useSession';
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { colors } from '../theme';
@@ -31,9 +32,10 @@ export function SessionScreen({
     done.current = true;
     onFinished(record);
   };
+  // Ends by itself: a challenge timer / pause, or the phone stopped lying flat (same path as End set).
   useEffect(() => {
-    if (state.autoEnd) end();
-  }, [state.autoEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (state.autoEnd || state.endedByTilt) end();
+  }, [state.autoEnd, state.endedByTilt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (state.phase === 'unavailable') {
     return (
@@ -47,6 +49,17 @@ export function SessionScreen({
     );
   }
 
+  if (state.phase === 'placing') {
+    return (
+      <View style={styles.container}>
+        <Text style={[styles.status, styles.statusWarn]}>{PLACE_FLAT_MESSAGE}</Text>
+        <LevelCard level={state.level} />
+        <LevelPanel level={state.level} message={PLACE_FLAT_MESSAGE} />
+        <Button title="Cancel" kind="secondary" onPress={onCancel} />
+      </View>
+    );
+  }
+
   if (state.phase === 'calibrating' || state.phase === 'locked') {
     const locked = state.phase === 'locked' && state.calibratedTop !== null;
     return (
@@ -54,6 +67,12 @@ export function SessionScreen({
         <Text style={styles.status}>{state.status}</Text>
         <View style={styles.faceBox}>
           <FaceMeshView style={StyleSheet.absoluteFill} showAngles />
+          {state.flatCheck ? (
+            <View style={styles.flatPill} pointerEvents="none">
+              <View style={[styles.dot, styles.flatDot]} />
+              <Text style={styles.flatPillText}>Phone flat</Text>
+            </View>
+          ) : null}
           {locked ? (
             <View style={styles.lockedOverlay} pointerEvents="none">
               <Text style={styles.lockedLabel}>TOP LOCKED</Text>
@@ -157,6 +176,22 @@ function Indicator({ label, ok }: { label: string; ok: boolean }) {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
   status: { color: colors.muted, fontSize: 16, textAlign: 'center', marginTop: 12, minHeight: 44 },
+  statusWarn: { color: colors.accent, fontWeight: '600' },
+  flatPill: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(21, 27, 43, 0.9)',
+    borderColor: 'rgba(43, 214, 123, 0.45)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  flatDot: { backgroundColor: colors.quality.full, width: 8, height: 8, marginRight: 6 },
+  flatPillText: { color: colors.quality.full, fontSize: 12, fontWeight: '700' },
   battleClock: { color: colors.accent, fontSize: 28, fontWeight: '900', textAlign: 'center', fontVariant: ['tabular-nums'] },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   count: { color: colors.text, fontSize: 130, fontWeight: '900', fontVariant: ['tabular-nums'] },

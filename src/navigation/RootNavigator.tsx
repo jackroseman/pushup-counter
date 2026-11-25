@@ -103,7 +103,7 @@ export type RootStackParamList = {
     challengeId: string;
     battle?: Battle;
     share?: boolean;
-    justPlayed?: { reps: number; counted: number };
+    justPlayed?: { reps: number; counted: number; phoneMoved?: boolean };
     promptAttempt?: boolean;
     /** Created, accepted, or joined this challenge on the way here. */
     promptNotifications?: boolean;
@@ -394,7 +394,11 @@ function SessionRoute({ navigation, route }: Props<'Session'>) {
         submitBattleAttempt(record, battle.battleId, deviceId).catch(() => {});
         navigation.replace('Battle', {
           challengeId: battle.battleId,
-          justPlayed: { reps: record.reps.length, counted: countedReps(record.reps, record.startedAt, battle) },
+          justPlayed: {
+            reps: record.reps.length,
+            counted: countedReps(record.reps, record.startedAt, battle),
+            ...(record.endReason === 'tilt' ? { phoneMoved: true } : {}),
+          },
         });
       }}
       onCancel={() => navigation.goBack()}

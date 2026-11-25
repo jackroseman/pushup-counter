@@ -4,7 +4,6 @@ import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
 import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
-import { ChallengeOffer, offerLabel } from '../battles/challengeFromSet';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 
@@ -40,9 +39,7 @@ export function SummaryScreen({
   onDone,
   fromHistory,
   syncedLate,
-  offers,
-  onPickChallenge,
-  onSignIn,
+  onChallenge,
   progress,
 }: {
   record: SessionRecord;
@@ -50,11 +47,8 @@ export function SummaryScreen({
   fromHistory?: boolean;
   /** The server received this set too late for the streak. Totals still include it. */
   syncedLate?: boolean;
-  /** Just-finished set. History does not pass these. */
-  offers?: ChallengeOffer[];
-  onPickChallenge?: (offer: ChallengeOffer) => void;
-  /** Signed out: Challenge a friend opens sign in. */
-  onSignIn?: () => void;
+  /** Just-finished set. Opens create-challenge, or sign-in when there is no account. History omits it. */
+  onChallenge?: () => void;
   /** Present for a set that just finished. History stays on the analysis. */
   progress?: {
     counted: number;
@@ -103,6 +97,7 @@ export function SummaryScreen({
             ) : null}
           </View>
         ) : null}
+        {onChallenge ? <Button title="Challenge a friend" kind="secondary" onPress={onChallenge} style={styles.challenge} /> : null}
 
         <View style={styles.row}>
           <Stat label="Reps" value={String(a.totalReps)} />
@@ -217,15 +212,6 @@ export function SummaryScreen({
         })}
         <Text style={styles.caption}>Down/Up/Gap in seconds. Gap = time since the previous rep.</Text>
       </ScrollView>
-      {onSignIn ? <Button title="Challenge a friend" kind="secondary" onPress={onSignIn} /> : null}
-      {onPickChallenge && offers?.length ? (
-        <>
-          <Text style={styles.section}>Challenge a friend</Text>
-          {offers.map((offer) => (
-            <Button key={offerLabel(offer)} title={offerLabel(offer)} kind="secondary" onPress={() => onPickChallenge(offer)} />
-          ))}
-        </>
-      ) : null}
       <Button title="Done" onPress={onDone} />
     </View>
   );
@@ -247,6 +233,7 @@ const styles = StyleSheet.create({
   celebrate: { backgroundColor: colors.bg, borderRadius: 12, padding: 12, marginTop: 12 },
   celebrateTitle: { color: colors.accent, fontSize: 18, fontWeight: '800' },
   celebrateAlso: { color: colors.text, fontSize: 15, marginTop: 4 },
+  challenge: { marginTop: 12, paddingVertical: 12 },
   repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
   cell: { color: colors.muted, fontSize: 14, fontVariant: ['tabular-nums'] },

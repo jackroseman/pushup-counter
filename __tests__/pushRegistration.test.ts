@@ -7,7 +7,12 @@ jest.mock('expo-notifications', () => {
     requestPermissionsAsync: jest.fn(),
     addPushTokenListener: jest.fn((listener: (token: { type: string; data: string }) => void) => {
       listeners.push(listener);
-      return { remove: () => {} };
+      return {
+        remove: () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) listeners.splice(index, 1);
+        },
+      };
     }),
     getExpoPushTokenAsync: jest.fn(async (opts?: { devicePushToken?: { data: string } }) => {
       if (!opts?.devicePushToken) {
@@ -33,6 +38,7 @@ import { registerPushToken, resetPushRegistrationCache } from '../src/backend/id
 
 const notifications = Notifications as typeof Notifications & {
   getExpoPushTokenAsync: jest.Mock;
+  __listeners: Array<(token: { type: string; data: string }) => void>;
 };
 
 function clientWithRpc(rpc: jest.Mock) {
@@ -43,6 +49,7 @@ describe('push token registration', () => {
   beforeEach(() => {
     resetPushRegistrationCache();
     notifications.getExpoPushTokenAsync.mockClear();
+    notifications.__listeners.length = 0;
   });
 
   it('registers once per launch and does not loop when the token listener fires', async () => {
@@ -64,6 +71,19 @@ describe('push token registration', () => {
       p_token: 'ExponentPushToken[abc]',
     });
     expect(notifications.getExpoPushTokenAsync.mock.calls.length).toBeLessThan(4);
+  });
+
+  it('retries a save that failed instead of treating that launch as registered', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'timeout' } })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const client = clientWithRpc(rpc);
+    const first = await registerPushToken(client, 'device-1', false);
+    const second = await registerPushToken(client, 'device-1', false);
+    expect(first).toEqual({ ok: false, permission: 'granted', message: 'timeout' });
+    expect(second).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it('registers again when the native token changes', async () => {

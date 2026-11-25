@@ -30,6 +30,7 @@ import {
 } from '../../battles/model';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { loadBattleQueue } from '../../battles/uploadQueue';
+import { ChallengeNotifications } from '../../components/NotificationPrompt';
 import { AccountGate, Header, Notice, Row, s, SectionTitle, SmallButton } from './common';
 
 export function BattleScreen(props: {
@@ -47,12 +48,21 @@ export function BattleScreen(props: {
   /** Open daily goal on this phone. A streak invite without one goes to Goal setup. */
   hasGoal: boolean;
   onNeedGoal: () => void;
+  /** Just created this challenge or joined it from an invite link. */
+  promptNotifications?: boolean;
 }) {
+  const [justActed, setJustActed] = useState(!!props.promptNotifications);
+  const [trackedPrompt, setTrackedPrompt] = useState(props.battleId);
+  if (trackedPrompt !== props.battleId) {
+    setTrackedPrompt(props.battleId);
+    setJustActed(!!props.promptNotifications);
+  }
   return (
     <ScrollView contentContainerStyle={s.container}>
       <Header title="Challenge" onBack={props.onBack} />
+      <ChallengeNotifications justActed={justActed} onConsumed={() => setJustActed(false)} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
-        <BattleDetail {...props} />
+        <BattleDetail {...props} onAccepted={() => setJustActed(true)} />
       </AccountGate>
     </ScrollView>
   );
@@ -73,6 +83,7 @@ function BattleDetail({
   onBack,
   hasGoal,
   onNeedGoal,
+  onAccepted,
 }: {
   battleId: string;
   initialBattle?: Battle;
@@ -83,6 +94,7 @@ function BattleDetail({
   onBack: () => void;
   hasGoal: boolean;
   onNeedGoal: () => void;
+  onAccepted: () => void;
 }) {
   const { appSettings } = useBackend();
   const { profile } = useIdentity();
@@ -266,7 +278,15 @@ function BattleDetail({
               <Button title="Set a daily goal" onPress={onNeedGoal} />
             </>
           ) : (
-            <Button title="Accept" onPress={() => !busy && run(() => api.respond(supabase!, b.id, profile!.id, true))} />
+            <Button
+              title="Accept"
+              onPress={() => {
+                if (busy) return;
+                void run(() => api.respond(supabase!, b.id, profile!.id, true)).then((ok) => {
+                  if (ok) onAccepted();
+                });
+              }}
+            />
           )}
           <Button title="Decline" kind="secondary" onPress={() => !busy && run(() => api.respond(supabase!, b.id, profile!.id, false))} />
         </View>

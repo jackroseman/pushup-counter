@@ -148,12 +148,13 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId, hasProfile]);
 
-  // Expo can rotate the token; keep the server copy current.
+  // Expo can rotate the native token. Pass that token through; fetching a new
+  // device token from inside the listener emits the listener again.
   useEffect(() => {
     if (!supabase || !deviceId) return;
     const client = supabase;
-    const sub = Notifications.addPushTokenListener(() => {
-      registerPushToken(client, deviceId, false).then((r) => setRegistered(r.ok));
+    const sub = Notifications.addPushTokenListener((deviceToken) => {
+      registerPushToken(client, deviceId, false, deviceToken).then((r) => setRegistered(r.ok));
     });
     return () => sub.remove();
   }, [deviceId]);

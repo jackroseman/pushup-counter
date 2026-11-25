@@ -34,15 +34,64 @@ export async function getPushPermission(): Promise<PushPermission> {
 const projectId = (): string | undefined =>
   (Constants.expoConfig?.extra?.eas?.projectId as string | undefined) ?? Constants.easConfig?.projectId;
 
+const EXPO_PUSH_TOKEN = /^(Exponent|Expo)PushToken\[.+\]$/;
+
+type PushResult = { ok: true } | { ok: false; permission: PushPermission; message?: string };
+type SavedPush = { deviceId: string; token: string; native: string | null };
+
+// One successful save per app launch, until the native token changes.
+let savedPush: SavedPush | null = null;
+let pushFlight: Promise<PushResult> | null = null;
+
+/** Test hook. Production registration state lives for the JS runtime. */
+export function resetPushRegistrationCache(): void {
+  savedPush = null;
+  pushFlight = null;
+}
+
+function nativeKey(token: Notifications.DevicePushToken | undefined): string | null {
+  if (!token) return null;
+  return typeof token.data === 'string' ? token.data : JSON.stringify(token.data);
+}
+
 /**
  * Save this phone's Expo push token for the signed-in account. With ask=false it only
  * registers when permission was already granted (never shows the system prompt).
+ *
+ * Pass the device token from addPushTokenListener. Fetching it again inside that
+ * listener calls getDevicePushTokenAsync, which emits the listener, which fetched
+ * again. That loop is what hammered register_push_token.
  */
 export async function registerPushToken(
   client: SupabaseClient,
   deviceId: string,
   ask: boolean,
-): Promise<{ ok: true } | { ok: false; permission: PushPermission; message?: string }> {
+  devicePushToken?: Notifications.DevicePushToken,
+): Promise<PushResult> {
+  const native = nativeKey(devicePushToken);
+  if (!ask && savedPush?.deviceId === deviceId && (native === null || native === savedPush.native)) {
+    return { ok: true };
+  }
+  // The listener fires while the first fetch is still in progress. Share that
+  // attempt instead of starting another getExpoPushTokenAsync.
+  if (!ask && pushFlight) return pushFlight;
+
+  const run = savePushToken(client, deviceId, ask, devicePushToken, native);
+  if (ask) return run;
+  const wrapped = run.finally(() => {
+    if (pushFlight === wrapped) pushFlight = null;
+  });
+  pushFlight = wrapped;
+  return wrapped;
+}
+
+async function savePushToken(
+  client: SupabaseClient,
+  deviceId: string,
+  ask: boolean,
+  devicePushToken: Notifications.DevicePushToken | undefined,
+  native: string | null,
+): Promise<PushResult> {
   let permission = await getPushPermission();
   if (permission !== 'granted' && ask && permission === 'undetermined') {
     const p = await Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } });
@@ -51,9 +100,20 @@ export async function registerPushToken(
   if (permission !== 'granted') return { ok: false, permission };
   if (!Device.isDevice) return { ok: false, permission, message: 'Push notifications need a real iPhone.' };
   try {
-    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: projectId() });
+    const { data: token } = await Notifications.getExpoPushTokenAsync({
+      projectId: projectId(),
+      ...(devicePushToken ? { devicePushToken } : {}),
+    });
+    if (!EXPO_PUSH_TOKEN.test(token)) {
+      return { ok: false, permission, message: 'Push token was not an Expo token.' };
+    }
+    if (!ask && savedPush?.deviceId === deviceId && savedPush.token === token) {
+      savedPush = { deviceId, token, native: native ?? savedPush.native };
+      return { ok: true };
+    }
     const { error } = await client.rpc('register_push_token', { p_device_id: deviceId, p_token: token });
     if (error) return { ok: false, permission, message: error.message };
+    savedPush = { deviceId, token, native: native ?? savedPush?.native ?? null };
     return { ok: true };
   } catch (e) {
     return { ok: false, permission, message: e instanceof Error ? e.message : String(e) };

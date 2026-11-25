@@ -1,5 +1,8 @@
 import { Rep, SessionSummary, TracePoint } from '../core';
 
+/** 'tilt' = the set ended because the phone stopped lying flat. Everything else is 'user'. */
+export type SessionEndReason = 'user' | 'tilt';
+
 export interface SessionRecord {
   id: string;
   startedAt: number;
@@ -20,6 +23,8 @@ export interface SessionRecord {
   timerDurationS?: number;
   /** IANA zone of the phone at End set. Missing on sets saved before this was recorded. */
   timeZone?: string;
+  /** Why the set ended. Missing on sets saved before 1.2.1 (treat as 'user'). */
+  endReason?: SessionEndReason;
 }
 
 /** Minimal async key-value interface (AsyncStorage satisfies it) so this is testable. */

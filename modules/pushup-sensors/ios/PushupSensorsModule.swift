@@ -1,11 +1,13 @@
 import ExpoModulesCore
 import ARKit
 import AVFoundation
+import CoreMotion
 import UIKit
 
 private let proximityEvent = "onProximityChange"
 private let faceDistanceEvent = "onFaceDistance"
 private let faceErrorEvent = "onFaceTrackingError"
+private let gravityEvent = "onGravity"
 
 /// Wall-clock milliseconds, the same time base as JavaScript's `Date.now()`.
 private func nowMs() -> Double {
@@ -15,11 +17,12 @@ private func nowMs() -> Double {
 public class PushupSensorsModule: Module {
   private var proximityObserver: NSObjectProtocol?
   private var faceTracker: FaceDistanceTracker?
+  private var gravityTracker: GravityTracker?
 
   public func definition() -> ModuleDefinition {
     Name("PushupSensors")
 
-    Events(proximityEvent, faceDistanceEvent, faceErrorEvent)
+    Events(proximityEvent, faceDistanceEvent, faceErrorEvent, gravityEvent)
 
     // True only on devices with a TrueDepth (Face ID) front camera.
     Function("isFaceTrackingSupported") { () -> Bool in
@@ -108,6 +111,30 @@ public class PushupSensorsModule: Module {
       self.stopFaceTracking()
     }.runOnQueue(.main)
 
+    // True when Core Motion can deliver device motion (false on the Simulator).
+    Function("isMotionSupported") { () -> Bool in
+      return GravityTracker.isAvailable
+    }
+
+    // Starts Core Motion device-motion updates and emits the gravity vector
+    // { x, y, z (g, device frame: +z out of the screen), timestamp } at up to `hz`.
+    // Flat on the floor with the screen up reads about (0, 0, -1).
+    // Resolves false when device motion is unavailable; the app then skips the flat check.
+    AsyncFunction("startGravity") { (hz: Double) -> Bool in
+      guard GravityTracker.isAvailable else { return false }
+      if self.gravityTracker == nil {
+        self.gravityTracker = GravityTracker { [weak self] x, y, z in
+          self?.sendEvent(gravityEvent, ["x": x, "y": y, "z": z, "timestamp": nowMs()])
+        }
+      }
+      self.gravityTracker?.start(hz: hz > 0 ? hz : 50)
+      return true
+    }.runOnQueue(.main)
+
+    AsyncFunction("stopGravity") {
+      self.stopGravityUpdates()
+    }.runOnQueue(.main)
+
     // Puts the app audio session in .playback so spoken rep counts are audible even
     // with the ring/silent switch on, ducking (not stopping) the user's music.
     AsyncFunction("enablePlaybackAudioSession") {
@@ -128,8 +155,14 @@ public class PushupSensorsModule: Module {
       DispatchQueue.main.async {
         self.stopProximityMonitoring()
         self.stopFaceTracking()
+        self.stopGravityUpdates()
       }
     }
+  }
+
+  private func stopGravityUpdates() {
+    gravityTracker?.stop()
+    gravityTracker = nil
   }
 
   private func stopProximityMonitoring() {
@@ -257,5 +290,38 @@ final class FaceDistanceTracker: NSObject, ARSessionDelegate {
   func sessionWasInterrupted(_ session: ARSession) {
     lastTracked = false
     onSample(0, false, nil)
+  }
+}
+
+/// Core Motion device motion, reporting only the fused gravity vector. Tilt is worked out in
+/// JS (src/core/tilt.ts) so the thresholds can change in an OTA update.
+final class GravityTracker {
+  static let isAvailable: Bool = CMMotionManager().isDeviceMotionAvailable
+
+  private let manager = CMMotionManager()
+  private let queue: OperationQueue = {
+    let q = OperationQueue()
+    q.name = "expo.modules.pushupsensors.motion"
+    q.maxConcurrentOperationCount = 1
+    return q
+  }()
+  private let onSample: (Double, Double, Double) -> Void
+
+  init(onSample: @escaping (Double, Double, Double) -> Void) {
+    self.onSample = onSample
+  }
+
+  func start(hz: Double) {
+    guard manager.isDeviceMotionAvailable else { return }
+    manager.deviceMotionUpdateInterval = 1.0 / max(1.0, min(hz, 100.0))
+    if manager.isDeviceMotionActive { return }
+    manager.startDeviceMotionUpdates(to: queue) { [weak self] motion, _ in
+      guard let g = motion?.gravity else { return }
+      self?.onSample(g.x, g.y, g.z)
+    }
+  }
+
+  func stop() {
+    manager.stopDeviceMotionUpdates()
   }
 }

@@ -174,6 +174,12 @@ describe('set payload', () => {
     expect(fallback).not.toBe('');
   });
 
+  it('sends why the set ended, only when known', () => {
+    expect(toSetPayload(record('s1', T0, 2, { endReason: 'tilt' }), ctx).endReason).toBe('tilt');
+    expect(toSetPayload(record('s1', T0, 2, { endReason: 'user' }), ctx).endReason).toBe('user');
+    expect('endReason' in toSetPayload(record('s1', T0), ctx)).toBe(false);
+  });
+
   it('sends legacy v1 records without detector config', () => {
     const p = toSetPayload(record('old', T0, 2, { version: undefined, trace: undefined }), ctx);
     expect(p.version).toBe(1);

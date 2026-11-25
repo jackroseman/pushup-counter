@@ -26,6 +26,12 @@ describe('validateBattleSet', () => {
     }
   });
 
+  it('accepts the end reasons, or none', () => {
+    expect(validateBattleSet(set(3, { endReason: 'tilt' })).ok).toBe(true);
+    expect(validateBattleSet(set(3, { endReason: 'user' })).ok).toBe(true);
+    expect(validateBattleSet(set(3)).ok).toBe(true);
+  });
+
   it('accepts a 0-rep attempt without a trace', () => {
     expect(validateBattleSet(set(0, { trace: undefined })).ok).toBe(true);
   });
@@ -39,6 +45,7 @@ describe('validateBattleSet', () => {
     ['no trace', { trace: [] }, /depth trace/],
     ['huge trace', { trace: Array.from({ length: 3002 }, (_, i) => [i * 100, 0.4]) }, /3001/],
     ['bad trace point', { trace: [[0, 'x']] }, /trace point/],
+    ['unknown end reason', { endReason: 'cheat' }, /endReason/],
   ])('rejects %s', (_label, extra, msg) => {
     const r = validateBattleSet(set(3, extra));
     expect(r.ok).toBe(false);

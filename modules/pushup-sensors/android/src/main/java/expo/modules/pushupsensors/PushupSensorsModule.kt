@@ -38,7 +38,7 @@ class PushupSensorsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PushupSensors")
 
-    Events("onProximityChange", "onFaceDistance", "onFaceTrackingError")
+    Events("onProximityChange", "onFaceDistance", "onFaceTrackingError", "onGravity")
 
     Function("isFaceTrackingSupported") {
       false
@@ -68,6 +68,17 @@ class PushupSensorsModule : Module() {
     AsyncFunction("stopFaceDistance") {}
 
     AsyncFunction("enablePlaybackAudioSession") {}
+
+    // The flat-phone check is iOS only. Android reports it unsupported, so the app skips it.
+    Function("isMotionSupported") {
+      false
+    }
+
+    AsyncFunction("startGravity") { _: Double ->
+      false
+    }
+
+    AsyncFunction("stopGravity") {}
 
     OnDestroy {
       sensorManager?.unregisterListener(proximityListener)

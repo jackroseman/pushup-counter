@@ -33,8 +33,18 @@ export type FaceTrackingErrorEvent = {
   message: string;
 };
 
+export type GravityEvent = {
+  /** Core Motion gravity vector in g, device frame (+z out of the screen). Flat, screen up = (0, 0, -1). */
+  x: number;
+  y: number;
+  z: number;
+  /** Milliseconds since epoch (same base as Date.now()). */
+  timestamp: number;
+};
+
 export type PushupSensorsModuleEvents = {
   onProximityChange: (event: ProximityEvent) => void;
   onFaceDistance: (event: FaceDistanceEvent) => void;
   onFaceTrackingError: (event: FaceTrackingErrorEvent) => void;
+  onGravity: (event: GravityEvent) => void;
 };

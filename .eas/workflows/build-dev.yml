@@ -23,3 +23,7 @@ jobs:
     params:
       platform: ios
       profile: development
+      # Regenerate the ad hoc profile from the App ID before building (uses the App Store
+      # Connect API key stored in EAS credentials). Picks up newly registered devices and
+      # capabilities enabled in the Apple portal (Associated Domains for invite links).
+      refresh_ad_hoc_provisioning_profile: true

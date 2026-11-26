@@ -404,7 +404,7 @@ steps.push(
   ['progress: a client cannot write an enrollment (expect ERR)', `${as(D)} insert into goal_enrollments (user_id, custom_daily_reps, started_on, recorded_time_zone) values ('${D}', 30, current_date, 'UTC'); reset role;`],
   ['progress: switching today rewrites the open row', `${as(D)} select enroll_goal('{"customDailyReps":30}')->>'customDailyReps' as custom; select enroll_goal('{"programId":"first_20"}')->>'programId' as program; select count(*)::int as n from goal_enrollments where user_id='${D}'; reset role;`],
   ['progress: a custom goal outside the settings is rejected (expect ERR)', `${as(D)} select enroll_goal('{"customDailyReps":4}'); reset role;`],
-  ['progress: switching on a later day closes yesterday', `update goal_enrollments set started_on = (now() at time zone 'America/New_York')::date - 1 where user_id='${D}' and ended_on is null; ${as(D)} select enroll_goal('{"programId":"fifty_a_day"}')->>'programId' as program; select count(*)::int as n, (select ended_on from goal_enrollments where user_id='${D}' and program_id='first_20') as closed from goal_enrollments where user_id='${D}'; reset role;`],
+  ['progress: switching on a later day closes yesterday', `update goal_enrollments set started_on = (now() at time zone (select time_zone from profiles where id='${D}'))::date - 1 where user_id='${D}' and ended_on is null; ${as(D)} select enroll_goal('{"programId":"fifty_a_day"}')->>'programId' as program; select count(*)::int as n, (select ended_on from goal_enrollments where user_id='${D}' and program_id='first_20') as closed, (now() at time zone (select time_zone from profiles where id='${D}'))::date as today from goal_enrollments where user_id='${D}'; reset role;`],
   ['progress: someone else cannot read the goal', `${as(B)} select count(*)::int as n from goal_enrollments; reset role;`],
   ['progress: anon cannot call my_progress (expect ERR)', `set role anon; select my_progress(); reset role;`],
   ['progress: setup P', `insert into auth.users values ('${P}'); ${as(P)} insert into profiles(id, username, time_zone) values ('${P}', 'pat', 'UTC'); select enroll_goal('{"customDailyReps":10}')->>'customDailyReps' as custom; reset role; update goal_enrollments set started_on = (now() at time zone 'UTC')::date - 80 where user_id='${P}' and ended_on is null;`],
@@ -451,8 +451,10 @@ Object.assign(checks, {
   },
   'progress: switching on a later day closes yesterday': (r) => {
     const row = r[r.length - 1][0];
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    ok(r[0][0].program === 'fifty_a_day' && Number(row.n) === 2 && isoDate(row.closed) === today, 'close ' + JSON.stringify(r));
+    // ended_on is today in the profile zone (D was set to Europe/Paris earlier in the suite).
+    // Compare against the same SQL expression, not JS America/New_York: after late afternoon
+    // ET those calendar dates differ, and isoDate() is UTC, which made this case flake.
+    ok(r[0][0].program === 'fifty_a_day' && Number(row.n) === 2 && isoDate(row.closed) === isoDate(row.today), 'close ' + JSON.stringify(r));
   },
   'progress: someone else cannot read the goal': (r) => ok(Number(r[0][0].n) === 0, 'goal leak'),
   'progress: a late set counts in the total and not the streak': (r) => {

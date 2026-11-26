@@ -1,17 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { LeagueScreen } from '../../screens/LeagueScreen';
+import { LeagueView } from '../../screens/compete/LeagueView';
+import { CompeteSignedOut } from '../../screens/compete/SignedOut';
 import { BattlesScreen } from '../../screens/battles/BattlesScreen';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../../backend/leagueClient';
 import { supabase } from '../../backend/supabase';
 import { REFRESH_FAILED } from '../../progress';
+import { leagueView, type LeagueMode } from '../../progress/leagueView';
+import { shareInvite } from '../../battles/inviteFriends';
+import { EmptyState, color } from '../../ui';
 import { gate } from './gate';
 import type { TabProps } from '../types';
 
-/** The old League tab, now the League segment of Compete. */
+/** League segment of Compete (frames 16, 18, 19, E8, E9); signed out it is the sign-in pitch. */
 export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation'>) {
   const { configured, session } = useBackend();
   const { profile } = useIdentity();
@@ -21,6 +26,8 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
   userRef.current = userId;
   const [board, setBoard] = useState<LeagueBoard | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [mode, setMode] = useState<LeagueMode>('total');
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (userId && profile === null && askedFor.current !== userId && navigation.isFocused()) {
@@ -43,6 +50,7 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
   }, [userId]);
 
   const reload = useCallback(() => {
+    setNow(Date.now());
     if (!supabase || !userId || !profile) return;
     const requested = userId;
     fetchMyLeague(supabase)
@@ -50,6 +58,7 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
         if (userRef.current !== requested) return;
         setBoard(doc);
         setBanner(null);
+        setNow(Date.now());
         saveLeagueCache(AsyncStorage, userId, doc).catch(() => {});
       })
       .catch(() => {
@@ -59,22 +68,37 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
 
   useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
 
+  const view = useMemo(() => (board ? leagueView({ board, meId: userId, mode, now }) : null), [board, userId, mode, now]);
+
+  if (!configured || !session) return <CompeteSignedOut configured={configured} />;
+  if (profile === null) {
+    return (
+      <EmptyState
+        icon="person"
+        title="Pick a username"
+        message="Friends find you by your username."
+        actionTitle="Pick a username"
+        onAction={() => navigation.navigate('ProfileSetup')}
+      />
+    );
+  }
+  if (profile === undefined) return <ActivityIndicator style={styles.loading} color={color.secondary} />;
   return (
-    <LeagueScreen
-      configured={configured}
-      signedIn={!!session}
-      username={profile === undefined ? 'loading' : profile === null ? 'needed' : 'ready'}
-      board={board}
+    <LeagueView
+      view={view}
+      mode={mode}
+      onMode={setMode}
       banner={banner}
-      meId={userId}
-      onAddFriend={() => navigation.navigate('Friends')}
-      onOpenFriend={(row) => {
-        if (!userId || row.userId === userId) return;
+      onStart={() => navigation.navigate('Session')}
+      onInvite={() => shareInvite(profile.username)}
+      onOpenPerson={(person) => {
+        if (person.me) return;
+        const row = board?.total.find((r) => r.userId === person.userId);
+        if (!row) return;
         navigation.navigate('Friend', {
           friend: { userId: row.userId, username: row.username, displayName: row.displayName, relation: 'friend' },
         });
       }}
-      onProfile={() => navigation.navigate('ProfileSetup')}
     />
   );
 }
@@ -90,3 +114,5 @@ export function ChallengesBody({ navigation }: Pick<TabProps<'Compete'>, 'naviga
     />
   );
 }
+
+const styles = StyleSheet.create({ loading: { marginTop: 48 } });

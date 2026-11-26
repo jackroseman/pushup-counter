@@ -40,7 +40,7 @@ export function SessionScreen({
   /** The (i) on "Get set": opens How it works (frame 3). No (i) when not given. */
   onHowItWorks?: () => void;
 }) {
-  const { state, finish, live, recalibrate, startNow } = useSession(settings, battle);
+  const { state, finish, live, recalibrate } = useSession(settings, battle);
   const [voice, setVoice] = useState(true);
   const [elapsedMs, setElapsedMs] = useState(0);
   const last = state.lastRep;
@@ -103,12 +103,9 @@ export function SessionScreen({
       <View style={styles.container}>
         <SetBar title="Get set" onClose={onCancel} right={infoButton} />
         {state.phase === 'placing' ? (
-          <>
-            <View style={styles.levelWrap}>
-              <LevelView level={state.level} />
-            </View>
-            <Button title="Start now" kind="gray" onPress={startNow} />
-          </>
+          <View style={styles.levelWrap}>
+            <LevelView level={state.level} />
+          </View>
         ) : null}
       </View>
     );

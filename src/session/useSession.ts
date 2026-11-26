@@ -266,12 +266,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     startCalibration();
   }, [startCalibration]);
 
-  /** "Start now" on the level screen: skip the flat hold and go straight to face centering. */
-  const startNow = useCallback(() => {
-    if (cancelled.current || phaseRef.current !== 'placing') return;
-    startCalibration();
-  }, [startCalibration]);
-
   useEffect(() => {
     cancelled.current = false;
     faceStarted.current = false;
@@ -505,5 +499,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate, startNow };
+  return { state, finish, live, recalibrate };
 }

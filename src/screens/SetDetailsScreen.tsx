@@ -18,7 +18,7 @@ export function SetDetailsScreen({
 }) {
   const m = useMemo(() => setDetails(record), [record]);
   const confirmDelete = () =>
-    Alert.alert('Delete this set?', 'It is removed from this phone.', [
+    Alert.alert('Delete this set?', "This can't be undone.", [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: onDelete },
     ]);

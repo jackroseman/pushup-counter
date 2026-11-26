@@ -1202,3 +1202,39 @@ Object.assign(checks, {
     ok(r.find((set) => set[0] && 'expired' in set[0])[0].expired === true, 'not expired ' + JSON.stringify(r));
   },
 });
+
+// Delete set (Set details): the app deletes the user's own solo set by SessionRecord id.
+// RLS allows only your own sets outside challenges; reps and traces cascade; totals follow.
+const DA = 'dddddddd-0001-4ddd-8ddd-dddddddddddd', DB = 'dddddddd-0002-4ddd-8ddd-dddddddddddd';
+const delSet = (user, id) =>
+  `${as(user)} with d as (delete from sets where user_id = '${user}' and client_set_id = '${id}' and challenge_id is null returning 1) select count(*)::int as deleted from d; reset role;`;
+const totals = `${as(DA)} select (public.my_progress()->>'lifetimeReps')::int as lifetime,
+  (select (r->>'reps')::int from jsonb_array_elements(public.my_league()->'total') r where r->>'userId' = '${DA}') as league; reset role;`;
+steps.push(
+  ['delete: setup two friends with sets', `insert into auth.users values ('${DA}'),('${DB}');
+    ${as(DA)} insert into profiles(id,username) values ('${DA}','delta'); reset role;
+    ${as(DB)} insert into profiles(id,username) values ('${DB}','echo'); reset role;
+    ${as(DA)} select send_friend_request('echo'); reset role; ${as(DB)} select respond_friend_request('${DA}', true); reset role;
+    ${solo('del-1', 10, DA)} ${solo('del-2', 5, DA)} ${solo('del-b', 4, DB)}
+    ${totals}`],
+  ['delete: a friend cannot delete your set', delSet(DB, 'del-1')],
+  ['delete: you delete your own solo set', `${delSet(DA, 'del-1')}
+    select count(*)::int as sets from sets where client_set_id = 'del-1';
+    select count(*)::int as orphans from reps r where not exists (select 1 from sets s where s.id = r.set_id);
+    ${totals}`],
+  ['delete: deleting again is a no-op', delSet(DA, 'del-1')],
+);
+Object.assign(checks, {
+  'delete: setup two friends with sets': (r) => {
+    const t = r[r.length - 1][0];
+    ok(t.lifetime === 15 && t.league === 15, 'totals before ' + JSON.stringify(t));
+  },
+  'delete: a friend cannot delete your set': (r) => ok(r[0][0].deleted === 0, 'friend deleted ' + JSON.stringify(r)),
+  'delete: you delete your own solo set': (r) => {
+    ok(r[0][0].deleted === 1, 'deleted ' + JSON.stringify(r[0]));
+    ok(r[1][0].sets === 0 && r[2][0].orphans === 0, 'cascade ' + JSON.stringify(r.slice(1, 3)));
+    const t = r[3][0];
+    ok(t.lifetime === 5 && t.league === 5, 'totals after ' + JSON.stringify(t));
+  },
+  'delete: deleting again is a no-op': (r) => ok(r[0][0].deleted === 0, 'again ' + JSON.stringify(r)),
+});

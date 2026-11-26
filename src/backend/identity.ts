@@ -151,6 +151,11 @@ export function supabaseSyncBackend(client: SupabaseClient): SyncBackend {
       const { error } = await client.rpc('submit_set', { p: payload });
       return { error: error ? { code: error.code, message: error.message } : null };
     },
+    deleteSet: async (userId, clientSetId) => {
+      // RLS allows deleting only your own sets outside challenges; reps and traces cascade.
+      const { error } = await client.from('sets').delete().eq('user_id', userId).eq('client_set_id', clientSetId).is('challenge_id', null);
+      return { error: error ? { code: error.code, message: error.message } : null };
+    },
     listUploadedIds: async (userId) => {
       const ids: string[] = [];
       for (let from = 0; ; from += 1000) {
@@ -166,6 +171,18 @@ export function supabaseSyncBackend(client: SupabaseClient): SyncBackend {
       }
     },
   };
+}
+
+/** Whether the user's backed-up set with this SessionRecord id is in a challenge. */
+export async function setInChallenge(client: SupabaseClient, userId: string, clientSetId: string): Promise<boolean> {
+  const { data, error } = await client
+    .from('sets')
+    .select('challenge_id')
+    .eq('user_id', userId)
+    .eq('client_set_id', clientSetId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return !!data?.challenge_id;
 }
 
 export function payloadContext(deviceId: string | null): PayloadContext {

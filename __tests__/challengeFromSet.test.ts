@@ -1,4 +1,4 @@
-import { challengeOffers, offerLabel, summaryChallengeAction, windowClosingNote } from '../src/battles/challengeFromSet';
+import { challengeOffers, offerLabel, summaryChallengeOffer, windowClosingNote } from '../src/battles/challengeFromSet';
 
 const presets = [60, 120];
 const now = Date.parse('2026-11-02T15:00:00Z');
@@ -45,31 +45,17 @@ describe('challengeOffers', () => {
   });
 });
 
-describe('summaryChallengeAction', () => {
-  it('stays quiet for a set opened from history', () => {
-    expect(summaryChallengeAction(false, true, { timerDurationS: null, endedAt: now }, opts)).toEqual({ type: 'none' });
-  });
-
-  it('sends a signed-out person to sign in', () => {
-    expect(summaryChallengeAction(true, false, { timerDurationS: 60, endedAt: now }, opts)).toEqual({ type: 'sign-in' });
-  });
-
+describe('summaryChallengeOffer', () => {
   it('opens create on the best set that matches a fresh set', () => {
-    expect(summaryChallengeAction(true, true, { timerDurationS: null, endedAt: now }, opts)).toEqual({
-      type: 'create',
-      offer: { kind: 'best_set', durationS: null },
-    });
-    expect(summaryChallengeAction(true, true, { timerDurationS: 60, endedAt: now }, opts)).toEqual({
-      type: 'create',
-      offer: { kind: 'best_set', durationS: 60 },
-    });
+    expect(summaryChallengeOffer({ timerDurationS: null, endedAt: now }, opts)).toEqual({ kind: 'best_set', durationS: null });
+    expect(summaryChallengeOffer({ timerDurationS: 60, endedAt: now }, opts)).toEqual({ kind: 'best_set', durationS: 60 });
   });
 
   it('opens most reps today when the set cannot be claimed, so create does not take it as a best set', () => {
-    const today = { type: 'create', offer: { kind: 'total', window: 'day' } };
-    expect(summaryChallengeAction(true, true, { timerDurationS: 60, endedAt: now, challengeId: 'c1' }, opts)).toEqual(today);
-    expect(summaryChallengeAction(true, true, { timerDurationS: null, endedAt: now - 1800_000 - 1 }, opts)).toEqual(today);
-    expect(summaryChallengeAction(true, true, { timerDurationS: 45, endedAt: now }, opts)).toEqual(today);
+    const today = { kind: 'total', window: 'day' };
+    expect(summaryChallengeOffer({ timerDurationS: 60, endedAt: now, challengeId: 'c1' }, opts)).toEqual(today);
+    expect(summaryChallengeOffer({ timerDurationS: null, endedAt: now - 1800_000 - 1 }, opts)).toEqual(today);
+    expect(summaryChallengeOffer({ timerDurationS: 45, endedAt: now }, opts)).toEqual(today);
   });
 });
 

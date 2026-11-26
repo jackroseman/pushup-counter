@@ -37,13 +37,14 @@ function TodayProgress({ card }: { card: TodayCard }) {
   );
 }
 
-/** Just-finished set (frame 11, E4): the count first, a quiet badge, today's progress and the depth split. */
+/** Just-finished set (frame 11, E4): the count first, a quiet badge, today's progress and the depth split; Done, then quiet Challenge a friend and Set details. */
 export function SummaryScreen({
   record,
   today,
   celebration,
   onDone,
   onDetails,
+  onChallenge,
 }: {
   record: SessionRecord;
   /** Null until today's numbers are loaded. */
@@ -51,6 +52,8 @@ export function SummaryScreen({
   celebration: Celebration | null;
   onDone: () => void;
   onDetails: () => void;
+  /** "Challenge a friend" under Done; omitted for a set with no reps. */
+  onChallenge?: () => void;
 }) {
   const reps = record.reps.length;
   const badge = summaryBadge(celebration);
@@ -80,6 +83,7 @@ export function SummaryScreen({
         ) : null}
       </ScrollView>
       <Button title="Done" onPress={onDone} />
+      {onChallenge ? <Button title="Challenge a friend" kind="plain" onPress={onChallenge} /> : null}
       <Button title="Set details" kind="plain" onPress={onDetails} />
     </View>
   );

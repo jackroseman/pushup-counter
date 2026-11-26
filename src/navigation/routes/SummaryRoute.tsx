@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 
 import { SetDetailsScreen } from '../../screens/SetDetailsScreen';
 import { SetEndedScreen } from '../../screens/SetEndedScreen';
 import { SummaryScreen } from '../../screens/SummaryScreen';
 import { useBackend } from '../../backend/BackendProvider';
-import { notifyHistoryChanged } from '../../backend/syncEvents';
+import { useIdentity } from '../../backend/IdentityProvider';
+import { summaryChallengeOffer } from '../../battles/challengeFromSet';
 import { historyStore } from '../../session/useSession';
 import { deviceTimeZone } from '../../backend/profile';
 import { Celebration, buildToday, celebrate, localDate, mergeWorkouts, signedInViews, workoutFromRecord } from '../../progress';
@@ -19,7 +21,8 @@ import type { Props } from '../types';
  */
 export function SummaryRoute({ navigation, route }: Props<'Summary'>) {
   const { enrollments, remote } = useAppState();
-  const { session } = useBackend();
+  const { session, appSettings } = useBackend();
+  const { deleteSet } = useIdentity();
   const record = route.params.record;
   const fromHistory = route.params.from === 'history';
   const [today, setToday] = useState<TodayCard | null>(null);
@@ -56,13 +59,12 @@ export function SummaryRoute({ navigation, route }: Props<'Summary'>) {
           record={record}
           onBack={() => navigation.goBack()}
           onDelete={() => {
-            historyStore
-              .remove(record.id)
-              .then(() => notifyHistoryChanged())
-              .catch(() => {})
-              .finally(() => {
+            deleteSet(record)
+              .then((r) => {
+                if (!r.ok) return Alert.alert("Can't delete this set", 'Sets played in a challenge stay in that challenge.');
                 if (navigation.canGoBack()) navigation.goBack();
-              });
+              })
+              .catch(() => Alert.alert("Couldn't delete this set", 'Try again.'));
           }}
         />
       </Frame>
@@ -83,6 +85,18 @@ export function SummaryRoute({ navigation, route }: Props<'Summary'>) {
         celebration={celebration}
         onDone={() => navigation.popToTop()}
         onDetails={() => navigation.push('Summary', { record, from: 'history' })}
+        onChallenge={
+          record.reps.length > 0
+            ? () =>
+                navigation.navigate('NewBattle', {
+                  fromSet: record,
+                  offer: summaryChallengeOffer(record, {
+                    timedDurationsS: appSettings.asyncBattleDefaults.timedDurationsS,
+                    claimMaxAgeS: appSettings.asyncBattleDefaults.claimSetMaxAgeS,
+                  }),
+                })
+            : undefined
+        }
       />
     </Frame>
   );

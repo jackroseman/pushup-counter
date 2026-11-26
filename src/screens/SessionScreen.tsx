@@ -10,6 +10,7 @@ import { BattleSessionOptions, LIVE_WINDOW_MS, PLACE_FLAT_MESSAGE, useSession } 
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
 export function SessionScreen({
   settings,
@@ -183,8 +184,8 @@ const styles = StyleSheet.create({
     right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(21, 27, 43, 0.9)',
-    borderColor: 'rgba(43, 214, 123, 0.45)',
+    backgroundColor: 'rgba(17, 17, 19, 0.9)',
+    borderColor: 'rgba(48, 209, 88, 0.45)',
     borderWidth: 1,
     borderRadius: 999,
     paddingVertical: 4,
@@ -207,7 +208,7 @@ const styles = StyleSheet.create({
   segmentText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   segmentTextOn: { color: '#111' },
   faceSmall: { height: 170, borderRadius: 16, overflow: 'hidden' },
-  faceBox: { flex: 1, borderRadius: 20, overflow: 'hidden', backgroundColor: '#05070D', minHeight: 260 },
+  faceBox: { flex: 1, borderRadius: 20, overflow: 'hidden', backgroundColor: color.bg, minHeight: 260 },
   lockedOverlay: {
     position: 'absolute',
     left: 0,

@@ -11,6 +11,7 @@ import {
 } from '../progress';
 import type { ProgressModel, ShelfRecord } from '../progress';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
 const RANGES = ['Day', 'Week', 'Month', 'Lifetime'] as const;
 type Range = (typeof RANGES)[number];
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
   shelfDetail: { color: colors.muted, fontSize: 13, marginTop: 2 },
   badges: { flexDirection: 'row', gap: 8 },
   badge: { flex: 1, backgroundColor: colors.card, borderRadius: 14, padding: 12, minHeight: 84 },
-  badgeOn: { backgroundColor: '#24301C' },
+  badgeOn: { backgroundColor: color.fill.signalSoft },
   badgeValue: { color: colors.text, fontSize: 16, fontWeight: '800' },
   badgeCaption: { color: colors.muted, fontSize: 12, marginTop: 6, lineHeight: 16 },
   program: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },

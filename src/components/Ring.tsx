@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
 const SIZE = 196;
 const STROKE = 14;
@@ -24,7 +25,7 @@ export function Ring({
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${text}. ${caption}`.trim()} onPress={onPress} style={styles.wrap}>
       <Svg width={SIZE} height={SIZE}>
-        <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke="#2A3145" strokeWidth={STROKE} fill="none" />
+        <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={color.graphite} strokeWidth={STROKE} fill="none" />
         {filled > 0 ? (
           <Circle
             cx={SIZE / 2}

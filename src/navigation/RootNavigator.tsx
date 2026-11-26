@@ -23,6 +23,7 @@ import { DEFAULT_SETTINGS, Settings, loadSettings, saveSettings } from '../stora
 import { historyStore } from '../session/useSession';
 import { faceTrackingSupported } from '../sensors';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 import { APP_SCHEME, notificationLink, parseAppLink } from '../backend/linking';
 import { BattlesScreen } from '../screens/battles/BattlesScreen';
 import { BattleScreen } from '../screens/battles/BattleScreen';
@@ -618,7 +619,7 @@ function MainTabs() {
     <Tabs.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: '#2A3145' },
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: color.separator },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
       }}

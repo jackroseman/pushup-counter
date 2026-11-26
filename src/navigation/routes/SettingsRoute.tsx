@@ -15,6 +15,8 @@ import { useAppState } from '../appState';
 import { Frame } from '../frame';
 import type { Props } from '../types';
 import { useFocusNow } from './useFocusNow';
+import { useDiscardGuard, useSaveHeader } from '../draft';
+import { quietDirty, quietDraftOf, reminderDirty, reminderDraftOf } from '../../progress/draft';
 
 type Permission = 'granted' | 'denied' | 'undetermined';
 
@@ -126,38 +128,55 @@ export function SettingsRoute({ navigation }: Props<'Settings'>) {
   );
 }
 
-/** Settings › Daily reminder (frame 30). Saves to the same prefs as before (`notification_prefs` when signed in). */
+/** Settings › Daily reminder (frame 30). Edits are a draft until Save; saves to the same prefs as before (`notification_prefs` when signed in). */
 export function DailyReminderRoute({ navigation }: Props<'DailyReminder'>) {
   const { nudges, updateNudges, enrollments } = useAppState();
   const today = localDate(useFocusNow(navigation), deviceTimeZone());
   const target = reminderTarget(enrollments, today, addCalendarDays);
+  const [draft, setDraft] = useState(() => reminderDraftOf(nudges));
+  const dirty = reminderDirty(reminderDraftOf(nudges), draft);
+  const leave = useDiscardGuard(navigation, dirty);
+  const save = () => {
+    updateNudges({ ...nudges, ...draft });
+    leave();
+  };
+  useSaveHeader(navigation, { canSave: dirty, onSave: save });
   // No goal means no reminder (E15): leave if the goal goes away while this is open.
   useEffect(() => {
-    if (goalValue(enrollments, today) == null && target == null) navigation.goBack();
-  }, [enrollments, today, target, navigation]);
+    if (goalValue(enrollments, today) == null && target == null) leave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollments, today, target]);
   return (
     <Frame kind="header">
       <DailyReminderScreen
-        enabled={nudges.dailyNudge}
-        onEnabled={(dailyNudge) => updateNudges({ ...nudges, dailyNudge })}
-        time={nudges.nudgeLocalTime}
-        onTime={(nudgeLocalTime) => updateNudges({ ...nudges, nudgeLocalTime })}
+        enabled={draft.dailyNudge}
+        onEnabled={(dailyNudge) => setDraft((d) => ({ ...d, dailyNudge }))}
+        time={draft.nudgeLocalTime}
+        onTime={(nudgeLocalTime) => setDraft((d) => ({ ...d, nudgeLocalTime }))}
         preview={target != null ? reminderPreview(target) : null}
       />
     </Frame>
   );
 }
 
-/** Settings › Quiet hours. */
-export function QuietHoursRoute() {
+/** Settings › Quiet hours. A draft until Save. */
+export function QuietHoursRoute({ navigation }: Props<'QuietHours'>) {
   const { nudges, updateNudges } = useAppState();
+  const [draft, setDraft] = useState(() => quietDraftOf(nudges));
+  const dirty = quietDirty(quietDraftOf(nudges), draft);
+  const leave = useDiscardGuard(navigation, dirty);
+  const save = () => {
+    updateNudges({ ...nudges, ...draft });
+    leave();
+  };
+  useSaveHeader(navigation, { canSave: dirty, onSave: save });
   return (
     <Frame kind="header">
       <QuietHoursScreen
-        start={nudges.quietStart}
-        end={nudges.quietEnd}
-        onStart={(quietStart) => updateNudges({ ...nudges, quietStart })}
-        onEnd={(quietEnd) => updateNudges({ ...nudges, quietEnd })}
+        start={draft.quietStart}
+        end={draft.quietEnd}
+        onStart={(quietStart) => setDraft((d) => ({ ...d, quietStart }))}
+        onEnd={(quietEnd) => setDraft((d) => ({ ...d, quietEnd }))}
       />
     </Frame>
   );

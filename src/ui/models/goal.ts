@@ -36,10 +36,6 @@ export function programBars(program: Program, currentWeek: number | null = null)
   return program.segments.map((s, i) => ({ height: max > 0 ? s.dailyTarget / max : 0, current: currentWeek === i + 1 }));
 }
 
-export function programTitle(id: ProgramId): string {
-  return CARD_COPY[id].title;
-}
-
 export function programCards(): ProgramCard[] {
   return PROGRAMS.map((p) => ({ id: p.id, ...CARD_COPY[p.id], length: p.lengthLabel, bars: programBars(p) }));
 }

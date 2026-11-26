@@ -72,7 +72,7 @@ Runs on every commit pushed to a PR into `main` or `dev`, and on pushes to `dev`
 
 | job                        | what it does                                              | required |
 |----------------------------|-----------------------------------------------------------|----------|
-| `checks`                   | `npm ci`, `expo lint` (0 errors, warnings capped), `jest --ci`, `npm run test:db` (migrations + RLS tests on PGlite), `tsc --noEmit`, `expo export --platform ios` (bundle smoke test) | **yes**: PRs that fail are blocked |
+| `checks`                   | `npm ci`, `expo lint` (0 errors, `--max-warnings 16`; the cap only goes down), `jest --ci`, `npm run test:db` (migrations + RLS tests on PGlite), `tsc --noEmit`, `expo export --platform ios` (bundle smoke test) | **yes**: PRs that fail are blocked |
 | `expo-doctor (advisory)`   | `npx expo-doctor` (dependency/config health)              | no (network-dependent) |
 
 Run the same checks locally before pushing:
@@ -92,10 +92,11 @@ whether the commit has app changes, and a `ship` job starts `eas-ship.yml` only 
 
 ## 5. CD (`.github/workflows/eas-ship.yml`, `.eas/workflows/`)
 
-Deploys run **only after a merge** (a push to `dev` or `main`) **and only after the
-`checks` job for that exact commit has passed**, never on PR events, and never when
-those checks failed. The full recipe is in [docs/RELEASING.md](docs/RELEASING.md). In
-short:
+On `dev`, deploys run **only after a merge** **and only after the `checks` job for
+that exact commit has passed**, never on PR events, and never when those checks
+failed. Until the next `dev` → `main` release, `main` still ships on push. After that
+release, merges to `main` use the same gate. The full recipe is in
+[docs/RELEASING.md](docs/RELEASING.md). In short:
 
 | file                                 | trigger                     | does |
 |--------------------------------------|-----------------------------|------|

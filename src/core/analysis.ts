@@ -143,10 +143,3 @@ export function analyzeSet(reps: readonly Rep[], startedAt: number, endedAt: num
     slowestRep: slowest,
   };
 }
-
-export function tempoTrendLabel(t: SetAnalysis['tempo']): string {
-  if (!t) return 'Not enough reps';
-  if (t.trend === 'slowing') return `Slowed down ${t.changePct}%`;
-  if (t.trend === 'speeding-up') return `Sped up ${Math.abs(t.changePct)}%`;
-  return 'Steady pace';
-}

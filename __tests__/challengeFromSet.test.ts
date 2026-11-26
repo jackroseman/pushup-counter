@@ -1,4 +1,4 @@
-import { challengeOffers, offerLabel, summaryChallengeOffer, windowClosingNote } from '../src/battles/challengeFromSet';
+import { challengeOffers, summaryChallengeOffer } from '../src/battles/challengeFromSet';
 
 const presets = [60, 120];
 const now = Date.parse('2026-11-02T15:00:00Z');
@@ -14,14 +14,6 @@ describe('challengeOffers', () => {
       { kind: 'total', window: 'month' },
       { kind: 'streak' },
       { kind: 'team' },
-    ]);
-    expect(offers.map(offerLabel)).toEqual([
-      'Best single set',
-      'Most reps today',
-      'Most reps this week',
-      'Most reps this month',
-      'Streak face-off',
-      'Team goal',
     ]);
   });
 
@@ -56,12 +48,5 @@ describe('summaryChallengeOffer', () => {
     expect(summaryChallengeOffer({ timerDurationS: 60, endedAt: now, challengeId: 'c1' }, opts)).toEqual(today);
     expect(summaryChallengeOffer({ timerDurationS: null, endedAt: now - 1800_000 - 1 }, opts)).toEqual(today);
     expect(summaryChallengeOffer({ timerDurationS: 45, endedAt: now }, opts)).toEqual(today);
-  });
-});
-
-describe('windowClosingNote', () => {
-  it('speaks up only when the window is almost over', () => {
-    expect(windowClosingNote('day', Date.parse('2026-11-02T12:00:00Z'), 'UTC')).toBeNull();
-    expect(windowClosingNote('day', Date.parse('2026-11-02T22:30:00Z'), 'UTC')).toMatch(/Today ends in \d hours?\. Sets you already did today count\./);
   });
 });

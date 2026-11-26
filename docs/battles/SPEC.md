@@ -1,5 +1,11 @@
 # Push-up Battles: product & UX spec
 
+> **UI note (rebrand).** The product now lives under the **Today / Compete / You** tabs.
+> What these docs call "battles" is **Challenges** in the app (Compete tab). Start,
+> History and Account in the older screen list are Today, All sets and Settings. New
+> challenges count reps only. For the current UI, frames and plan, see
+> [docs/rebrand/](../rebrand/).
+>
 > Status: **draft for review** (design only; nothing is built or deployed).
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) (backend, CI/CD, native changes, phases)
 > and [schema.sql](schema.sql) (draft Supabase migration, validated against Postgres 17).

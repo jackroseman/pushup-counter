@@ -2,7 +2,6 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeBottomTabNavigator } from '@react-navigation/bottom-tabs/unstable';
 
-import { colors } from '../theme';
 import { Icon, type IconName } from '../ui';
 import { color } from '../ui/tokens';
 import { nativeTabBar } from './tabs';
@@ -25,7 +24,7 @@ const JsTabs = nativeTabBar ? null : createBottomTabNavigator<TabParamList>();
 export function MainTabs() {
   if (NativeTabs) {
     return (
-      <NativeTabs.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: color.label, tabBarInactiveTintColor: colors.muted }}>
+      <NativeTabs.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: color.label, tabBarInactiveTintColor: color.secondary }}>
         {TABS.map((t) => (
           <NativeTabs.Screen
             key={t.name}
@@ -42,9 +41,9 @@ export function MainTabs() {
     <Tabs.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: color.separator },
+        tabBarStyle: { backgroundColor: color.surface, borderTopColor: color.separator },
         tabBarActiveTintColor: color.label,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarInactiveTintColor: color.secondary,
       }}
     >
       {TABS.map((t) => (

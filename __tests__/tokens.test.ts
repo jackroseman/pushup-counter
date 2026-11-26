@@ -1,4 +1,3 @@
-import { colors } from '../src/theme';
 import { initialOf } from '../src/ui/Avatar';
 import { splitSegments } from '../src/ui/FormSplitBar';
 import { clamp01 } from '../src/ui/ProgressBar';
@@ -85,20 +84,6 @@ describe('tokens: values match the plan (§1)', () => {
   it('space and radius', () => {
     expect(Object.values(space)).toEqual([4, 8, 12, 16, 20, 24, 32]);
     expect(radius).toEqual({ tile: 8, segmented: 9, list: 14, card: 16, sheet: 34, capsule: 999 });
-  });
-});
-
-describe('theme shim (old names → new palette)', () => {
-  it('maps the old names', () => {
-    expect(colors).toEqual({
-      bg: color.bg,
-      card: color.surface,
-      text: color.label,
-      muted: color.secondary,
-      accent: color.label,
-      danger: color.destructive,
-      quality: { full: color.signal, good: color.label, shallow: color.graphite },
-    });
   });
 });
 

@@ -203,50 +203,11 @@ export function timeLeft(iso: string | null | undefined, now: number = Date.now(
   return `${Math.floor(h / 24)} days left`;
 }
 
-/** One line under a name on a streak face-off. */
-export function streakStandingLine(p: Pick<Participant, 'status' | 'eliminatedOn' | 'streakFloorReps'>): string {
-  if (p.status === 'invited') return 'invited';
-  if (p.status === 'declined') return 'declined';
-  if (p.status === 'expired') return 'invite expired';
-  if (p.status === 'forfeited') return p.eliminatedOn ? `Out · ${p.eliminatedOn}` : 'Out';
-  if (p.eliminatedOn) return `Out · ${p.eliminatedOn}`;
-  if (p.status === 'accepted') return p.streakFloorReps ? `Still in · ${p.streakFloorReps} a day` : 'Still in';
-  return p.status;
-}
-
 export function scoreLabel(p: Pick<Participant, 'validReps' | 'metricValue' | 'attemptsUsed'>, metric: BattleMetric | null): string {
   if (metric == null) return `${p.validReps ?? 0}`;
   if (!p.attemptsUsed) return '-';
   if (metric === 'rep_count') return `${p.validReps ?? 0}`;
   return p.metricValue == null ? '-' : `${Math.round(p.metricValue)}`;
-}
-
-/** One-line state of a battle for the list. */
-export function battleSubtitle(b: Battle, now: number = Date.now()): string {
-  const m = me(b);
-  if (b.status === 'completed') {
-    if (b.kind === 'team') {
-      if (m?.isWinner) return 'You won';
-      if (!b.participants.some((p) => p.isWinner)) return 'Missed the goal';
-      return 'Finished';
-    }
-    if (!m || m.rank == null) return 'Finished';
-    const players = b.participants.filter((p) => p.rank != null).length;
-    const tied = b.participants.filter((p) => p.rank === 1).length > 1;
-    if (m.rank === 1) return tied ? 'Draw' : 'You won';
-    return `You came ${m.rank} of ${players}`;
-  }
-  if (b.status === 'expired') return 'Ended — not enough people played.';
-  if (b.status === 'cancelled') return 'Cancelled.';
-  if (canRespond(b, now)) return `Invite · ${timeLeft(b.inviteExpiresAt, now)}`;
-  if (canPlay(b, now)) return `Your move · ${timeLeft(b.endsAt, now)}`;
-  const cap = b.attemptsAllowed ?? 1;
-  const waitingOn = b.participants.filter(
-    (p) => p.status === 'invited' || (b.kind === 'best_set' && p.status === 'accepted' && p.attemptsUsed < cap),
-  );
-  if (waitingOn.length) return `Waiting on ${waitingOn.length} · ${timeLeft(b.endsAt, now)}`;
-  if (b.kind !== 'best_set') return timeLeft(b.endsAt, now) || 'Results soon';
-  return 'Results soon';
 }
 
 /** The share link for an invite token: universal link once a web domain is configured, else the custom scheme. */

@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
-import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
 /**
  * Safe-area frame per screen, replacing the old root SafeAreaView in App.tsx:
@@ -24,4 +24,4 @@ export function Frame({ kind, children }: { kind: keyof typeof EDGES; children: 
   );
 }
 
-const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: colors.bg } });
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: color.bg } });

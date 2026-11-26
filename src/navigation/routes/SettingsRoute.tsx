@@ -37,7 +37,7 @@ function useNotificationPermission(navigation: Props<'Settings'>['navigation']):
 
 /** Was the Account screen (frame 29, E15). */
 export function SettingsRoute({ navigation }: Props<'Settings'>) {
-  const { settings, updateSettings, nudges, enrollments } = useAppState();
+  const { settings, updateSettings, nudges, updateNudges, enrollments } = useAppState();
   const { configured, session } = useBackend();
   const { profile, profileError, refreshProfile, sync, push, signOut, deleteAccount } = useIdentity();
   const [permission, rereadPermission] = useNotificationPermission(navigation);
@@ -111,14 +111,24 @@ export function SettingsRoute({ navigation }: Props<'Settings'>) {
       <SettingsScreen
         goalValue={goalValue(enrollments, today)}
         onGoal={() => navigation.navigate('GoalSetup')}
-        speakQuality={settings.speakQuality}
-        onSpeakQuality={(speakQuality) => updateSettings({ ...settings, speakQuality })}
+        countOutLoud={settings.countOutLoud}
+        onCountOutLoud={(countOutLoud) => updateSettings({ ...settings, countOutLoud })}
         notificationsValue={permission === 'granted' ? 'On' : permission == null ? '' : 'Off'}
         onNotifications={onNotifications}
         reminderValue={nudges.dailyNudge ? clockLabel(nudges.nudgeLocalTime) : 'Off'}
         onReminder={() => navigation.navigate('DailyReminder')}
         quietHoursValue={quietHoursLabel(nudges.quietStart, nudges.quietEnd)}
         onQuietHours={() => navigation.navigate('QuietHours')}
+        pings={
+          session && profile
+            ? {
+                passPing: nudges.passPing,
+                onPassPing: (passPing) => updateNudges({ ...nudges, passPing }),
+                weeklyRecap: nudges.weeklyRecap,
+                onWeeklyRecap: (weeklyRecap) => updateNudges({ ...nudges, weeklyRecap }),
+              }
+            : null
+        }
         account={account}
         signIn={signIn}
         message={message}

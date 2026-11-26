@@ -301,3 +301,20 @@ Kept untouched: `src/core/**` (rep detection, calibration, tilt), `useSession` l
 8. **Old clients** can still create Depth/Tempo/Form challenges. The new UI must keep rendering them (`scoreLabel`).
 9. **Lint cap** (26 React Compiler warnings): new code must not add any.
 10. **Dev build expiry** (14 days) if the work stalls after PR 4.
+
+## Review follow-ups (2026-11-26)
+
+Sunny's answers to the held review questions, done as separate PRs into `dev` (JS-only, fingerprint `c3f1457f…` unchanged). Screenshots: `rebrand/review-assets` › `followups/`.
+
+| PR | Scope | What changed |
+| --- | --- | --- |
+| #54 | Compete | League (i) sheet "How the league works" (plain copy, no formulas). New challenge is a formSheet with Cancel / title row. Best-set lengths 1 day / 3 days / 1 week (config migration `20261126130000_best_set_lengths`, staging via dev deploy). Crown, E9 picker and the Team "Reach a goal together" tile were already in place. |
+| #55 | Set flow | "Challenge a friend" back on the summary as a quiet row under Done. Delete set also deletes on the server (queued, works offline, RLS `sets_delete_solo`, no migration). Sets played in a challenge can't be deleted. League and challenge totals are live from `sets`, so they stay consistent. |
+| #56 | You / Settings / username | "Count out loud" is a real switch (off = no spoken rep numbers; replaces "Speak rep quality"). Pass ping and Sunday recap switches under Notifications (signed in). Turn-on-notifications sheet shows once. Pick a username screen (frame 17). Legacy `components/ui.tsx` removed. |
+
+Held / skipped: invites wait for the App Store page (no change). Activity feed, result sharing, personal invite link/QR and friend streak tile are skipped (no placeholders existed). No Clear history.
+
+Open questions for Sunny:
+- New challenge default length stays 1 day; the mockup highlights 3 days.
+- Sunday recap time isn't shown in Settings (still the saved default).
+- A deleted set could come back if another phone that still has it syncs (a server tombstone would fix this; not added).

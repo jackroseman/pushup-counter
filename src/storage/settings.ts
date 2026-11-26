@@ -1,18 +1,19 @@
 import { KeyValueStore } from './history';
 
 export interface Settings {
-  speakQuality: boolean;
+  /** Say each rep's number during a set (Settings › Count out loud). */
+  countOutLoud: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  speakQuality: true,
+  countOutLoud: true,
 };
 
 const SETTINGS_KEY = 'pushupcounter.settings.v1';
 
 /**
  * Only known boolean keys are kept, so settings saved by older versions (e.g. the removed
- * `depthOnlyCounting` and `haptics` toggles) load cleanly.
+ * `depthOnlyCounting`, `haptics` and `speakQuality` toggles) load cleanly.
  */
 export function sanitizeSettings(raw: unknown): Settings {
   const out: Settings = { ...DEFAULT_SETTINGS };

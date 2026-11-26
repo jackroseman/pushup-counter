@@ -205,6 +205,10 @@ settings, progress and today models, challenges, the league, friends, linking, t
 and the set-flow helpers. `npm run ci` is the same set of checks as CI, minus the
 `expo export` bundle smoke test (CI runs that too).
 
+**UI preview:** to see UI changes without a phone, run the app in a browser with simulated
+push-ups and canned data. Scripted flows save screenshots and `.mp4` recordings for PRs. See
+[docs/ui-preview.md](docs/ui-preview.md) (`npm --prefix tools/preview run capture -- set-flow`).
+
 ---
 
 ## 4. Branch workflow
@@ -236,7 +240,7 @@ and on every push to `dev` or `main`. Work branches are checked through their PR
 |--------------------------|--------------|----------|
 | `checks`                 | `npm ci`, `expo lint` (0 errors, `--max-warnings 16`), `jest --ci`, `npm run test:db`, `tsc --noEmit`, `expo export --platform ios` | **yes** — a red run blocks the PR |
 | `expo-doctor (advisory)` | `npx expo-doctor` | no |
-| `should-ship`            | On a push to `dev` or `main` only: whether the commit has app changes. Ignores markdown, `docs/`, `supabase/`, `__tests__/` and `.github/`. Not required to merge. | no |
+| `should-ship`            | On a push to `dev` or `main` only: whether the commit has app changes. Ignores markdown, `docs/`, `supabase/`, `__tests__/`, `tools/` and `.github/`. Not required to merge. | no |
 | `ship`                   | On a push to `dev` or `main`, starts `eas-ship.yml` as a reusable workflow for **that exact SHA**, only if `checks` passed and `should-ship` said yes | no |
 
 **On `dev` today**, `eas-ship.yml` is no longer triggered by push alone. A red `checks`
@@ -381,6 +385,7 @@ docs/rebrand/                 implementation plan, frames, empty states
 docs/battles/                 challenge/league backend spec and architecture
 docs/RELEASING.md             release recipe
 scripts/                      dev-server.sh, eas-ship.sh, release.sh
+tools/preview/                web preview and UI capture tooling (see docs/ui-preview.md)
 __tests__/                    Jest tests
 ```
 

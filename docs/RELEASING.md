@@ -32,8 +32,8 @@ When it does run, it calls `scripts/eas-ship.sh` on a GitHub runner (no EAS queu
      starts `.eas/workflows/build-production.yml` (1 build + upload to TestFlight).
    * A build workflow that is already running is not started twice.
 
-Markdown, `docs/`, `supabase/`, `__tests__/` and `.github/` changes do not start
-`eas-ship.yml` at all. A newer merge that will ship cancels a running ship (it ships
+Markdown, `docs/`, `supabase/`, `__tests__/`, `.github/` and `tools/` changes do not
+start `eas-ship.yml` at all. A newer merge that will ship cancels a running ship (it ships
 the newer passing commit instead), so duplicate runs never need cancelling by hand. A
 docs-only merge, or a merge whose `checks` job failed, does not start a ship and does
 not cancel one that is already running. A ship also skips if its commit is no longer

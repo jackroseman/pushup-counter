@@ -77,6 +77,7 @@ const header = (title: string) => ({
 
 /** Web invite links (https://<domain>/b/<token>, once a domain exists) are mapped to the scheme form. */
 let webBaseUrl: string | null = null;
+
 /** Frame 5: the goal sheet, a native form sheet (grabber, 34 pt corners). */
 const GOAL_SHEET: NativeStackNavigationOptions = {
   presentation: 'formSheet',
@@ -428,7 +429,6 @@ export function RootNavigator() {
         setRemote((current) => ({ doc: current.doc, status: 'error' }));
       });
   }, []);
-
 
   const value = useMemo(
     () => ({

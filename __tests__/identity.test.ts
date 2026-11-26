@@ -15,6 +15,7 @@ import { getInstallationId, INSTALLATION_ID_KEY, newInstallationId } from '../sr
 import {
   DETECTOR_ALGORITHM_VERSION,
   EMPTY_SYNC_STATE,
+  isDeletedSetError,
   isPermanentError,
   loadSyncState,
   queueSetDelete,
@@ -234,6 +235,8 @@ describe('set payload', () => {
     expect(isPermanentError({ code: '22023' })).toBe(true);
     expect(isPermanentError({ code: 'PGRST301' })).toBe(false);
     expect(isPermanentError({})).toBe(false);
+    expect(isDeletedSetError({ code: '22023', message: 'set was deleted' })).toBe(true);
+    expect(isDeletedSetError({ code: '22023', message: 'invalid parameter' })).toBe(false);
   });
 });
 
@@ -255,6 +258,7 @@ function fakeBackend(remote: string[] = []) {
       listCalls++;
       return remote;
     },
+    listDeletedIds: async () => [],
   };
   return { backend, calls, deletes, failOn, listCalls: () => listCalls };
 }
@@ -309,6 +313,7 @@ describe('syncSets', () => {
       listUploadedIds: async () => {
         throw new Error('offline');
       },
+      listDeletedIds: async () => [],
     };
     const r = await syncSets({ backend, kv, userId: 'u1', history, ctx });
     expect(r.error).toBe('offline');
@@ -348,6 +353,64 @@ describe('syncSets', () => {
     expect(online.state.deleting).toEqual([]);
     expect(online.state.uploaded).not.toContain('mid');
     expect(f.calls.filter((id) => id === 'mid')).toHaveLength(1);
+  });
+
+  it('drops tombstoned sets on this phone and never uploads them', async () => {
+    const kv = new MemoryKV();
+    const f = fakeBackend();
+    const dropped: string[] = [];
+    f.backend.listDeletedIds = async () => ['old'];
+    const r = await syncSets({
+      backend: f.backend,
+      kv,
+      userId: 'u1',
+      history,
+      ctx,
+      dropLocal: async (ids) => {
+        dropped.push(...ids);
+      },
+    });
+    expect(dropped).toEqual(['old']);
+    expect(r).toMatchObject({ dropped: 1, uploaded: 2, error: null });
+    expect(f.calls).toEqual(['mid', 'new']);
+    expect(r.state.uploaded).not.toContain('old');
+  });
+
+  it('does not upload when the tombstone list cannot be fetched', async () => {
+    const kv = new MemoryKV();
+    const backend: SyncBackend = {
+      submitSet: jest.fn(),
+      deleteSet: jest.fn(),
+      listUploadedIds: async () => [],
+      listDeletedIds: async () => {
+        throw new Error('offline');
+      },
+    };
+    const r = await syncSets({ backend, kv, userId: 'u1', history, ctx });
+    expect(r.error).toBe('offline');
+    expect(backend.submitSet).not.toHaveBeenCalled();
+  });
+
+  it('drops a set the server refuses as already deleted', async () => {
+    const kv = new MemoryKV();
+    const f = fakeBackend();
+    f.failOn.set('old', { code: '22023', message: 'set was deleted' });
+    const dropped: string[] = [];
+    const r = await syncSets({
+      backend: f.backend,
+      kv,
+      userId: 'u1',
+      history,
+      ctx,
+      dropLocal: async (ids) => {
+        dropped.push(...ids);
+      },
+    });
+    expect(dropped).toEqual(['old']);
+    expect(r).toMatchObject({ dropped: 1, uploaded: 2, rejected: 0, error: null });
+    expect(f.calls).toEqual(['old', 'mid', 'new']);
+    expect(r.state.rejected).not.toContain('old');
+    expect(r.state.uploaded).not.toContain('old');
   });
 });
 

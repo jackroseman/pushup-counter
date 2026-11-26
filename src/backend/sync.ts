@@ -7,9 +7,10 @@ import type { KeyValueStore, SessionRecord } from '../storage/history';
  * (idempotent on (user, SessionRecord.id)), including sets recorded before sign-in.
  * Local history stays the source of truth on the phone. Deleting a set (Set details) removes it
  * here at once and queues the backup copy for deletion (`deleting`), which is flushed before
- * uploads, so an offline delete finishes the next time the app is online. Sets that belong to a
- * challenge are never deleted. Pure logic + injected I/O so it is unit-tested; wiring lives in
- * IdentityProvider.
+ * uploads, so an offline delete finishes the next time the app is online. The server keeps a
+ * tombstone, so another phone that still has the set drops it on sync and cannot upload it again.
+ * Sets that belong to a challenge are never deleted. Pure logic + injected I/O so it is
+ * unit-tested; wiring lives in IdentityProvider.
  */
 
 /** Bump when the rep detector's counting logic changes (stored with every uploaded set). */
@@ -150,18 +151,27 @@ export function isPermanentError(e: { code?: string } | null | undefined): boole
   return /^(22|23)/.test(c); // data exceptions, integrity/check constraint violations
 }
 
+/** submit_set refuses a tombstoned id with this message and SQLSTATE 22023. */
+export function isDeletedSetError(e: { code?: string; message?: string } | null | undefined): boolean {
+  return (e?.message ?? '').includes('set was deleted');
+}
+
 export interface SyncBackend {
   submitSet(payload: Record<string, unknown>): Promise<{ error: { code?: string; message: string } | null }>;
   /** Delete the user's solo set with this SessionRecord id. No row (already gone, or in a challenge) is not an error. */
   deleteSet(userId: string, clientSetId: string): Promise<{ error: { code?: string; message: string } | null }>;
   /** SessionRecord ids of the user's solo sets already on the server. */
   listUploadedIds(userId: string): Promise<string[]>;
+  /** SessionRecord ids this user has deleted (tombstones). Dropped locally on every sync. */
+  listDeletedIds(userId: string): Promise<string[]>;
 }
 
 export interface SyncResult {
   uploaded: number;
   /** Backup copies deleted in this round. */
   deleted: number;
+  /** Local sets dropped because the server has a tombstone. */
+  dropped: number;
   rejected: number;
   pending: number;
   error: string | null;
@@ -194,11 +204,17 @@ export async function syncSets(opts: {
   userId: string;
   history: readonly SessionRecord[];
   ctx: PayloadContext;
+  /** Remove tombstoned sets from this phone's history. */
+  dropLocal?: (ids: string[]) => Promise<void>;
 }): Promise<SyncResult> {
   const { backend, kv, userId, ctx } = opts;
   let state = await loadSyncState(kv);
   if (state.userId !== userId) state = { ...EMPTY_SYNC_STATE, userId };
   let error: string | null = null;
+  let dropped = 0;
+  const fail = (message: string): SyncResult => ({
+    uploaded: 0, deleted: 0, dropped, rejected: 0, pending: -1, error: message, state,
+  });
 
   if (!state.reconciled) {
     try {
@@ -206,8 +222,31 @@ export async function syncSets(opts: {
       state = { ...state, uploaded: [...new Set([...state.uploaded, ...remote])], reconciled: true };
       await saveSyncState(kv, state);
     } catch (e) {
-      return { uploaded: 0, deleted: 0, rejected: 0, pending: -1, error: e instanceof Error ? e.message : String(e), state };
+      return fail(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  // Every sync: drop sets the server has marked deleted, before any upload.
+  const gone = new Set<string>();
+  try {
+    const tombstoned = await backend.listDeletedIds(userId);
+    if (tombstoned.length) {
+      for (const id of tombstoned) gone.add(id);
+      const local = opts.history.filter((r) => gone.has(r.id)).map((r) => r.id);
+      if (local.length && opts.dropLocal) {
+        await opts.dropLocal(local);
+        dropped = local.length;
+      }
+      state = {
+        ...state,
+        uploaded: state.uploaded.filter((id) => !gone.has(id)),
+        rejected: state.rejected.filter((id) => !gone.has(id)),
+        deleting: state.deleting.filter((id) => !gone.has(id)),
+      };
+      await saveSyncState(kv, state);
+    }
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : String(e));
   }
 
   // Deletes first, so a set deleted offline is never counted again.
@@ -221,14 +260,14 @@ export async function syncSets(opts: {
       res = { error: { message: e instanceof Error ? e.message : String(e) } };
     }
     if (res.error && !isPermanentError(res.error)) {
-      return { uploaded: 0, deleted, rejected: 0, pending: -1, error: res.error.message, state };
+      return { uploaded: 0, deleted, dropped, rejected: 0, pending: -1, error: res.error.message, state };
     }
     if (!res.error) deleted++;
     state = { ...state, deleting: state.deleting.slice(1), uploaded: state.uploaded.filter((x) => x !== id) };
     await saveSyncState(kv, state);
   }
 
-  const done = new Set([...state.uploaded, ...state.rejected]);
+  const done = new Set([...state.uploaded, ...state.rejected, ...gone]);
   const todo = opts.history.filter((r) => skipReason(r) === null && !done.has(r.id)).sort((a, b) => a.startedAt - b.startedAt);
   let uploaded = 0;
   let rejected = 0;
@@ -244,6 +283,14 @@ export async function syncSets(opts: {
     if (!res.error) {
       state = { ...state, uploaded: [...state.uploaded, r.id] };
       uploaded++;
+    } else if (isDeletedSetError(res.error)) {
+      if (opts.dropLocal) await opts.dropLocal([r.id]);
+      dropped++;
+      state = {
+        ...state,
+        uploaded: state.uploaded.filter((x) => x !== r.id),
+        rejected: state.rejected.filter((x) => x !== r.id),
+      };
     } else if (isPermanentError(res.error)) {
       state = { ...state, rejected: [...state.rejected, r.id] };
       rejected++;
@@ -253,7 +300,7 @@ export async function syncSets(opts: {
     }
     await saveSyncState(kv, state);
   }
-  return { uploaded, deleted, rejected, pending: todo.length - uploaded - rejected, error, state };
+  return { uploaded, deleted, dropped, rejected, pending: todo.length - uploaded - rejected, error, state };
 }
 
 /**

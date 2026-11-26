@@ -223,10 +223,21 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
           syncAgain.current = false;
           try {
             const history = await historyStore.load();
-            const r = await syncSets({ backend: supabaseSyncBackend(client), kv: AsyncStorage, userId, history, ctx: payloadContext(deviceId) });
+            const r = await syncSets({
+              backend: supabaseSyncBackend(client),
+              kv: AsyncStorage,
+              userId,
+              history,
+              ctx: payloadContext(deviceId),
+              dropLocal: async (ids) => {
+                for (const id of ids) await historyStore.remove(id);
+              },
+            });
             lastSync.current = Date.now();
-            setSyncState({ status: syncStatus(history, r.state), running: false, error: r.error });
-            if (r.deleted > 0) notifyServerSetsChanged();
+            const nextHistory = r.dropped > 0 ? await historyStore.load() : history;
+            setSyncState({ status: syncStatus(nextHistory, r.state), running: false, error: r.error });
+            if (r.dropped > 0) notifyHistoryChanged();
+            if (r.deleted > 0 || r.dropped > 0) notifyServerSetsChanged();
           } catch (e) {
             setSyncState((s) => ({ ...s, running: false, error: e instanceof Error ? e.message : String(e) }));
           }

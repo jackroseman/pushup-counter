@@ -211,15 +211,11 @@ export function leagueView(input: { board: LeagueBoard; meId: string | null; mod
 /** The crown sits on first place, once someone has scored. */
 export const hasCrown = (p: LeaguePerson) => p.rank === 1 && p.score > 0;
 
-/** Copy for the league's (i) sheet. Plain and generic: no formulas, weights or thresholds. */
+/** Copy for the league's (i) sheet. Two plain lines; no formulas, weights or thresholds. */
 export const LEAGUE_INFO = {
   title: 'How the league works',
-  items: [
-    { title: LEAGUE_MODE_LABEL.total, line: 'Every push-up you do this week counts. Most reps wins.' },
-    {
-      title: LEAGUE_MODE_LABEL.improvement,
-      line: 'Points for beating your usual week and hitting your daily goal, so anyone can win.',
-    },
+  lines: [
+    'Every push-up you do this week counts. Most reps wins.',
+    'The board starts fresh every week.',
   ],
-  note: 'The board starts fresh every week.',
 } as const;

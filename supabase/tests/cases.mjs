@@ -1223,6 +1223,19 @@ steps.push(
     select count(*)::int as orphans from reps r where not exists (select 1 from sets s where s.id = r.set_id);
     ${totals}`],
   ['delete: deleting again is a no-op', delSet(DA, 'del-1')],
+  ['delete: a tombstone is kept after the row is gone', `${as(DA)} select count(*)::int as tombs from deleted_sets where user_id = '${DA}' and client_set_id = 'del-1'; reset role;`],
+  ['delete: re-uploading a tombstoned set is rejected (expect ERR)', `${as(DA)} select submit_set(${q(rec('del-1', 10, 1500, [0.15]))}); reset role;`],
+  ['delete: the rejected upload did not come back', `select count(*)::int as sets from sets where client_set_id = 'del-1'; ${totals}`],
+  ['delete: a friend cannot write your tombstone (expect ERR)', `${as(DB)} insert into deleted_sets(user_id, client_set_id) values ('${DA}', 'del-2'); reset role;`],
+  ['delete: delete_set on a never-uploaded id writes a tombstone', `${as(DA)} select public.delete_set('del-never'); select count(*)::int as tombs from deleted_sets where user_id = '${DA}' and client_set_id = 'del-never'; reset role;`],
+  ['delete: uploading that never-uploaded id is rejected (expect ERR)', `${as(DA)} select public.submit_set(${q(rec('del-never', 3, 1500, [0.15]))}); reset role;`],
+  ['delete: a challenge set cannot be tombstoned or deleted', `
+    ${as(DA)} ${create('c-del', { kind: 'best_set', deadlineHours: 24 }, [DB])} reset role;
+    ${solo('del-ch', 6, DA)} ${link('del-ch', 6, 'c-del', DA)}
+    ${as(DA)} select public.delete_set('del-ch');
+    select (challenge_id is not null) as kept from sets where client_set_id = 'del-ch';
+    select count(*)::int as tombs from deleted_sets where client_set_id = 'del-ch'; reset role;`],
+  ['delete: a direct insert of a challenge tombstone is rejected (expect ERR)', `${as(DA)} insert into deleted_sets(user_id, client_set_id) values ('${DA}', 'del-ch'); reset role;`],
 );
 Object.assign(checks, {
   'delete: setup two friends with sets': (r) => {
@@ -1237,4 +1250,17 @@ Object.assign(checks, {
     ok(t.lifetime === 5 && t.league === 5, 'totals after ' + JSON.stringify(t));
   },
   'delete: deleting again is a no-op': (r) => ok(r[0][0].deleted === 0, 'again ' + JSON.stringify(r)),
+  'delete: a tombstone is kept after the row is gone': (r) => ok(r[0][0].tombs === 1, 'tombstone ' + JSON.stringify(r)),
+  'delete: the rejected upload did not come back': (r) => {
+    ok(r[0][0].sets === 0, 'resurrected ' + JSON.stringify(r[0]));
+    const t = r[1][0];
+    ok(t.lifetime === 5 && t.league === 5, 'totals after reject ' + JSON.stringify(t));
+  },
+  'delete: delete_set on a never-uploaded id writes a tombstone': (r) => ok(r[1][0].tombs === 1, 'tombstone ' + JSON.stringify(r)),
+  'delete: a challenge set cannot be tombstoned or deleted': (r) => {
+    const kept = r.find((set) => set[0] && 'kept' in set[0])[0];
+    const tombs = r.find((set) => set[0] && 'tombs' in set[0])[0];
+    ok(kept.kept === true, 'challenge set deleted ' + JSON.stringify(kept));
+    ok(tombs.tombs === 0, 'challenge tombstone ' + JSON.stringify(tombs));
+  },
 });

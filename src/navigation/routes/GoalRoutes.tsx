@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-import { GoalSetupScreen } from '../../screens/GoalSetupScreen';
+import { GoalSheet } from '../../screens/GoalSheet';
 import { ProfileSetupScreen } from '../../screens/ProfileSetupScreen';
 import { deviceTimeZone } from '../../backend/profile';
 import { localDate } from '../../progress';
@@ -10,17 +10,20 @@ import type { Props } from '../types';
 
 export function GoalRoute({ navigation }: Props<'GoalSetup'>) {
   const { enrollments, saveChoice } = useAppState();
-  const zone = deviceTimeZone();
+  const [saving, setSaving] = useState(false);
+  const [today] = useState(() => localDate(Date.now(), deviceTimeZone()));
   return (
-    <Frame kind="bare">
-    <GoalSetupScreen
-      enrollments={enrollments}
-      today={localDate(Date.now(), zone)}
-      onSave={(choice) => {
-        void saveChoice(choice).finally(() => navigation.goBack());
-      }}
-      onClose={() => navigation.goBack()}
-    />
+    <Frame kind="header">
+      <GoalSheet
+        enrollments={enrollments}
+        today={today}
+        saving={saving}
+        onSave={(choice) => {
+          setSaving(true);
+          void saveChoice(choice).finally(() => navigation.goBack());
+        }}
+        onClose={() => navigation.goBack()}
+      />
     </Frame>
   );
 }

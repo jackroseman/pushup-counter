@@ -1,5 +1,7 @@
 // Everything the invite page links to, in one place. Change a value here, not in the HTML.
 module.exports = {
+  /** Production origin (same host as src/invites/inviteLinks.json in the app). Used for absolute og:image URLs. */
+  ORIGIN: 'https://reproyale.vercel.app',
   /** Public TestFlight link (group "Family & Friends"). It serves the newest build that passed beta review. */
   TESTFLIGHT_JOIN_URL: 'https://testflight.apple.com/join/BgusSC4Z',
   /** Apple's TestFlight app on the App Store. */

@@ -47,7 +47,7 @@ h1{font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.025em;text-
 .handle{font-size:17px;font-weight:600;text-align:center;margin-top:18px}
 .copied{color:#30D158;font-size:13px;font-weight:600}`;
 
-function page({ title, description, url, body, noindex = true }) {
+function page({ title, description, url, body, noindex = true, origin = config.ORIGIN }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -61,7 +61,7 @@ ${noindex ? '<meta name="robots" content="noindex">\n' : ''}<title>${esc(title)}
 <meta property="og:site_name" content="Rep Royale">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
-${url ? `<meta property="og:url" content="${esc(url)}">\n` : ''}<meta property="og:image" content="/icon-512.png">
+${url ? `<meta property="og:url" content="${esc(url)}">\n` : ''}<meta property="og:image" content="${esc(origin)}/icon-512.png">
 <meta property="og:image:width" content="512">
 <meta property="og:image:height" content="512">
 <meta name="twitter:card" content="summary">
@@ -98,7 +98,7 @@ async function renderInvitePage({ code, origin, userAgent = '', preview, cfg = c
 <h1 style="margin-top:24px">This invite link<br>doesn't work</h1>
 <p class="lead" style="margin-top:10px">Ask your friend for a new link. You can still get Rep Royale and find them by username.</p>
 ${installSteps(cfg, null)}`;
-    return { status: 404, html: page({ title: 'Rep Royale', description: 'Push-ups every day. Your phone counts every rep.', body }) };
+    return { status: 404, html: page({ title: 'Rep Royale', description: 'Push-ups every day. Your phone counts every rep.', body, origin }) };
   }
 
   const title = who ? `${who} invited you to Rep Royale` : "You're invited to Rep Royale";
@@ -115,7 +115,7 @@ ${installSteps(cfg, null)}`;
 <p class="lead" style="margin-top:10px">${who ? `${esc(who)} invited you. ` : ''}Open this link on an iPhone to join, or scan the code.</p>
 <div class="qr" role="img" aria-label="QR code of this invite link">${qr}</div>
 ${inviter ? `<p class="handle">@${esc(inviter.username)}</p>` : ''}`;
-    return { status: 200, html: page({ title, description, url, body }) };
+    return { status: 200, html: page({ title, description, url, body, origin }) };
   }
 
   const body = `${hero}
@@ -125,7 +125,7 @@ ${installSteps(cfg, who, code)}
 ${fallbackCard(inviter)}
 <p class="note">Needs an iPhone with Face ID and iOS 26 or later.</p>
 ${inviter ? copyScript : ''}`;
-  return { status: 200, html: page({ title, description, url, body }) };
+  return { status: 200, html: page({ title, description, url, body, origin }) };
 }
 
 /** The numbered steps. TestFlight while the app is in beta; the App Store once APP_STORE_URL is set. */

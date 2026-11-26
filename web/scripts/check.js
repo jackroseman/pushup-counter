@@ -33,12 +33,17 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
   assert.equal(read('public/index.html'), renderHome(), 'public/index.html is stale: run npm --prefix web run render');
   for (const f of ['public/icon-512.png', 'public/apple-touch-icon.png']) assert.ok(fs.statSync(path.join(root, f)).size > 1000, f);
 
+  // Same host as the app (src/invites/inviteLinks.json), when the repo is around it.
+  const appLinks = path.join(root, '..', 'src', 'invites', 'inviteLinks.json');
+  if (fs.existsSync(appLinks)) assert.equal(config.ORIGIN, `https://${JSON.parse(fs.readFileSync(appLinks, 'utf8')).webHost}`, 'ORIGIN matches the app');
+
   // Links used by the page.
   assert.match(config.TESTFLIGHT_JOIN_URL, /^https:\/\/testflight\.apple\.com\/join\/[A-Za-z0-9]+$/);
   assert.match(config.TESTFLIGHT_APP_URL, /^https:\/\/apps\.apple\.com\/app\/testflight\/id\d+$/);
 
   const pages = Object.fromEntries((await renderAll()).map((p) => [p.id, p]));
   const L = pages.landing.html;
+  assert.match(L, /<meta property="og:image" content="https:\/\/[^"]+\/icon-512\.png">/, 'og:image is absolute');
   assert.equal(pages.landing.status, 200);
   assert.match(L, /<meta property="og:title" content="Sunny invited you to Rep Royale">/);
   assert.ok(L.includes(`href="${config.TESTFLIGHT_APP_URL}"`) && L.includes(`href="${config.TESTFLIGHT_JOIN_URL}"`), 'TestFlight links');

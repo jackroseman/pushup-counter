@@ -1,4 +1,4 @@
-import { clockText, countdownProgress, countingTitle, faceCenteringView, faceRestartDue, faceDiagLine, emptyFaceDiag, isDevVariant, nextSetNumber, toBeatLine, CENTER_FACE_LINE, FACE_RESTART_MS } from '../src/session/sessionView';
+import { clockText, countdownProgress, countingTitle, faceCenteringView, faceDiagLine, emptyFaceDiag, isDevVariant, nextSetNumber, toBeatLine, CENTER_FACE_LINE } from '../src/session/sessionView';
 import type { Battle } from '../src/battles/model';
 import type { GuideSnapshot } from '../src/core';
 
@@ -62,23 +62,12 @@ describe('sessionView', () => {
     });
   });
 
-  it('restarts face tracking only after a long stretch with no face', () => {
-    const since = 1_000_000;
-    // Just entered centering: wait.
-    expect(faceRestartDue({ now: since + 1_000, since, lastTracked: 0, lastRestart: 0 })).toBe(false);
-    // No face at all for the full gap: restart.
-    expect(faceRestartDue({ now: since + FACE_RESTART_MS, since, lastTracked: 0, lastRestart: 0 })).toBe(true);
-    // A face was seen recently: wait.
-    expect(faceRestartDue({ now: since + 10_000, since, lastTracked: since + 9_000, lastRestart: 0 })).toBe(false);
-    // Just restarted: give it the full gap again.
-    expect(faceRestartDue({ now: since + 6_000, since, lastTracked: 0, lastRestart: since + 4_000 })).toBe(false);
-    expect(faceRestartDue({ now: since + 8_000, since, lastTracked: 0, lastRestart: since + 4_000 })).toBe(true);
-  });
-
   it('formats the dev face diagnostics line', () => {
-    const d = { ...emptyFaceDiag(), faceStart: 'ok' as const, events: 12, tracked: 9, lastEventAt: 1_000, restarts: 1 };
-    expect(faceDiagLine(d, { width: 361.4, height: 380 }, 'minimal', 1_200)).toBe('cam ok · view 361x380 minimal · ev 12/9 · last 0.2s · rst 1');
-    expect(faceDiagLine(emptyFaceDiag(), null, 'full', 5)).toBe('cam pending · view - full · ev 0/0 · last - · rst 0');
+    const d = { ...emptyFaceDiag(), faceStart: 'ok' as const, events: 12, tracked: 9, lastEventAt: 1_000, starts: 1, effects: 1, motion: 'on' as const };
+    expect(faceDiagLine(d, { width: 361.4, height: 380 }, 'minimal', 1_200)).toBe(
+      'cam ok · view 361x380 minimal · ev 12/9 · last 0.2s · start 1 stop 0 fx 1 · motion on'
+    );
+    expect(faceDiagLine(emptyFaceDiag(), null, 'full', 5)).toBe('cam pending · view - full · ev 0/0 · last - · start 0 stop 0 fx 0 · motion pending');
     expect(faceDiagLine({ ...emptyFaceDiag(), lastError: 'Camera in use' }, null, 'full', 5)).toContain('err Camera in use');
   });
 

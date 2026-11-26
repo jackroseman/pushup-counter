@@ -8,6 +8,7 @@ import type { GuideSnapshot } from '../core';
 import { faceMeshVariantSupported } from '../sensors';
 import { Pill, ProgressBar, Text, color, radius } from '../ui';
 import { type FaceDiag, faceCenteringView, faceDiagLine, isDevVariant } from './sessionView';
+import { devSkipMotionOn, setDevSkipMotion } from './useSession';
 
 const DEV_VARIANT = isDevVariant(Constants.expoConfig, __DEV__);
 
@@ -36,12 +37,14 @@ export function FaceCentering({
   flatCheck,
   diag,
   status,
+  onStopMotion,
 }: {
   guide: GuideSnapshot | null;
   flatCheck: boolean;
   /** Dev-only diagnostics (Pushup Dev); remove in PR 15. */
   diag?: React.RefObject<FaceDiag>;
   status?: string;
+  onStopMotion?: () => void;
 }) {
   const v = faceCenteringView(guide);
   const variantOk = faceMeshVariantSupported();
@@ -50,6 +53,7 @@ export function FaceCentering({
   const [full, setFull] = useState(false);
   const [layout, setLayout] = useState<{ width: number; height: number } | null>(null);
   const [now, setNow] = useState(0);
+  const [skipNext, setSkipNext] = useState(devSkipMotionOn());
   const showDiag = DEV_VARIANT && !!diag;
   useEffect(() => {
     if (!showDiag) return;
@@ -84,6 +88,27 @@ export function FaceCentering({
           ) : null}
         </Pressable>
       ) : null}
+      {showDiag ? (
+        <View style={styles.devRow}>
+          <Pressable onPress={onStopMotion} accessibilityRole="button" accessibilityLabel="Stop motion now">
+            <Text variant="caption" weight="600" style={styles.devChip}>
+              [stop motion now]
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setDevSkipMotion(!skipNext);
+              setSkipNext(!skipNext);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Skip motion on next sets"
+          >
+            <Text variant="caption" weight="600" style={styles.devChip}>
+              {skipNext ? '[next sets: no motion ✓]' : '[next sets: no motion]'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={styles.text}>
         <Text variant="title2" align="center">
           Center your face
@@ -115,4 +140,6 @@ const styles = StyleSheet.create({
   line: { marginTop: 8, fontSize: 17, lineHeight: 24, maxWidth: 300 },
   bar: { width: 200, marginTop: 18 },
   diag: { marginTop: 6, fontSize: 11, lineHeight: 14 },
+  devRow: { flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 6 },
+  devChip: { fontSize: 11, lineHeight: 16, color: color.signal },
 });

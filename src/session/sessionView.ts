@@ -78,49 +78,29 @@ export function faceCenteringView(guide: GuideSnapshot | null): {
   };
 }
 
-/** How long face centering waits for a first tracked face before it restarts face tracking. */
-export const FACE_RESTART_MS = 4000;
-
-/**
- * True when face centering has gone FACE_RESTART_MS with no tracked face, counted from the
- * latest of: centering started, the last tracked sample, the last restart. Restarting the
- * shared camera session is harmless before counting starts, and recovers a session that
- * stopped delivering faces (the screen otherwise waits forever on "Face not found").
- */
-export function faceRestartDue({
-  now,
-  since,
-  lastTracked,
-  lastRestart,
-  gapMs = FACE_RESTART_MS,
-}: {
-  now: number;
-  since: number;
-  lastTracked: number;
-  lastRestart: number;
-  gapMs?: number;
-}): boolean {
-  return now - Math.max(since, lastTracked, lastRestart) >= gapMs;
-}
-
 /** Face diagnostics counted by useSession for the dev-only line on the face screen (remove in PR 15). */
 export interface FaceDiag {
   /** startFaceDistance result: "ok" also means camera access was granted. */
   faceStart: 'pending' | 'ok' | 'failed';
-  /** onFaceDistance events (native sends every tracked sample and the first lost one of a gap). */
+  /** onFaceDistance events (native sends every tracked sample, the first lost one of a gap, and one per interruption). */
   events: number;
   tracked: number;
   lastEventAt: number;
   lastError: string | null;
-  restarts: number;
+  /** JS calls to PushupSensors.startFaceDistance / stopFaceDistance, and sensor-effect runs, this set. */
+  starts: number;
+  stops: number;
+  effects: number;
+  /** Core Motion (flat check): on, off (stopped from the dev line), or skipped for this set. */
+  motion: 'pending' | 'on' | 'off' | 'skipped' | 'none';
 }
 
 export function emptyFaceDiag(): FaceDiag {
-  return { faceStart: 'pending', events: 0, tracked: 0, lastEventAt: 0, lastError: null, restarts: 0 };
+  return { faceStart: 'pending', events: 0, tracked: 0, lastEventAt: 0, lastError: null, starts: 0, stops: 0, effects: 0, motion: 'pending' };
 }
 
 /**
- * One dense line, e.g. "cam ok · view 361x380 full · ev 12/9 · last 0.2s · rst 1".
+ * One dense line, e.g. "cam ok · view 362x380 minimal · ev 12/9 · last 0.2s · start 1 stop 0 fx 1 · motion on".
  * view "-" = the face view's card has not been laid out yet.
  */
 export function faceDiagLine(
@@ -134,7 +114,8 @@ export function faceDiagLine(
     view ? `view ${Math.round(view.width)}x${Math.round(view.height)} ${variant}` : `view - ${variant}`,
     `ev ${d.events}/${d.tracked}`,
     d.lastEventAt ? `last ${(Math.max(0, now - d.lastEventAt) / 1000).toFixed(1)}s` : 'last -',
-    `rst ${d.restarts}`,
+    `start ${d.starts} stop ${d.stops} fx ${d.effects}`,
+    `motion ${d.motion}`,
   ];
   if (d.lastError) parts.push(`err ${d.lastError}`);
   return parts.join(' · ');

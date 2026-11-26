@@ -22,7 +22,7 @@ import {
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported, startGravity, stopGravity } from '../sensors';
-import { FaceDiag, emptyFaceDiag, faceRestartDue } from './sessionView';
+import { FaceDiag, emptyFaceDiag } from './sessionView';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
@@ -96,6 +96,16 @@ export function setVoiceOn(on: boolean) {
   if (!on) Speech.stop().catch(() => {});
 }
 
+/** Dev diagnostics only (remove in PR 15): skip Core Motion on the next sets; sensor-effect runs. */
+let devSkipMotion = false;
+let effectRuns = 0;
+export function setDevSkipMotion(on: boolean) {
+  devSkipMotion = on;
+}
+export function devSkipMotionOn(): boolean {
+  return devSkipMotion;
+}
+
 export const historyStore = new HistoryStore(AsyncStorage);
 
 export function useSession(settings: Settings, battle?: BattleSessionOptions) {
@@ -129,10 +139,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   /** Mirrors state.phase for the sensor listeners. */
   const phaseRef = useRef<SessionPhase>('starting');
   const endReason = useRef<SessionEndReason>('user');
-  /** Face centering watchdog: when centering started, when face tracking was last (re)started. */
-  const faceStarted = useRef(false);
-  const calibratingSince = useRef(0);
-  const lastFaceRestart = useRef(0);
   /** Dev-only face diagnostics (shown on the face screen in Pushup Dev). Read by polling, no re-renders. */
   const diag = useRef<FaceDiag>(emptyFaceDiag());
 
@@ -247,7 +253,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     resetSetup();
     guide.current = new CalibrationGuide();
     phaseRef.current = 'calibrating';
-    calibratingSince.current = Date.now();
     patch({
       phase: 'calibrating',
       count: 0,
@@ -270,8 +275,8 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
   useEffect(() => {
     cancelled.current = false;
-    faceStarted.current = false;
     diag.current = emptyFaceDiag();
+    diag.current.effects = ++effectRuns;
     voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
@@ -384,9 +389,9 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       }
       await activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
       await PushupSensors.enablePlaybackAudioSession().catch(() => {});
+      diag.current.starts += 1;
       const faceOk = await PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
       if (cancelled.current) return;
-      faceStarted.current = faceOk;
       diag.current.faceStart = faceOk ? 'ok' : 'failed';
       if (!faceOk) {
         patch({
@@ -403,9 +408,11 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
       // Flat-phone check. Builds before 1.2.1 (no Core Motion) and devices without device motion
       // skip it and go straight to calibration, exactly as before.
-      const motionOk = await startGravity(GRAVITY_HZ);
+      // Dev diagnostics can skip Core Motion for a set (the 1.2.0 flow: no flat check).
+      const motionOk = devSkipMotion ? false : await startGravity(GRAVITY_HZ);
       if (cancelled.current) return;
       motionOn.current = motionOk;
+      diag.current.motion = devSkipMotion ? 'skipped' : motionOk ? 'on' : 'none';
       patch({ flatCheck: motionOk });
 
       // Place the phone flat, then guided calibration (see CalibrationGuide); locking in starts a
@@ -416,18 +423,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
     // Warn when the face has been out of view for a while during the set.
     const warn = setInterval(() => {
-      // Face centering with no face for a while: restart face tracking (same call as at the start).
-      const now = Date.now();
-      if (
-        !cancelled.current &&
-        faceStarted.current &&
-        phaseRef.current === 'calibrating' &&
-        faceRestartDue({ now, since: calibratingSince.current, lastTracked: lastTrackedAt.current, lastRestart: lastFaceRestart.current })
-      ) {
-        lastFaceRestart.current = now;
-        diag.current.restarts += 1;
-        PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
-      }
       if (!active.current) return;
       const lost = Date.now() - lastTrackedAt.current > FACE_LOST_WARNING_MS;
       setState((s) => {
@@ -458,12 +453,20 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       clearInterval(warn);
       subs.forEach((s) => s.remove());
       PushupSensors.stopProximity().catch(() => {});
+      diag.current.stops += 1;
       PushupSensors.stopFaceDistance().catch(() => {});
       motionOn.current = false;
       stopGravity();
       deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
   }, [onRep, onLocked, startCalibration, startPlacing, patch]);
+
+  /** Dev diagnostics: stop Core Motion now (the flat check stops; nothing else changes). */
+  const devStopMotion = useCallback(() => {
+    motionOn.current = false;
+    diag.current.motion = 'off';
+    stopGravity();
+  }, []);
 
   /** Ends the session, persists it (if it has reps) and returns the record. */
   const finish = useCallback((): Promise<SessionRecord> => {
@@ -478,6 +481,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     guide.current = null;
     clearCountdown();
     await PushupSensors.stopProximity().catch(() => {});
+    diag.current.stops += 1;
     await PushupSensors.stopFaceDistance().catch(() => {});
     motionOn.current = false;
     await stopGravity();
@@ -508,5 +512,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate, diag };
+  return { state, finish, live, recalibrate, diag, devStopMotion };
 }

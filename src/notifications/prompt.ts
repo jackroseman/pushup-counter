@@ -1,20 +1,18 @@
-/** How long Not now hides the sheet. The banner stays while permission is off. */
+/** How long Not now hides the sheet. */
 export const NOTIFICATION_SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export const NOTIFICATION_PROMPT_COPY = {
   title: 'Turn on notifications',
-  line: 'Stay in the loop on your challenges.',
+  line: 'Stay in the loop with your friends and challenges.',
   turnOn: 'Turn on notifications',
   notNow: 'Not now',
-  banner: 'Notifications are off',
-  bannerAction: 'Turn on',
 } as const;
 
-export type NotificationSurface = 'sheet' | 'banner' | 'none';
+export type NotificationSurface = 'sheet' | 'none';
 
 /**
- * Sheet only right after creating, accepting, or joining a challenge, and only
- * when Not now has worn off. Any other visit with permission off is the banner.
+ * The only surface is the sheet, right after creating, accepting, or joining a challenge,
+ * and only when Not now has worn off. No banner on any other visit.
  */
 export type NotificationPermission = 'granted' | 'denied' | 'undetermined';
 
@@ -27,7 +25,7 @@ export function notificationSurface(input: {
   if (input.permission === 'granted') return 'none';
   const snoozed = input.snoozedUntil != null && input.now < input.snoozedUntil;
   if (input.justActed && !snoozed) return 'sheet';
-  return 'banner';
+  return 'none';
 }
 
 export function snoozeUntil(now: number): number {

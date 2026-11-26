@@ -41,13 +41,13 @@ Updated 2026-11-26, 9:14 AM ET (America/New_York). The status column in §6 is t
 | Follow-up · Cleanup (part of PR 15) | **Merged** | [#52](https://github.com/jackroseman/pushup-counter/pull/52) | JS-only (fingerprint `c3f1457f593cc8acf58ea69cad24db10827f2d44`). Removed all dev-only code: the set-flow DEV diagnostics line and its tap toggle, the `[stop motion now]` / `[next sets: no motion]` switches and the motion-skip path, and the debug counters from #49/#51; the 4-second restart stays removed. Dead code removed: `src/progress/form.ts` (`formScoreForReps`, `formatFormScore`), `celebrationText`, `contributionFor`, `contributionLine`, `chartCeiling`, `components/SignInCard.tsx`, `components/progressChart.tsx`, legacy `Stat`, and BrandMark's 28 pt tile variant. Big numerals no longer clip at the top on iOS (see decisions). Lay-flat copy trimmed to “Lay your phone flat”. RR logo removed from Today. New shared `TabHeader` for Today / Compete / You. Merged 26 Nov 2026, 8:02 AM ET (`2bcafaf`); development OTA `394f753b-948d-4a01-8e4d-de80be94ccd4`. |
 | 14 · Motion | **Not started** | | Button press, ring fill, rep-count roll, level lock, 3-2-1 sweep, badge and phone-moved fades; Reduce Motion falls back to crossfades. |
 | 15 · Cleanup + release | **Partly done** | Part of the dead-code cleanup landed in [#52](https://github.com/jackroseman/pushup-counter/pull/52) | Still remaining: the `theme.ts` shim, `components/ui.tsx` `Button` (still used by ProfileSetupScreen), lower the lint warning cap if possible, and README/docs updates. Then the `dev` → `main` release and the one approved production build of 1.3.0. Fingerprint must stay unchanged vs PR 4. |
-| Follow-up · SF Symbols `Icon.tsx` | **Open** | (this PR) | JS-only (fingerprint `c3f1457f593cc8acf58ea69cad24db10827f2d44`). `Icon` renders `expo-symbols` `SymbolView` on iOS (weight medium) and keeps the SVG set as the web/Android fallback. Native tab bar icons were already SF Symbols (`flame` / `crown` / `person.crop.circle`). Screenshots: `rebrand/review-assets` › `icons/`. |
+| Follow-up · SF Symbols `Icon.tsx` | **Open** | [#58](https://github.com/jackroseman/pushup-counter/pull/58) | JS-only (fingerprint `c3f1457f593cc8acf58ea69cad24db10827f2d44`). `Icon` renders `expo-symbols` `SymbolView` on iOS (weight medium) and keeps the SVG set as the web/Android fallback. Native tab bar icons were already SF Symbols (`flame` / `crown` / `person.crop.circle`). Screenshots: `rebrand/review-assets` › `icons/`. |
 
 **Remaining**
 
 - PR 14 Motion (not started).
 - PR 15 Cleanup + release: `theme.ts` shim, `components/ui.tsx` `Button` (ProfileSetupScreen), lower the lint warning cap if possible, update README/docs; then the `dev` → `main` release and the one approved 1.3.0 production build.
-- SF Symbols `src/ui/Icon.tsx` swap: this PR (open; fills the PR link once numbered).
+- SF Symbols `src/ui/Icon.tsx` swap: open as [#58](https://github.com/jackroseman/pushup-counter/pull/58).
 - Gate `eas-ship` OTAs on green CI.
 - Frame 17, pick a username.
 - Held review questions on Compete, the set flow and Settings, awaiting Sunny.
@@ -321,7 +321,7 @@ Follow-up PR #57 (into `dev`, after #54–#56 merged):
 - League (i) copy is exactly "Every push-up you do this week counts. Most reps wins." and "The board starts fresh every week." (the Improvement/points line is removed).
 - Server-side `deleted_sets` tombstones: `delete_set` writes a tombstone (and a delete trigger covers the existing RLS path), `submit_set` refuses that id, and clients drop tombstoned sets on sync. Challenge sets stay. League and lifetime totals still come from live `sets` rows (the deleted row is gone). Migration `20261126135306_deleted_sets`, tested with test:db; applied to staging only after this PR merges to dev.
 
-Follow-up · SF Symbols `Icon.tsx` (this PR, into `dev`):
+Follow-up · SF Symbols `Icon.tsx` ([#58](https://github.com/jackroseman/pushup-counter/pull/58), into `dev`):
 - iOS `Icon` uses `SymbolView` with the mockup-matched SF Symbol map (medium weight). Web and Android keep the SVG paths in `iconPaths.ts` as `fallback`.
 - Native tab bar icons are unchanged (`flame` / `crown` / `person.crop.circle`).
 - No package or native changes; fingerprint stays `c3f1457f…`.

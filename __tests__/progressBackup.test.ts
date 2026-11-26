@@ -98,7 +98,7 @@ describe('my_progress on the phone', () => {
     const view = todayFromServer(doc(), []);
     expect(view.ringText).toBe('4 / 10');
     expect(view.streakLine).toBe('2 day streak');
-    expect(view.usualLine).toBe('+4 vs your usual Monday');
+    expect(view.toGoLine).toBe('6 to go');
   });
 
   it('says older sets live in the charts when the server has more than this phone', () => {

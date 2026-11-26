@@ -47,7 +47,7 @@ export function TodayScreen({
       <View style={styles.hero}>
         <Ring text={view.ringText} caption={view.ringCaption} progress={view.ringProgress} onPress={onGoal} />
         <Text style={styles.streak}>{view.streakLine}</Text>
-        {view.usualLine ? <Text style={styles.usual}>{view.usualLine}</Text> : null}
+        {view.toGoLine ? <Text style={styles.usual}>{view.toGoLine}</Text> : null}
         {view.travelLine ? <Text style={styles.note}>{view.travelLine}</Text> : null}
       </View>
 

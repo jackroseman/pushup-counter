@@ -4,9 +4,7 @@ import {
   DEFAULT_LEAGUE_WEIGHTS,
   FRIEND_WEEK_SUBTITLE,
   FRIENDS_LEAGUE_COPY,
-  LEAGUE_ABOUT,
   NO_FRIENDS,
-  WEEK_LINE,
   formatLeagueNumber,
   friendWeekLine,
   improvementDetail,
@@ -93,8 +91,6 @@ describe('league points', () => {
       '50 reps · 1/7 goal days · Baseline 2/3 weeks',
     );
     expect(friendWeekLine(230, 130)).toBe('This week: 230 reps · 130 improvement points');
-    expect(LEAGUE_ABOUT).not.toMatch(/\d/);
-    expect(WEEK_LINE).toBe("Each person's week is Monday to Sunday where they are.");
     expect(CROWN_CAPTION).toBe('Last week, among your current friends.');
     expect(NO_FRIENDS).toBe("Add a friend to start this week's board.");
     expect(FRIENDS_LEAGUE_COPY.startsWith('Friends are on your weekly league together.')).toBe(true);

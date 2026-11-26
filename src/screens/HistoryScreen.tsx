@@ -4,6 +4,7 @@ import { Button } from '../components/ui';
 import { historyStore } from '../session/useSession';
 import { SessionRecord } from '../storage/history';
 import { analyzeSet } from '../core';
+import { formatSetDateTime } from '../progress';
 import { colors } from '../theme';
 
 export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) => void; onBack: () => void }) {
@@ -28,7 +29,7 @@ export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) =
           <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemTitle}>{item.summary.totalReps} pushups</Text>
-              <Text style={styles.itemSub}>{new Date(item.startedAt).toLocaleString()}</Text>
+              <Text style={styles.itemSub}>{formatSetDateTime(item.startedAt)}</Text>
               <Text style={styles.itemSub}>{historyLine(item)}</Text>
             </View>
             <Text style={styles.itemPct}>{item.summary.percentFull}% full</Text>
@@ -69,6 +70,5 @@ function historyLine(r: SessionRecord): string {
   const parts: string[] = [];
   if (a.avgIntervalSec !== null) parts.push(`${a.avgIntervalSec.toFixed(1)} s/rep`);
   if (a.avgDepthPct !== null) parts.push(`${a.avgDepthPct}% depth`);
-  parts.push('Tap for analysis ›');
   return parts.join(' · ');
 }

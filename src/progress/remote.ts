@@ -1,7 +1,6 @@
-import { weekdayName } from './calendar';
 import { GoalChoice, GoalEnrollment } from './goals';
 import { buildProgress, ProgressModel } from './progress';
-import { buildToday, formatUsual, presentToday, travelLine, TodayModel } from './today';
+import { buildToday, presentToday, travelLine, TodayModel } from './today';
 import { countsForStreak, Workout } from './workouts';
 import type { ProgramId } from './programs';
 
@@ -230,13 +229,11 @@ export function mergeWorkouts(serverSets: readonly ServerSet[], local: readonly 
 }
 
 export function todayFromServer(doc: ServerProgress, workouts: readonly Workout[]): TodayModel {
-  const delta = doc.delta;
   return presentToday({
     reps: doc.todayReps,
     target: doc.rest ? 0 : doc.target,
     rest: doc.rest,
     currentStreak: doc.currentStreak,
-    usualLine: delta == null ? null : formatUsual(delta, weekdayName(doc.today)),
     travelLine: travelLine(workouts, doc.timeZone),
   });
 }

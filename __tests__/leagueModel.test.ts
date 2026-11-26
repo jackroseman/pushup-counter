@@ -1,6 +1,6 @@
 import type { LeagueBoard, LeagueImprovementRow, LeagueTotalRow } from '../src/backend/leagueClient';
 import { inviteFriendsMessage } from '../src/battles/inviteFriends';
-import { formatEndsIn, hasCrown, isNewWeek, leagueHeader, leagueView, ordinal, toPass, zonedMidnight } from '../src/progress/leagueView';
+import { LEAGUE_INFO, formatEndsIn, hasCrown, isNewWeek, leagueHeader, leagueView, ordinal, toPass, zonedMidnight } from '../src/progress/leagueView';
 
 const ME = 'me';
 const total = (userId: string, name: string, reps: number, rank: number): LeagueTotalRow => ({
@@ -242,5 +242,13 @@ describe('league helpers', () => {
     expect(inviteFriendsMessage('sunny')).toBe('Join me on Rep Royale. Add me: @sunny');
     expect(inviteFriendsMessage('@sunny', 'https://example.com/x')).toBe('Join me on Rep Royale. Add me: @sunny\nhttps://example.com/x');
     expect(inviteFriendsMessage(null)).toBe('Join me on Rep Royale.');
+  });
+});
+
+describe('league (i) sheet', () => {
+  it('explains both boards in plain words, with no numbers or formulas', () => {
+    expect(LEAGUE_INFO.items.map((i) => i.title)).toEqual(['Total', 'Improvement']);
+    const copy = [LEAGUE_INFO.title, LEAGUE_INFO.note, ...LEAGUE_INFO.items.flatMap((i) => [i.title, i.line])].join(' ');
+    expect(copy).not.toMatch(/\d|%|×|points per|baseline/i);
   });
 });

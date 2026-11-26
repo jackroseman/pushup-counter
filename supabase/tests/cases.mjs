@@ -310,7 +310,7 @@ const solo = (id, n, user, opts = {}) =>
   `${as(user)} select public.submit_set(${q(rec(id, n, opts.period ?? 1500, opts.bottoms ?? [0.15], opts))}) is not null; reset role;`;
 
 steps.push(
-  ['claim: defaults include the recency window and multi-day options', `select value->>'claim_set_max_age_s' age, value->>'multi_day_window_days' w, value->>'deadline_hours' h from app_settings where key='async_battle_defaults';`],
+  ['claim: defaults include the recency window and multi-day options', `select value->>'claim_set_max_age_s' age, value->>'multi_day_window_days' w, value->>'deadline_hours' h, value->'deadline_options_hours' opts from app_settings where key='async_battle_defaults';`],
   ['claim: A uploads the set he just finished', solo('claim-solo', 10, A)],
   ['claim: A opens a max-reps battle', `${as(A)} ${create('cmax', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;`],
   ['claim: resubmitting without linkFinishedSet does not attach it (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q(rec('claim-solo', 10, 1500, [0.15]))} || jsonb_build_object('challengeId', ${ctx('cmax')}, 'userId', '${A}')); reset role;`],
@@ -348,7 +348,7 @@ steps.push(
   ['claim: restore the default window', `update app_settings set value = jsonb_set(value, '{claim_set_max_age_s}', '1800') where key='async_battle_defaults'; select value->>'claim_set_max_age_s' age from app_settings where key='async_battle_defaults';`],
 );
 Object.assign(checks, {
-  'claim: defaults include the recency window and multi-day options': (r) => ok(r[0][0].age === '1800' && r[0][0].w === '7' && r[0][0].h === '24', 'defaults ' + JSON.stringify(r[0])),
+  'claim: defaults include the recency window and multi-day options': (r) => ok(r[0][0].age === '1800' && r[0][0].w === '7' && r[0][0].h === '24' && JSON.stringify(r[0][0].opts) === '[24,72,168]', 'defaults ' + JSON.stringify(r[0])),
   'claim: the set is still solo': (r) => ok(r[0][0].solo === true, 'linked without the flag'),
   'claim: linking it counts as A attempt and tells B': (r) => {
     const linked = r.find((x) => x[0] && 'linked' in x[0])[0];

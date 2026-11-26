@@ -93,6 +93,7 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
       banner={banner}
       onStart={() => navigation.navigate('Session')}
       onInvite={() => shareInvite(profile.username)}
+      onInfo={() => navigation.navigate('LeagueInfo')}
       onOpenPerson={(person) => {
         if (person.me) return;
         const row = board?.total.find((r) => r.userId === person.userId);

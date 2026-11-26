@@ -55,7 +55,7 @@ function choose<T>(title: string, options: { label: string; value: T }[], onPick
   ]);
 }
 
-/** New challenge (frame 21, E12): kind tiles, friends, length, time limit or goal, Send. */
+/** New challenge (frame 21, E12), a form sheet: Cancel and title, kind tiles, friends, length, time limit or goal, Send. */
 export function NewChallengeSheet({
   friendIds,
   fromSet,
@@ -64,6 +64,7 @@ export function NewChallengeSheet({
   onNeedGoal,
   onInvite,
   onCreated,
+  onCancel,
 }: {
   friendIds?: string[];
   /** The set that just finished. A best set with the same timer uses it as the creator's try. */
@@ -79,6 +80,8 @@ export function NewChallengeSheet({
     share: boolean,
     extras?: { promptAttempt?: boolean; justPlayed?: { reps: number; counted: number } },
   ) => void;
+  /** Cancel in the sheet's header: close without sending. */
+  onCancel: () => void;
 }) {
   const { appSettings } = useBackend();
   const { deviceId } = useIdentity();
@@ -147,6 +150,17 @@ export function NewChallengeSheet({
 
   return (
     <View style={styles.root}>
+      <View style={styles.header}>
+        <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={12} style={styles.cancel}>
+          <Text variant="body" tone="secondary">
+            Cancel
+          </Text>
+        </Pressable>
+        <Text variant="headline" accessibilityRole="header" align="center" style={styles.title}>
+          New challenge
+        </Text>
+        <View style={styles.cancel} />
+      </View>
       <ScrollView contentContainerStyle={styles.content}>
         <SectionHeader title="Kind" style={styles.firstSection} />
         <View style={styles.tiles}>
@@ -280,7 +294,10 @@ export function NewChallengeSheet({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: color.surface },
+  header: { height: 44, marginTop: 18, paddingHorizontal: gutter, flexDirection: 'row', alignItems: 'center' },
+  cancel: { width: 72 },
+  title: { flex: 1, fontSize: 18 },
   content: { paddingHorizontal: gutter, paddingBottom: space.xxl },
   firstSection: { marginTop: space.xs },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },

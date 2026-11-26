@@ -19,6 +19,7 @@ export function LeagueView({
   onStart,
   onInvite,
   onOpenPerson,
+  onInfo,
 }: {
   view: Model | null;
   mode: LeagueMode;
@@ -27,6 +28,8 @@ export function LeagueView({
   onStart: () => void;
   onInvite: () => void;
   onOpenPerson: (person: LeaguePerson) => void;
+  /** The (i): how Total and Improvement work. */
+  onInfo: () => void;
 }) {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
@@ -52,13 +55,18 @@ export function LeagueView({
           <Text variant="footnote" weight="500">
             {view.header}
           </Text>
-          {view.kind === 'newWeek' ? (
-            <Text variant="footnote" weight="500" tone="label">
-              {LEAGUE_MODE_LABEL.total}
-            </Text>
-          ) : (
-            <ModePicker mode={mode} onMode={onMode} />
-          )}
+          <View style={styles.headerRight}>
+            <Pressable accessibilityRole="button" accessibilityLabel="How the league works" onPress={onInfo} hitSlop={12}>
+              <Icon name="info" size={16} color={color.secondary} />
+            </Pressable>
+            {view.kind === 'newWeek' ? (
+              <Text variant="footnote" weight="500" tone="label">
+                {LEAGUE_MODE_LABEL.total}
+              </Text>
+            ) : (
+              <ModePicker mode={mode} onMode={onMode} />
+            )}
+          </View>
         </View>
       ) : null}
 
@@ -246,6 +254,7 @@ const styles = StyleSheet.create({
     marginTop: space.md,
     minHeight: 52,
   },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   picker: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   down: { transform: [{ rotate: '90deg' }] },
   podium: { marginTop: space.md },

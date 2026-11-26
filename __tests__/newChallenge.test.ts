@@ -41,7 +41,7 @@ describe('new challenge sheet (frame 21)', () => {
   });
 
   it('offers a length per kind from app settings', () => {
-    expect(lengthOptions('best_set', s).map((o) => o.label)).toEqual(['6 hours', '1 day', '3 days']);
+    expect(lengthOptions('best_set', s).map((o) => o.label)).toEqual(['1 day', '3 days', '1 week']);
     expect(lengthOptions('total', s).map((o) => o.label)).toEqual(['Today', 'This week', 'This month']);
     expect(lengthOptions('streak', s).map((o) => o.label)).toEqual(['7 days', '14 days', '30 days']);
     const f = withLength(initialForm(s), '72');

@@ -17,7 +17,7 @@ const seed = [
     key: 'async_battle_defaults',
     value: {
       deadline_hours: 24,
-      deadline_options_hours: [6, 24, 72],
+      deadline_options_hours: [24, 72, 168],
       max_deadline_hours: 168,
       invite_expiry_hours: 24,
       timed_durations_s: [60, 120],
@@ -94,7 +94,7 @@ describe('app settings', () => {
     ]);
     expect(s.asyncBattleDefaults.deadlineHours).toBe(48);
     // a list with an out-of-range entry falls back to the default options (capped to the max)
-    expect(s.asyncBattleDefaults.deadlineOptionsHours).toEqual([6, 24, 72]);
+    expect(s.asyncBattleDefaults.deadlineOptionsHours).toEqual([24, 72]);
     expect(s.asyncBattleDefaults.maxDeadlineHours).toBe(96);
     expect(s.asyncBattleDefaults.timedDurationsS).toEqual([90]);
     expect(s.asyncBattleDefaults.maxRepsIdleEndS).toBe(15);

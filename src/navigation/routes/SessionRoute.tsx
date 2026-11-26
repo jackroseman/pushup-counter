@@ -47,6 +47,9 @@ export function SessionRoute({ navigation, route }: Props<'Session'>) {
         });
       }}
       onCancel={() => navigation.goBack()}
+      // Replace, not push: the set (camera, countdown) stops while reading, and Try it starts a
+      // new one. Not on a challenge attempt: Try it would start a plain set instead.
+      onHowItWorks={battle ? undefined : () => navigation.replace('HowItWorks')}
     />
     </Frame>
   );

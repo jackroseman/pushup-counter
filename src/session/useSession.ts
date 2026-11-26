@@ -22,6 +22,7 @@ import {
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported, startGravity, stopGravity } from '../sensors';
+import { faceRestartDue } from './sessionView';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
@@ -128,6 +129,10 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   /** Mirrors state.phase for the sensor listeners. */
   const phaseRef = useRef<SessionPhase>('starting');
   const endReason = useRef<SessionEndReason>('user');
+  /** Face centering watchdog: when centering started, when face tracking was last (re)started. */
+  const faceStarted = useRef(false);
+  const calibratingSince = useRef(0);
+  const lastFaceRestart = useRef(0);
 
   const [state, setState] = useState<SessionState>({
     phase: 'starting',
@@ -240,6 +245,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     resetSetup();
     guide.current = new CalibrationGuide();
     phaseRef.current = 'calibrating';
+    calibratingSince.current = Date.now();
     patch({
       phase: 'calibrating',
       count: 0,
@@ -268,6 +274,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
   useEffect(() => {
     cancelled.current = false;
+    faceStarted.current = false;
     voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
@@ -378,6 +385,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       await PushupSensors.enablePlaybackAudioSession().catch(() => {});
       const faceOk = await PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
       if (cancelled.current) return;
+      faceStarted.current = faceOk;
       if (!faceOk) {
         patch({
           phase: 'unavailable',
@@ -406,6 +414,17 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
     // Warn when the face has been out of view for a while during the set.
     const warn = setInterval(() => {
+      // Face centering with no face for a while: restart face tracking (same call as at the start).
+      const now = Date.now();
+      if (
+        !cancelled.current &&
+        faceStarted.current &&
+        phaseRef.current === 'calibrating' &&
+        faceRestartDue({ now, since: calibratingSince.current, lastTracked: lastTrackedAt.current, lastRestart: lastFaceRestart.current })
+      ) {
+        lastFaceRestart.current = now;
+        PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
+      }
       if (!active.current) return;
       const lost = Date.now() - lastTrackedAt.current > FACE_LOST_WARNING_MS;
       setState((s) => {

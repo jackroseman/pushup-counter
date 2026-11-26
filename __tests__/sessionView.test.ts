@@ -1,4 +1,4 @@
-import { clockText, countdownProgress, countingTitle, faceCenteringView, nextSetNumber, toBeatLine, CENTER_FACE_LINE } from '../src/session/sessionView';
+import { clockText, countdownProgress, countingTitle, faceCenteringView, faceRestartDue, nextSetNumber, toBeatLine, CENTER_FACE_LINE, FACE_RESTART_MS } from '../src/session/sessionView';
 import type { Battle } from '../src/battles/model';
 import type { GuideSnapshot } from '../src/core';
 
@@ -60,5 +60,18 @@ describe('sessionView', () => {
       ready: false,
       line: 'Shift left a little to center over the camera',
     });
+  });
+
+  it('restarts face tracking only after a long stretch with no face', () => {
+    const since = 1_000_000;
+    // Just entered centering: wait.
+    expect(faceRestartDue({ now: since + 1_000, since, lastTracked: 0, lastRestart: 0 })).toBe(false);
+    // No face at all for the full gap: restart.
+    expect(faceRestartDue({ now: since + FACE_RESTART_MS, since, lastTracked: 0, lastRestart: 0 })).toBe(true);
+    // A face was seen recently: wait.
+    expect(faceRestartDue({ now: since + 10_000, since, lastTracked: since + 9_000, lastRestart: 0 })).toBe(false);
+    // Just restarted: give it the full gap again.
+    expect(faceRestartDue({ now: since + 6_000, since, lastTracked: 0, lastRestart: since + 4_000 })).toBe(false);
+    expect(faceRestartDue({ now: since + 8_000, since, lastTracked: 0, lastRestart: since + 4_000 })).toBe(true);
   });
 });

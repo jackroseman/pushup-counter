@@ -77,3 +77,28 @@ export function faceCenteringView(guide: GuideSnapshot | null): {
     line: pose.ok ? CENTER_FACE_LINE : guide.message,
   };
 }
+
+/** How long face centering waits for a first tracked face before it restarts face tracking. */
+export const FACE_RESTART_MS = 4000;
+
+/**
+ * True when face centering has gone FACE_RESTART_MS with no tracked face, counted from the
+ * latest of: centering started, the last tracked sample, the last restart. Restarting the
+ * shared camera session is harmless before counting starts, and recovers a session that
+ * stopped delivering faces (the screen otherwise waits forever on "Face not found").
+ */
+export function faceRestartDue({
+  now,
+  since,
+  lastTracked,
+  lastRestart,
+  gapMs = FACE_RESTART_MS,
+}: {
+  now: number;
+  since: number;
+  lastTracked: number;
+  lastRestart: number;
+  gapMs?: number;
+}): boolean {
+  return now - Math.max(since, lastTracked, lastRestart) >= gapMs;
+}

@@ -20,9 +20,6 @@ export interface AppState {
   remote: RemoteProgress;
   lateIds: ReadonlySet<string>;
   refreshRemote: () => void;
-  howToOpen: boolean;
-  openHowTo: () => void;
-  closeHowTo: () => void;
 }
 
 export const AppStateContext = createContext<AppState | null>(null);

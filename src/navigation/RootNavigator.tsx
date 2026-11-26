@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState as AppLifecycle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, LinkingOptions, NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createNativeStackNavigator, type NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 
@@ -49,7 +49,6 @@ import {
   workoutDate,
   workoutFromRecord,
 } from '../progress';
-import { HOWTO_KEY } from '../progress/howto';
 import { AppStateContext, type RemoteProgress } from './appState';
 import { getStateFromPath, linkingConfig } from './linkingConfig';
 import { MainTabs } from './MainTabs';
@@ -59,6 +58,7 @@ import { SummaryRoute } from './routes/SummaryRoute';
 import { AllSetsRoute } from './routes/AllSetsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { GoalRoute, ProfileSetupRoute } from './routes/GoalRoutes';
+import { GoalPickRoute, HowItWorksRoute, WelcomeRoute } from './routes/OnboardingRoutes';
 import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, NewBattleRoute } from './routes/ChallengeRoutes';
 
 export type { RootStackParamList, TabParamList } from './types';
@@ -77,6 +77,16 @@ const header = (title: string) => ({
 
 /** Web invite links (https://<domain>/b/<token>, once a domain exists) are mapped to the scheme form. */
 let webBaseUrl: string | null = null;
+
+/** Frame 5: the goal sheet, a native form sheet (grabber, 34 pt corners). */
+const GOAL_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: [0.62, 1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: colors.card },
+};
+
 const normalizeUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
   const link = parseAppLink(url, webBaseUrl);
@@ -134,7 +144,6 @@ export function RootNavigator() {
   const [enrollments, setEnrollments] = useState<GoalEnrollment[]>([]);
   const [remote, setRemote] = useState<RemoteProgress>({ doc: null, status: 'idle' });
   const [lateIds, setLateIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [howToOpen, setHowToOpen] = useState(false);
   const goalSyncRef = useRef<ReturnType<typeof sanitizeGoalSync> | null>(null);
   const remoteRef = useRef(remote);
   remoteRef.current = remote;
@@ -180,9 +189,6 @@ export function RootNavigator() {
         nudgeSyncRef.current = sanitizeNudgeSync(JSON.parse(raw));
       })
       .catch(() => {});
-    AsyncStorage.getItem(HOWTO_KEY)
-      .then((v) => setHowToOpen(v !== '1'))
-      .catch(() => setHowToOpen(true));
   }, []);
 
   const refreshSavedSets = useCallback(() => {
@@ -424,12 +430,6 @@ export function RootNavigator() {
       });
   }, []);
 
-  const closeHowTo = useCallback(() => {
-    setHowToOpen(false);
-    AsyncStorage.setItem(HOWTO_KEY, '1').catch(() => {});
-  }, []);
-  const openHowTo = useCallback(() => setHowToOpen(true), []);
-
   const value = useMemo(
     () => ({
       settings,
@@ -443,11 +443,8 @@ export function RootNavigator() {
       remote,
       lateIds,
       refreshRemote,
-      howToOpen,
-      openHowTo,
-      closeHowTo,
     }),
-    [settings, updateSettings, nudges, updateNudges, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote, howToOpen, openHowTo, closeHowTo],
+    [settings, updateSettings, nudges, updateNudges, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote],
   );
 
   return (
@@ -455,7 +452,10 @@ export function RootNavigator() {
       <NavigationContainer linking={linking} theme={theme}>
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
           <Stack.Screen name="Main" component={MainTabs} />
-          <Stack.Screen name="GoalSetup" component={GoalRoute} />
+          <Stack.Screen name="Welcome" component={WelcomeRoute} options={{ gestureEnabled: false, animation: 'none' }} />
+          <Stack.Screen name="GoalPick" component={GoalPickRoute} />
+          <Stack.Screen name="HowItWorks" component={HowItWorksRoute} />
+          <Stack.Screen name="GoalSetup" component={GoalRoute} options={GOAL_SHEET} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />
           <Stack.Screen name="AllSets" component={AllSetsRoute} options={header('All sets')} />

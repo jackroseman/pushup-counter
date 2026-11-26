@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
 
 import { Icon, IconName } from './Icon';
+import { motionSpec, useReduceMotion } from './motion';
 import { color, motion, radius } from './tokens';
 
 export type ButtonKind = 'primary' | 'gray' | 'tinted' | 'plain' | 'destructive';
@@ -15,12 +16,22 @@ const KIND: Record<ButtonKind, { bg: string; fg: string }> = {
   destructive: { bg: 'transparent', fg: color.destructive },
 };
 
-/** Animated press feedback shared by buttons: scale 0.98, 120 ms, ease-out, no bounce. */
+/**
+ * Animated press feedback shared by buttons: scale 0.98, 120 ms, ease-out, no bounce.
+ * Reduce Motion: no scale; the button dims to 70 % instead. Apply both `scale` and `opacity`.
+ */
 export function usePressScale() {
+  const reduced = useReduceMotion();
   const [scale] = useState(() => new Animated.Value(1));
-  const to = (value: number) =>
-    Animated.timing(scale, { toValue: value, duration: motion.press, easing: motion.easing, useNativeDriver: true }).start();
-  return { scale, onPressIn: () => to(motion.pressScale), onPressOut: () => to(1) };
+  const [opacity] = useState(() => new Animated.Value(1));
+  const spec = motionSpec('press', reduced);
+  const to = (pressed: boolean) => {
+    const timing = (v: Animated.Value, toValue: number) =>
+      Animated.timing(v, { toValue, duration: spec.duration, easing: spec.easing, useNativeDriver: true }).start();
+    if (spec.move) timing(scale, pressed ? motion.pressScale : 1);
+    else timing(opacity, pressed ? motion.pressDim : 1);
+  };
+  return { scale, opacity, onPressIn: () => to(true), onPressOut: () => to(false) };
 }
 
 /**
@@ -48,12 +59,12 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
 }) {
-  const { scale, onPressIn, onPressOut } = usePressScale();
+  const { scale, opacity, onPressIn, onPressOut } = usePressScale();
   const k = KIND[kind];
   const textOnly = kind === 'plain' || kind === 'destructive';
   const small = size === 'small';
   return (
-    <Animated.View style={[small ? styles.wrapSmall : styles.wrap, { transform: [{ scale }] }, style]}>
+    <Animated.View style={[small ? styles.wrapSmall : styles.wrap, { opacity, transform: [{ scale }] }, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? title}

@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { TiltSnapshot } from '../core';
-import { Text, color } from '../ui';
+import { Text, color, motionSpec, useReduceMotion, useTween } from '../ui';
 
 /** Level size (frame 6): a 240 pt dial with a 100 pt target ring and a 32 pt bubble. */
 const SIZE = 240;
@@ -34,12 +34,21 @@ export function bubbleOffset(
   return { dx, dy };
 }
 
-/** "Lay your phone flat" (frame 6): the level and the title. */
+/** How far the green target ring starts outside its final size when the level locks (pt). */
+export const LOCK_SETTLE = 8;
+
+/**
+ * "Lay your phone flat" (frame 6): the level and the title. When the phone goes flat the target
+ * ring and the bubble fade to green and the green ring settles in from slightly larger (250 ms,
+ * ease-out, no bounce). Reduce Motion: the same color crossfade, without the settle.
+ */
 export function LevelView({ level }: { level: TiltSnapshot | null }) {
   const known = !!level && level.tiltDeg !== null;
   const flat = known && level!.flat;
   const { dx, dy } = known ? bubbleOffset(level!, R, BUBBLE_R) : { dx: 0, dy: 0 };
-  const accent = flat ? color.signal : color.label;
+  const reduced = useReduceMotion();
+  const lock = useTween(flat ? 1 : 0, 'lock', reduced, flat ? 1 : 0);
+  const settle = motionSpec('lock', reduced).move ? (1 - lock) * LOCK_SETTLE : 0;
   const c = SIZE / 2;
   return (
     <View style={styles.wrap}>
@@ -47,8 +56,10 @@ export function LevelView({ level }: { level: TiltSnapshot | null }) {
         <Circle cx={c} cy={c} r={R - 0.75} fill="none" stroke={color.graphite} strokeWidth={1.5} />
         <Line x1={c} y1={0} x2={c} y2={SIZE} stroke={color.graphite} strokeWidth={1} />
         <Line x1={0} y1={c} x2={SIZE} y2={c} stroke={color.graphite} strokeWidth={1} />
-        <Circle cx={c} cy={c} r={TARGET_R - 1} fill="none" stroke={flat ? color.signal : color.tertiary} strokeWidth={2} />
-        {known ? <Circle cx={c + dx} cy={c + dy} r={BUBBLE_R} fill={accent} /> : null}
+        <Circle cx={c} cy={c} r={TARGET_R - 1} fill="none" stroke={color.tertiary} strokeWidth={2} opacity={1 - lock} />
+        <Circle cx={c} cy={c} r={TARGET_R - 1 + settle} fill="none" stroke={color.signal} strokeWidth={2} opacity={lock} />
+        {known ? <Circle cx={c + dx} cy={c + dy} r={BUBBLE_R} fill={color.label} /> : null}
+        {known ? <Circle cx={c + dx} cy={c + dy} r={BUBBLE_R} fill={color.signal} opacity={lock} /> : null}
       </Svg>
       <Text variant="title2" align="center" style={styles.title}>
         Lay your phone flat

@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Icon, Text, color, gutter } from '../ui';
+import { Button, FadeIn, Icon, Text, color, gutter } from '../ui';
 
 /** Plain line shown when the phone moved and ended the set. */
 export const PHONE_MOVED = 'Your phone moved.';
@@ -10,7 +10,7 @@ export const PHONE_MOVED = 'Your phone moved.';
 export function SetEndedScreen({ reps, onAgain, onDone }: { reps: number; onAgain: () => void; onDone: () => void }) {
   return (
     <View style={styles.container}>
-      <View style={styles.center}>
+      <FadeIn style={styles.center} rise={8}>
         <View style={styles.icon}>
           <Icon name="phone" size={28} />
         </View>
@@ -26,7 +26,7 @@ export function SetEndedScreen({ reps, onAgain, onDone }: { reps: number; onAgai
         <Text variant="footnote" weight="500" style={styles.reps}>
           reps
         </Text>
-      </View>
+      </FadeIn>
       <Button title="Start another set" onPress={onAgain} />
       <Button title="Done" kind="plain" onPress={onDone} />
     </View>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { TodayScreen } from '../../screens/TodayScreen';
 import { useBackend } from '../../backend/BackendProvider';
@@ -82,6 +82,7 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
     }, [refreshRemote]),
   );
   useFocusEffect(reloadCompete);
+  const focused = useIsFocused();
   // Back from the background: today's date and the time left on challenges move on.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
@@ -147,6 +148,7 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
     <Frame kind="tab">
       <TodayScreen
         view={view}
+        active={focused}
         date={formatTodaySubtitle(now, zone)}
         banner={banner}
         note={day.travelLine}

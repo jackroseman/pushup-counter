@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, AvatarStack, Button, Card, Icon, Ring, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
+import { Avatar, AvatarStack, Button, Card, Icon, Ring, RollingNumber, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
 import { color, gutter, radius } from '../ui/tokens';
 import { heroLabel, type TodayChallengeCard, type TodayHero, type TodayView } from '../ui/models/today';
 
@@ -22,6 +22,7 @@ export function TodayScreen({
   onNewChallenge,
   onInvite,
   onHowItWorks,
+  active = true,
 }: {
   view: TodayView;
   /** "Wednesday, November 25". */
@@ -39,7 +40,13 @@ export function TodayScreen({
   onNewChallenge: () => void;
   onInvite: () => void;
   onHowItWorks: () => void;
+  /** False while Today is behind another screen: the ring and count wait to animate until it is back. */
+  active?: boolean;
 }) {
+  // Keep showing the last hero while Today is hidden, so the fill and roll play once it is visible.
+  const [seen, setSeen] = useState(view.hero);
+  if (active && seen !== view.hero) setSeen(view.hero);
+  const hero = active ? view.hero : seen;
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <TabHeader title="Today" subtitle={date} right={view.streak != null ? <StreakChip days={view.streak} /> : null} />
@@ -49,7 +56,7 @@ export function TodayScreen({
         </Text>
       ) : null}
 
-      <Hero hero={view.hero} onGoal={onGoal} />
+      <Hero hero={hero} onGoal={onGoal} />
       {view.line ? (
         <Text
           variant="subhead"
@@ -149,9 +156,15 @@ function Hero({ hero, onGoal }: { hero: TodayHero; onGoal: () => void }) {
   if (hero.kind === 'count') {
     return (
       <View style={styles.count} accessible accessibilityLabel={heroLabel(hero)}>
-        <Text variant="hero" size={104} tone={hero.reps === 0 ? 'secondary' : 'label'}>
-          {String(hero.reps)}
-        </Text>
+        <RollingNumber
+          value={hero.reps}
+          distance={14}
+          render={(n) => (
+            <Text variant="hero" size={104} tone={n === 0 ? 'secondary' : 'label'}>
+              {String(n)}
+            </Text>
+          )}
+        />
         <Text variant="subhead" style={styles.countCaption}>
           push-ups today
         </Text>
@@ -174,9 +187,15 @@ function Hero({ hero, onGoal }: { hero: TodayHero; onGoal: () => void }) {
       style={styles.ringWrap}
     >
       <Ring progress={ring ? Math.max(RING_START, hero.progress) : 0} done={ring && hero.done}>
-        <Text variant="hero" size={84} tone={hero.reps === 0 ? 'secondary' : 'label'}>
-          {String(hero.reps)}
-        </Text>
+        <RollingNumber
+          value={hero.reps}
+          distance={11}
+          render={(n) => (
+            <Text variant="hero" size={84} tone={n === 0 ? 'secondary' : 'label'}>
+              {String(n)}
+            </Text>
+          )}
+        />
         <Text variant="subhead" style={styles.ringCaption}>
           {ring ? `of ${hero.target} today` : 'Rest day'}
         </Text>

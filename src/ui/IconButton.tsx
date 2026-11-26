@@ -19,10 +19,10 @@ export function IconButton({
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const { scale, onPressIn, onPressOut } = usePressScale();
+  const { scale, opacity, onPressIn, onPressOut } = usePressScale();
   const slop = (hit - SIZE) / 2;
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+    <Animated.View style={[{ opacity, transform: [{ scale }] }, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}

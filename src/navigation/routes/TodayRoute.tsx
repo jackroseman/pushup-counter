@@ -1,81 +1,165 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useIsFocused } from '@react-navigation/native';
+import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { TodayScreen } from '../../screens/TodayScreen';
+import { HowToSheet } from '../../components/HowToSheet';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
+import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../../backend/leagueClient';
 import { historyStore } from '../../session/useSession';
 import { faceTrackingSupported } from '../../sensors';
 import { deviceTimeZone } from '../../backend/profile';
-import { fetchRecapRanks } from '../../backend/nudgeClient';
 import { supabase } from '../../backend/supabase';
-import { REFRESH_FAILED, WeekRanks, buildToday, localDate, signedInViews, weekCard, workoutFromRecord } from '../../progress';
+import { api } from '../../battles/api';
+import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
+import type { Battle } from '../../battles/model';
+import {
+  REFRESH_FAILED,
+  buildProgress,
+  buildToday,
+  enrollmentsFromServer,
+  formatTodaySubtitle,
+  goalForDate,
+  localDate,
+  mergeWorkouts,
+  signedInViews,
+  streaks,
+  workoutFromRecord,
+} from '../../progress';
+import { buildTodayView } from '../../ui/models/today';
 import { useAppState } from '../appState';
 import { Frame } from '../frame';
 import type { TabProps } from '../types';
 
 export function TodayRoute({ navigation }: TabProps<'Today'>) {
-  const { savedSets, refreshSavedSets, enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
-  const { session } = useBackend();
-  const { profile } = useIdentity();
+  const { enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
   const focused = useIsFocused();
+  const { session, appSettings } = useBackend();
+  const { profile } = useIdentity();
+  const userId = session?.user.id ?? null;
   const askedFor = useRef<string | null>(null);
   const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
-  const [ranks, setRanks] = useState<WeekRanks | null>(null);
-  const reload = useCallback(() => {
-    refreshSavedSets();
-    refreshRemote();
-    historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
-  }, [refreshSavedSets, refreshRemote]);
-  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
+  // Keyed by account: a reply that lands after a sign-out or account switch is never shown.
+  const [boardFor, setBoardFor] = useState<{ userId: string; board: LeagueBoard } | null>(null);
+  const [battlesFor, setBattlesFor] = useState<{ userId: string; battles: Battle[] } | null>(null);
+  const board = userId && boardFor?.userId === userId ? boardFor.board : null;
+  const battles = userId && battlesFor?.userId === userId ? battlesFor.battles : null;
+  const [now, setNow] = useState(() => Date.now());
+
+  // Last board for this account first, so the card paints before the refresh.
   useEffect(() => {
-    const uid = session?.user.id;
-    if (uid && profile === null && askedFor.current !== uid && navigation.isFocused()) {
-      askedFor.current = uid;
+    if (!userId) return;
+    loadLeagueCache(AsyncStorage, userId).then((cached) => {
+      if (cached) setBoardFor((current) => (current?.userId === userId ? current : { userId, board: cached }));
+    });
+  }, [userId]);
+
+  // League and challenges need a signed-in account with a username.
+  const reloadCompete = useCallback(() => {
+    if (!supabase || !userId || !profile) return;
+    fetchMyLeague(supabase)
+      .then((doc) => {
+        setBoardFor({ userId, board: doc });
+        saveLeagueCache(AsyncStorage, userId, doc).catch(() => {});
+      })
+      .catch(() => {});
+    api.myBattles(supabase).then((r) => {
+      if (!r.ok) return;
+      const rows = r.data ?? [];
+      rememberBattles(rows);
+      setBattlesFor({ userId, battles: rows });
+    });
+  }, [userId, profile]);
+  // One my_progress, one my_league and one my_challenges call per focus. The league and
+  // challenges also load when sign-in or the username finishes while Today is open.
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+      refreshRemote();
+      historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
+    }, [refreshRemote]),
+  );
+  useFocusEffect(reloadCompete);
+  // Back from the background: today's date and the time left on challenges move on.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') setNow(Date.now());
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (userId && profile === null && askedFor.current !== userId && navigation.isFocused()) {
+      askedFor.current = userId;
       navigation.navigate('ProfileSetup');
     }
-  }, [session, profile, navigation]);
+  }, [userId, profile, navigation]);
+
   const zone = deviceTimeZone();
-  const now = Date.now();
   const today = localDate(now, zone);
+  const doc = session && remote.doc && remote.status === 'ready' ? remote.doc : null;
   const phone = buildToday({ workouts, enrollments, today, timeZone: zone });
-  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).today : phone;
+  const signed = doc ? signedInViews(doc, workouts) : null;
+  const day = signed ? signed.today : phone;
+  const progress = signed ? signed.progress : buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount: workouts.length });
+  const currentStreak = doc
+    ? signed?.unsynced
+      ? streaks(mergeWorkouts(doc.sets, workouts).workouts, enrollmentsFromServer(doc.enrollments), doc.today, doc.timeZone).current
+      : doc.currentStreak
+    : streaks(workouts, enrollments, today, zone).current;
+  const view = buildTodayView({
+    today,
+    reps: day.reps,
+    target: day.target,
+    rest: day.rest,
+    currentStreak,
+    dayOne: progress.empty && day.reps === 0,
+    days: progress.day,
+    targetFor: (date) => goalForDate(enrollments, date)?.target ?? null,
+    signedIn: !!session,
+    meId: userId,
+    board,
+    battles,
+    now,
+  });
   const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
-  const weekStart = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks: null })?.weekStart ?? null;
-  useEffect(() => {
-    if (!weekStart || !session || !profile || !supabase) {
-      setRanks(null);
-      return undefined;
-    }
-    let alive = true;
-    fetchRecapRanks(supabase, weekStart)
-      .then((next) => {
-        if (alive) setRanks(next);
-      })
-      .catch(() => {
-        if (alive) setRanks(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [weekStart, session, profile]);
-  const week = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks });
+
+  const play = (battleId: string) => {
+    const b = battles?.find((x) => x.id === battleId) ?? rememberedBattle(battleId);
+    if (!b) return;
+    const d = appSettings.asyncBattleDefaults;
+    navigation.navigate('Session', {
+      battle: {
+        battleId: b.id,
+        format: b.durationS ? 'timed' : 'max_reps',
+        durationS: b.durationS,
+        idleEndS: d.maxRepsIdleEndS,
+        capS: d.maxRepsCapS,
+      },
+    });
+  };
+
   return (
     <Frame kind="tab">
-    <TodayScreen
-      view={view}
-      banner={banner}
-      week={week}
-      depth={faceTrackingSupported()}
-      howToOpen={howToOpen && focused}
-      savedSets={savedSets}
-      onStart={() => navigation.navigate('Session')}
-      onGoal={() => navigation.navigate('GoalSetup')}
-      onAccount={() => navigation.navigate('Settings')}
-      onWeek={week ? () => (week.destination === 'league' ? navigation.navigate('Compete', { segment: 'league' }) : navigation.navigate('You')) : undefined}
-      onOpenHowTo={openHowTo}
-      onCloseHowTo={closeHowTo}
-    />
+      <TodayScreen
+        view={view}
+        date={formatTodaySubtitle(now, zone)}
+        banner={banner}
+        note={day.travelLine}
+        depth={faceTrackingSupported()}
+        onStart={() => navigation.navigate('Session')}
+        onGoal={() => navigation.navigate('GoalSetup')}
+        onLeague={() => navigation.navigate('Compete', { segment: 'league' })}
+        onChallenge={(challengeId) => navigation.navigate('Battle', { challengeId, battle: battles?.find((b) => b.id === challengeId) })}
+        onPlay={play}
+        onNewChallenge={() => navigation.navigate('NewBattle')}
+        onInvite={() => (session ? navigation.navigate('Friends') : navigation.navigate('Compete', { segment: 'league' }))}
+        onHowItWorks={openHowTo}
+      />
+      {/* First-run how-to until the onboarding screens replace it (plan PR 6). */}
+      <HowToSheet visible={howToOpen && focused} onClose={closeHowTo} />
     </Frame>
   );
 }

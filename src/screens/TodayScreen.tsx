@@ -35,7 +35,7 @@ export function TodayScreen({
   onCloseHowTo: () => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Today</Text>
         <Pressable accessibilityRole="button" onPress={onAccount} hitSlop={8}>

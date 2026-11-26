@@ -12,6 +12,7 @@ import {
 import type { ProgressModel, ShelfRecord } from '../progress';
 import { colors } from '../theme';
 import { color } from '../ui/tokens';
+import { IconButton } from '../ui';
 
 const RANGES = ['Day', 'Week', 'Month', 'Lifetime'] as const;
 type Range = (typeof RANGES)[number];
@@ -56,12 +57,15 @@ export function ProgressScreen({
   onBack,
   onAllSets,
   onProgram,
+  onSettings,
 }: {
   view: ProgressModel;
   banner?: string | null;
   onBack?: () => void;
   onAllSets: () => void;
   onProgram: () => void;
+  /** Gear → Settings (the You tab). */
+  onSettings?: () => void;
 }) {
   const [range, setRange] = useState<Range>('Day');
   const values =
@@ -75,8 +79,13 @@ export function ProgressScreen({
   const showTarget = range === 'Day' && view.day.some((bucket) => bucket.target != null && bucket.target > 0);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Progress</Text>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+      <View style={styles.titleRow}>
+        <Text style={styles.title} accessibilityRole="header">
+          You
+        </Text>
+        {onSettings ? <IconButton icon="gear" accessibilityLabel="Settings" onPress={onSettings} /> : null}
+      </View>
       {banner ? <Text style={styles.banner}>{banner}</Text> : null}
 
       <View style={styles.switch}>
@@ -179,7 +188,8 @@ function ShelfRow({ label, value, detail }: { label: string; value: string; deta
 
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
-  title: { color: colors.text, fontSize: 34, fontWeight: '800', marginTop: 12 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  title: { color: colors.text, fontSize: 34, fontWeight: '800' },
   banner: { color: colors.muted, fontSize: 15, lineHeight: 21, marginTop: 12 },
   switch: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 12, padding: 4, marginTop: 16 },
   switchItem: { flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center' },

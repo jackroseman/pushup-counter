@@ -10,17 +10,15 @@ import { api } from '../../battles/api';
 import { rememberBattles } from '../../battles/battleCache';
 import { Battle, battleSubtitle, battleTitle, friendlyError, groupBattles, personName } from '../../battles/model';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
-import { AccountGate, Header, Notice, Row, s, SectionTitle } from './common';
+import { AccountGate, Notice, Row, s, SectionTitle } from './common';
 
 export function BattlesScreen({
-  onBack,
   onOpen,
   onNew,
   onFriends,
   onAccount,
   onProfile,
 }: {
-  onBack?: () => void;
   onOpen: (battle: Battle) => void;
   onNew: () => void;
   onFriends: () => void;
@@ -31,6 +29,7 @@ export function BattlesScreen({
   const [refreshing, setRefreshing] = useState(false);
   return (
     <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={s.container}
       refreshControl={
         <RefreshControl
@@ -44,7 +43,6 @@ export function BattlesScreen({
         />
       }
     >
-      <Header title="Challenges" onBack={onBack} />
       <AccountGate onAccount={onAccount} onProfile={onProfile}>
         <BattleList onOpen={onOpen} onNew={onNew} onFriends={onFriends} reload={reload} />
       </AccountGate>

@@ -8,17 +8,15 @@ import { colors } from '../../theme';
 import { api } from '../../battles/api';
 import { Friend, friendlyError, groupFriends, personName } from '../../battles/model';
 import { FRIENDS_LEAGUE_COPY } from '../../progress';
-import { AccountGate, Header, Row, s, SectionTitle, SmallButton } from './common';
+import { AccountGate, Row, s, SectionTitle, SmallButton } from './common';
 
 export function FriendsScreen(props: {
-  onBack: () => void;
   onOpenFriend: (f: Friend) => void;
   onAccount: () => void;
   onProfile: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-      <Header title="Friends" onBack={props.onBack} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile} why="Friends are linked to accounts.">
         <Friends onOpenFriend={props.onOpenFriend} />
       </AccountGate>

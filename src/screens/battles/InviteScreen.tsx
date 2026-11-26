@@ -6,7 +6,7 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { Button } from '../../components/ui';
 import { api } from '../../battles/api';
 import { battleTitle, friendlyError, InvitePreview, personName, timeLeft } from '../../battles/model';
-import { AccountGate, Header, Notice, Row, s, SectionTitle } from './common';
+import { AccountGate, Notice, Row, s, SectionTitle } from './common';
 
 const PROBLEM: Record<string, string> = {
   not_found: "This invite link doesn't exist.",
@@ -19,7 +19,6 @@ const PROBLEM: Record<string, string> = {
 
 export function InviteScreen(props: {
   token: string;
-  onBack: () => void;
   onJoined: (battleId: string, promptNotifications?: boolean) => void;
   onAccount: () => void;
   onProfile: () => void;
@@ -54,7 +53,6 @@ export function InviteScreen(props: {
   const from = preview?.creator ? personName(preview.creator) : 'A friend';
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Header title="Challenge invite" onBack={props.onBack} />
       {error ? <Text style={s.error}>{error}</Text> : null}
       {!preview && !error ? <Text style={s.muted}>Loading…</Text> : null}
       {preview && preview.status !== 'ok' && !preview.member ? <Notice title="Can't join" text={PROBLEM[preview.status] ?? 'This invite is not available.'} /> : null}

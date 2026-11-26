@@ -12,7 +12,7 @@ import { ChallengeKind, Friend, friendlyError, personName } from '../../battles/
 import { submitBattleAttempt } from '../../battles/uploader';
 import { deviceTimeZone } from '../../backend/profile';
 import { SessionRecord } from '../../storage/history';
-import { AccountGate, Chip, Header, Row, s, SectionTitle } from './common';
+import { AccountGate, Chip, Row, s, SectionTitle } from './common';
 
 type Metric = 'rep_count' | 'depth_consistency' | 'tempo' | 'form_score';
 type WindowChoice = 'day' | 'week' | 'month' | 'custom';
@@ -34,7 +34,6 @@ export function NewBattleScreen(props: {
   /** The set that just finished. Best single set claims it; a window does not. */
   fromSet?: SessionRecord;
   offer?: ChallengeOffer;
-  onBack: () => void;
   onCreated: (
     challengeId: string,
     share: boolean,
@@ -49,7 +48,6 @@ export function NewBattleScreen(props: {
 }) {
   return (
     <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-      <Header title="New challenge" onBack={props.onBack} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile} why="Challenges are with friends, so you need an account.">
         <Form {...props} />
       </AccountGate>

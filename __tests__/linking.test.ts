@@ -1,5 +1,6 @@
 import { notificationLink, parseAppLink } from '../src/backend/linking';
 import { readBackendConfig } from '../src/backend/config';
+import { getStateFromPath, linkingConfig } from '../src/navigation/linkingConfig';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const TOKEN = 'a'.repeat(32);
@@ -57,5 +58,62 @@ describe('backend config', () => {
     expect(readBackendConfig({ EXPO_PUBLIC_SUPABASE_URL: 'https://abc.supabase.co' })).toBeNull();
     expect(readBackendConfig({ EXPO_PUBLIC_SUPABASE_URL: 'http://abc.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'k' })).toBeNull();
     expect(readBackendConfig({})).toBeNull();
+  });
+});
+
+/** Focused route chain of a linking state, e.g. `Main > Compete {"segment":"league"}`. */
+function landing(path: string): string | undefined {
+  const state = getStateFromPath(path, linkingConfig);
+  if (!state) return undefined;
+  const parts: string[] = [];
+  let current: typeof state | undefined = state;
+  while (current) {
+    const route: (typeof current.routes)[number] = current.routes[current.index ?? current.routes.length - 1];
+    const params = route.params && Object.keys(route.params).length ? ` ${JSON.stringify(route.params)}` : '';
+    parts.push(`${route.name}${route.state ? '' : params}`);
+    current = route.state as typeof state | undefined;
+  }
+  return parts.join(' > ');
+}
+
+/** What Back lands on: the screen under the linked one (`Main` with its tab, if any). */
+function under(path: string) {
+  const routes = getStateFromPath(path, linkingConfig)?.routes ?? [];
+  return routes.length > 1 ? routes[0] : null;
+}
+
+describe('navigation shell links (every old path)', () => {
+  it.each([
+    ['', 'Main > Today'],
+    ['today', 'Main > Today'],
+    ['league', 'Main > Compete {"segment":"league"}'],
+    ['challenges', 'Main > Compete {"segment":"challenges"}'],
+    ['battles', 'Main > Compete {"segment":"challenges"}'],
+    ['league?src=push', 'Main > Compete {"segment":"league"}'],
+    ['/challenges/', 'Main > Compete {"segment":"challenges"}'],
+    ['progress', 'Main > You'],
+    ['history', 'AllSets'],
+    ['account', 'Settings'],
+    ['friends', 'Friends'],
+    [`challenge/${ID}`, `Battle {"challengeId":"${ID}"}`],
+    [`battle/${ID}`, `Battle {"challengeId":"${ID}"}`],
+    [`invite/${TOKEN}`, `Invite {"token":"${TOKEN}"}`],
+  ])('%j lands on %s', (path, expected) => {
+    expect(landing(path)).toBe(expected);
+  });
+
+  it('keeps Main under pushed screens so the header Back works on a cold start', () => {
+    expect(under(`battle/${ID}`)).toEqual({ name: 'Main', params: { screen: 'Compete', params: { segment: 'challenges' } } });
+    expect(under('friends')).toEqual({ name: 'Main', params: { screen: 'Compete', params: { segment: 'challenges' } } });
+    expect(under(`invite/${TOKEN}`)).toEqual({ name: 'Main' });
+    expect(under('history')).toEqual({ name: 'Main' });
+    expect(under('account')).toEqual({ name: 'Main' });
+    expect(under('league')).toBeNull();
+  });
+
+  it('push urls from the server resolve to a screen', () => {
+    for (const url of [`pushupcounter://challenge/${ID}`, 'pushupcounter://friends', 'pushupcounter://league', 'pushupcounter://today']) {
+      expect(landing(url.replace('pushupcounter://', ''))).toBeDefined();
+    }
   });
 });

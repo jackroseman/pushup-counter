@@ -44,7 +44,7 @@ export function LeagueScreen({
   }, [signedIn]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       {onBack ? (
         <View style={styles.header}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} hitSlop={12}>
@@ -52,7 +52,6 @@ export function LeagueScreen({
           </Pressable>
         </View>
       ) : null}
-      <Text style={styles.title}>League</Text>
 
       {!configured ? <Text style={styles.body}>Sign in with Apple is not available in this build.</Text> : null}
       {configured && !signedIn ? (
@@ -161,7 +160,6 @@ const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
   header: { marginTop: 12 },
   back: { color: colors.accent, fontSize: 17, fontWeight: '600' },
-  title: { color: colors.text, fontSize: 34, fontWeight: '800', marginTop: 8 },
   body: { color: colors.muted, fontSize: 16, lineHeight: 22, marginTop: 16 },
   banner: { color: colors.muted, fontSize: 15, lineHeight: 21, marginTop: 12 },
   error: { color: colors.danger, fontSize: 15, marginTop: 8 },

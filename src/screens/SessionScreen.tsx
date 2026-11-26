@@ -8,7 +8,7 @@ import { BattleSessionOptions, COUNTDOWN_SECONDS, LIVE_WINDOW_MS, setVoiceOn, us
 import { rememberedBattle } from '../battles/battleCache';
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
-import { Button, Card, Countdown, IconButton, QualityPill, Text, color, gutter, heroLineHeight, heroTrim, type } from '../ui';
+import { Button, Card, Countdown, IconButton, QualityPill, RollingNumber, Text, color, gutter, heroLineHeight, heroTrim, type } from '../ui';
 
 /** Top bar of the set screens: close on the left, a small title, an optional action on the right. */
 function SetBar({ title, onClose, right }: { title: string; onClose: () => void; right?: React.ReactNode }) {
@@ -128,7 +128,7 @@ export function SessionScreen({
       <View style={styles.container}>
         <SetBar title="Get set" onClose={onCancel} />
         <View style={styles.readyWrap}>
-          <Countdown value={n} progress={countdownProgress(n, COUNTDOWN_SECONDS)} />
+          <Countdown value={n} progress={countdownProgress(n, COUNTDOWN_SECONDS)} total={COUNTDOWN_SECONDS} />
           <Text variant="title2" align="center" style={styles.readyTitle}>
             Ready
           </Text>
@@ -157,9 +157,13 @@ export function SessionScreen({
         right={<IconButton icon="speaker" onPress={toggleVoice} accessibilityLabel={voice ? 'Mute voice' : 'Unmute voice'} style={!voice && styles.muted} />}
       />
       <View style={styles.center}>
-        <Text style={styles.count} accessibilityLabel={`${state.count} reps`} accessibilityLiveRegion="polite">
-          {state.count}
-        </Text>
+        <View accessible accessibilityLabel={`${state.count} reps`} accessibilityLiveRegion="polite">
+          <RollingNumber
+            value={state.count}
+            distance={Math.round(type.counter.fontSize * 0.13)}
+            render={(n) => <Text style={styles.count}>{n}</Text>}
+          />
+        </View>
         <View style={styles.meta}>
           <Text variant="subhead" tone="secondary" weight="500">
             reps

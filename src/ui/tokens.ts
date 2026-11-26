@@ -117,9 +117,21 @@ export const motion = {
   standardMin: 200,
   standardMax: 300,
   ring: 600,
+  /** Rep count roll (Session counter, Today count, 3-2-1 digits). */
+  roll: 180,
+  /** Level lock-in (Lay your phone flat). */
+  lock: 250,
+  /** One 3-2-1 step: the ring sweeps for the whole second. */
+  sweep: 1000,
+  /** Badge and phone-moved fades. */
+  fade: 250,
+  /** Reduce Motion: every move becomes a plain crossfade this long. */
+  crossfade: 200,
   easing: Easing.out(Easing.cubic),
   /** Pressed scale for buttons. No bounce anywhere. */
   pressScale: 0.98,
+  /** Pressed opacity when Reduce Motion is on (replaces the scale). */
+  pressDim: 0.7,
 } as const;
 
 // ---- Contrast helpers (WCAG 2.x), used by the token tests. -------------------------------

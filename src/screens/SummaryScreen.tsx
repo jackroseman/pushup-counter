@@ -5,7 +5,7 @@ import type { TodayCard } from '../progress/summaryModel';
 import { formSplit, setClock, setSeconds, summaryBadge } from '../progress/summaryModel';
 import type { Celebration } from '../progress';
 import { SessionRecord } from '../storage/history';
-import { Button, Card, FormSplitBar, IconButton, Pill, ProgressBar, Text, color, gutter } from '../ui';
+import { Button, Card, FadeIn, FormSplitBar, IconButton, Pill, ProgressBar, Text, color, gutter, motion } from '../ui';
 
 /** Today's progress under the count (frame 11 / E4). */
 function TodayProgress({ card }: { card: TodayCard }) {
@@ -67,7 +67,11 @@ export function SummaryScreen({
       </View>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          {badge ? <Pill label={badge.label} icon={badge.icon} tone="inverse" size="large" style={styles.badge} /> : null}
+          {badge ? (
+            <FadeIn delay={motion.roll} style={styles.badge}>
+              <Pill label={badge.label} icon={badge.icon} tone="inverse" size="large" />
+            </FadeIn>
+          ) : null}
           <Text variant="hero" size={150} style={styles.count} accessibilityLabel={`${reps} reps`}>
             {String(reps)}
           </Text>

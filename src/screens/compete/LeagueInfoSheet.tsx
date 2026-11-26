@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton, Text, color, gutter, space } from '../../ui';
 import { LEAGUE_INFO } from '../../progress/leagueView';
 
-/** The league's (i) sheet: one plain line per board. No formulas or thresholds. */
+/** The league's (i) sheet: two plain lines. No formulas or thresholds. */
 export function LeagueInfoSheet({ onClose }: { onClose: () => void }) {
   const { bottom } = useSafeAreaInsets();
   return (
@@ -16,17 +16,11 @@ export function LeagueInfoSheet({ onClose }: { onClose: () => void }) {
         </Text>
         <IconButton icon="xmark" accessibilityLabel="Close" onPress={onClose} />
       </View>
-      {LEAGUE_INFO.items.map((item) => (
-        <View key={item.title} style={styles.item}>
-          <Text variant="headline">{item.title}</Text>
-          <Text variant="subhead" style={styles.line}>
-            {item.line}
-          </Text>
-        </View>
+      {LEAGUE_INFO.lines.map((line) => (
+        <Text key={line} variant="subhead" style={styles.line}>
+          {line}
+        </Text>
       ))}
-      <Text variant="footnote" style={styles.note}>
-        {LEAGUE_INFO.note}
-      </Text>
     </View>
   );
 }
@@ -35,7 +29,5 @@ const styles = StyleSheet.create({
   root: { backgroundColor: color.surface, paddingHorizontal: gutter },
   header: { height: 44, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { flex: 1 },
-  item: { marginTop: space.md },
-  line: { marginTop: 4 },
-  note: { marginTop: space.lg },
+  line: { marginTop: space.md },
 });

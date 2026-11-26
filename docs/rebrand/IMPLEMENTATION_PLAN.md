@@ -314,7 +314,8 @@ Sunny's answers to the held review questions, done as separate PRs into `dev` (J
 
 Held / skipped: invites wait for the App Store page (no change). Activity feed, result sharing, personal invite link/QR and friend streak tile are skipped (no placeholders existed). No Clear history.
 
-Open questions for Sunny:
-- New challenge default length stays 1 day; the mockup highlights 3 days.
-- Sunday recap time isn't shown in Settings (still the saved default).
-- A deleted set could come back if another phone that still has it syncs (a server tombstone would fix this; not added).
+Sunny later confirmed: keep the 1-day default, no recap time picker, Count out loud on by default. The New challenge header stays the mockup's Cancel + centered title.
+
+Follow-up PR #57 (into `dev`, after #54–#56 merged):
+- League (i) copy is exactly "Every push-up you do this week counts. Most reps wins." and "The board starts fresh every week." (the Improvement/points line is removed).
+- Server-side `deleted_sets` tombstones: `delete_set` writes a tombstone (and a delete trigger covers the existing RLS path), `submit_set` refuses that id, and clients drop tombstoned sets on sync. Challenge sets stay. League and lifetime totals still come from live `sets` rows (the deleted row is gone). Migration `20261126135306_deleted_sets`, tested with test:db; applied to staging only after this PR merges to dev.

@@ -246,9 +246,12 @@ describe('league helpers', () => {
 });
 
 describe('league (i) sheet', () => {
-  it('explains both boards in plain words, with no numbers or formulas', () => {
-    expect(LEAGUE_INFO.items.map((i) => i.title)).toEqual(['Total', 'Improvement']);
-    const copy = [LEAGUE_INFO.title, LEAGUE_INFO.note, ...LEAGUE_INFO.items.flatMap((i) => [i.title, i.line])].join(' ');
+  it('explains the week in two plain lines, with no numbers or formulas', () => {
+    expect(LEAGUE_INFO.lines).toEqual([
+      'Every push-up you do this week counts. Most reps wins.',
+      'The board starts fresh every week.',
+    ]);
+    const copy = [LEAGUE_INFO.title, ...LEAGUE_INFO.lines].join(' ');
     expect(copy).not.toMatch(/\d|%|×|points per|baseline/i);
   });
 });

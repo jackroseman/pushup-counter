@@ -7,7 +7,7 @@ import { analyzeSet } from '../core';
 import { formatSetDateTime } from '../progress';
 import { colors } from '../theme';
 
-export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) => void; onBack: () => void }) {
+export function HistoryScreen({ onOpen }: { onOpen: (r: SessionRecord) => void }) {
   const [items, setItems] = useState<SessionRecord[] | null>(null);
 
   useEffect(() => {
@@ -18,7 +18,6 @@ export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) =
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>History</Text>
       <Text style={styles.sub}>{items ? `${items.length} sets · ${total} pushups` : 'Loading…'}</Text>
       <FlatList
         style={{ flex: 1 }}
@@ -48,14 +47,12 @@ export function HistoryScreen({ onOpen, onBack }: { onOpen: (r: SessionRecord) =
           }
         />
       ) : null}
-      <Button title="Back" onPress={onBack} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingBottom: 32 },
-  title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 8 },
   sub: { color: colors.muted, fontSize: 14, marginBottom: 12 },
   empty: { color: colors.muted, textAlign: 'center', marginTop: 40, fontSize: 16 },
   item: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 14, padding: 16, marginBottom: 8 },

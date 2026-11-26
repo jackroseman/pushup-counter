@@ -57,11 +57,9 @@ export function AccountScreen({
   if (!configured) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Account</Text>
         <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
         <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn={false} />
         <Text style={styles.text}>Sign in with Apple is not available in this build.</Text>
-        <Button title="Back" onPress={onBack} />
       </View>
     );
   }
@@ -69,7 +67,6 @@ export function AccountScreen({
   if (!session) {
     return (
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Account</Text>
         <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
         <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn={false} />
         <Text style={styles.text}>Sign in to back up your sets and challenge friends. Solo counting keeps working without an account.</Text>
@@ -89,7 +86,6 @@ export function AccountScreen({
           <Text style={styles.text}>Sign in with Apple is not available on this device.</Text>
         )}
         {message ? <Text style={styles.error}>{message}</Text> : null}
-        <Button title="Back" kind="secondary" onPress={onBack} />
       </ScrollView>
     );
   }
@@ -123,7 +119,6 @@ export function AccountScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Account</Text>
       <CountingCard settings={settings} onChangeSettings={onChangeSettings} />
       <ReminderCard nudges={nudges} onChangeNudges={onChangeNudges} signedIn />
 
@@ -202,7 +197,6 @@ export function AccountScreen({
 
       <Button title="Sign out" kind="secondary" onPress={() => signOut().then(onBack)} />
       <Button title="Delete account" kind="danger" onPress={confirmDelete} />
-      <Button title="Back" onPress={onBack} />
     </ScrollView>
   );
 }
@@ -297,7 +291,6 @@ function SettingRow({ label, hint, value, onChange }: { label: string; hint?: st
 
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48, gap: 4 },
-  title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 12, marginBottom: 12 },
   card: { backgroundColor: colors.card, borderRadius: 16, padding: 16, gap: 8, marginBottom: 12 },
   section: { color: colors.text, fontSize: 17, fontWeight: '700' },
   name: { color: colors.text, fontSize: 20, fontWeight: '700' },

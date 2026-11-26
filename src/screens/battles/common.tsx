@@ -49,24 +49,6 @@ export function Notice({ title, text, children }: { title: string; text?: string
   );
 }
 
-export function Header({ title, onBack, right }: { title: string; onBack?: () => void; right?: React.ReactNode }) {
-  return (
-    <View style={s.header}>
-      {onBack ? (
-        <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-          <Text style={s.back}>‹ Back</Text>
-        </Pressable>
-      ) : (
-        <View style={{ width: 60 }} />
-      )}
-      <Text style={s.title} numberOfLines={1}>
-        {title}
-      </Text>
-      <View style={{ minWidth: 60, alignItems: 'flex-end' }}>{right}</View>
-    </View>
-  );
-}
-
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return <Text style={s.section}>{children}</Text>;
 }

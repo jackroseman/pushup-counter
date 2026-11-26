@@ -6,11 +6,10 @@ import { Button, Stat } from '../../components/ui';
 import { api } from '../../battles/api';
 import { battleTitle, Friend, FriendRecord, friendlyError, personName } from '../../battles/model';
 import { FRIEND_WEEK_SUBTITLE, formatShortDate, friendWeekLine } from '../../progress';
-import { AccountGate, Header, Row, s, SectionTitle } from './common';
+import { AccountGate, Row, s, SectionTitle } from './common';
 
 export function FriendScreen(props: {
   friend: Friend;
-  onBack: () => void;
   onChallenge: (f: Friend) => void;
   onOpenBattle: (id: string) => void;
   onAccount: () => void;
@@ -35,7 +34,6 @@ export function FriendScreen(props: {
   const score = (x: { validReps: number | null; metricValue: number | null }) => `${x.validReps ?? Math.round(x.metricValue ?? 0)}`;
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Header title={personName(friend)} onBack={props.onBack} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
         <Text style={[s.muted, { marginBottom: 8 }]}>@{friend.username} · {FRIEND_WEEK_SUBTITLE}</Text>
         {weekLine ? <Text style={[s.bold, { marginBottom: 8 }]}>{weekLine}</Text> : null}

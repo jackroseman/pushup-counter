@@ -32,7 +32,7 @@ import { formatDeadline } from '../../progress';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { loadBattleQueue } from '../../battles/uploadQueue';
 import { ChallengeNotifications } from '../../components/NotificationPrompt';
-import { AccountGate, Header, Notice, Row, s, SectionTitle, SmallButton } from './common';
+import { AccountGate, Notice, Row, s, SectionTitle, SmallButton } from './common';
 
 export function BattleScreen(props: {
   battleId: string;
@@ -60,7 +60,6 @@ export function BattleScreen(props: {
   }
   return (
     <ScrollView contentContainerStyle={s.container}>
-      <Header title="Challenge" onBack={props.onBack} />
       <ChallengeNotifications justActed={justActed} onConsumed={() => setJustActed(false)} />
       <AccountGate onAccount={props.onAccount} onProfile={props.onProfile}>
         <BattleDetail {...props} onAccepted={() => setJustActed(true)} />

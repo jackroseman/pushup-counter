@@ -111,6 +111,12 @@ public class PushupSensorsModule: Module {
       self.stopFaceTracking()
     }.runOnQueue(.main)
 
+    // True in builds whose FaceMeshView understands the `variant` prop (1.3.0+). Older builds
+    // don't have this function, so JS treats a missing function as "not supported".
+    Function("isFaceMeshVariantSupported") { () -> Bool in
+      return true
+    }
+
     // True when Core Motion can deliver device motion (false on the Simulator).
     Function("isMotionSupported") { () -> Bool in
       return GravityTracker.isAvailable
@@ -148,6 +154,11 @@ public class PushupSensorsModule: Module {
     View(FaceMeshView.self) {
       Prop("showAngles", true) { (view: FaceMeshView, value: Bool) in
         view.setShowAngles(value)
+      }
+      // "full" (default, the measurement view) or "minimal" (face-centering frame: no labels,
+      // white 35 % mesh, black background). Added in 1.3.0; see isFaceMeshVariantSupported.
+      Prop("variant", "full") { (view: FaceMeshView, value: String) in
+        view.setVariant(value)
       }
     }
 

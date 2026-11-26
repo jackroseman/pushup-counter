@@ -23,6 +23,9 @@ class PushupSensorsModule extends NativeModule<PushupSensorsModuleEvents> {
     return false;
   }
   async stopGravity(): Promise<void> {}
+  isFaceMeshVariantSupported(): boolean {
+    return false;
+  }
 }
 
 export default registerWebModule(PushupSensorsModule, 'PushupSensorsModule');

@@ -23,9 +23,16 @@ export type FaceDistanceEvent = {
   roll?: number;
 };
 
+export type FaceMeshVariant = 'full' | 'minimal';
+
 export type FaceMeshViewProps = {
   /** Show the pitch / yaw / roll line at the bottom of the view (default true). */
   showAngles?: boolean;
+  /**
+   * `full` (default): the measurement view. `minimal`: no native labels or marker, white 35 % mesh on
+   * black, for the face-centering frame. Builds before 1.3.0 ignore it; check `faceMeshVariantSupported()`.
+   */
+  variant?: FaceMeshVariant;
   style?: import('react-native').StyleProp<import('react-native').ViewStyle>;
 };
 

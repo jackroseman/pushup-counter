@@ -18,6 +18,8 @@ declare class PushupSensorsModule extends NativeModule<PushupSensorsModuleEvents
   /** Starts gravity updates (onGravity) at up to `hz`. Resolves false if unavailable. Missing on builds before 1.2.1. */
   startGravity?(hz: number): Promise<boolean>;
   stopGravity?(): Promise<void>;
+  /** True when FaceMeshView supports `variant` (1.3.0+). Missing on older builds. */
+  isFaceMeshVariantSupported?(): boolean;
 }
 
 export default requireNativeModule<PushupSensorsModule>('PushupSensors');

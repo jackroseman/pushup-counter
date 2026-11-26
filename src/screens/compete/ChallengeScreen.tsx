@@ -10,6 +10,7 @@ import { useIdentity } from '../../backend/IdentityProvider';
 import { api } from '../../battles/api';
 import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
 import {
+  canAddReps,
   challengeName,
   detailLine,
   headScore,
@@ -394,7 +395,7 @@ export function ChallengeScreen({
   const line = detailLine(b, now);
   const team = b.kind === 'team' ? teamProgress(b) : null;
   const playable = canPlay(b, now) && !queued.pending;
-  const counting = b.kind !== 'best_set' && mine?.status === 'accepted' && b.status === 'active';
+  const counting = canAddReps(b, now);
   return (
     <View style={styles.root}>
       {notifications}

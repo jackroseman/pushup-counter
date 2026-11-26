@@ -1,4 +1,5 @@
 import {
+  canAddReps,
   challengeList,
   challengeName,
   challengesEmpty,
@@ -187,5 +188,32 @@ describe('labels', () => {
     expect(challengeName(battle({ kind: 'streak', startsAt: '2026-11-23T05:00:00Z', endsAt: '2026-11-30T05:00:00Z' }))).toBe(
       '7-day streak',
     );
+  });
+});
+
+describe('adding reps to an open challenge', () => {
+  const bot = person({ userId: 'bot', displayName: 'Pushup Bot', status: 'invited' });
+  const win = (over: Partial<Battle> = {}) =>
+    battle({ kind: 'total', windowUnit: 'day', startsAt: iso(NOW - 23 * H), endsAt: iso(NOW + H), createdBy: 'you', ...over });
+
+  it('is on for a pending most-reps challenge while the opponent has not accepted (the bot case)', () => {
+    const b = win({ status: 'pending', participants: [you({ validReps: 2 }), bot] });
+    expect(canAddReps(b, NOW)).toBe(true);
+  });
+
+  it('is on for active most-reps, streak and team challenges', () => {
+    for (const kind of ['total', 'streak', 'team'] as const) {
+      const b = win({ kind, status: 'active', participants: [you(), person({ userId: 'jack' })] });
+      expect(canAddReps(b, NOW)).toBe(true);
+    }
+  });
+
+  it('is off for a best set (it has Play), finished, not started, ended, or not joined', () => {
+    const ps = [you(), person({ userId: 'jack' })];
+    expect(canAddReps(win({ kind: 'best_set', participants: ps }), NOW)).toBe(false);
+    expect(canAddReps(win({ status: 'completed', participants: ps }), NOW)).toBe(false);
+    expect(canAddReps(win({ startsAt: iso(NOW + H), participants: ps }), NOW)).toBe(false);
+    expect(canAddReps(win({ endsAt: iso(NOW - 1), participants: ps }), NOW)).toBe(false);
+    expect(canAddReps(win({ participants: [you({ status: 'invited' }), person({ userId: 'jack' })] }), NOW)).toBe(false);
   });
 });

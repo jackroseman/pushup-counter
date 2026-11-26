@@ -126,6 +126,16 @@ describe('local daily reminder', () => {
     expect(nextLocalReminder({ ...base, enrollments: [], now: utc('2026-11-04T15:00:00.000Z') })).toBeNull();
   });
 
+  it('schedules nothing without a daily goal (Settings E15), whatever the reminder prefs say', () => {
+    const now = utc('2026-11-04T15:00:00.000Z');
+    for (const p of [prefs, { ...prefs, dailyNudge: true, nudgeLocalTime: '07:00' }, { ...prefs, quietStart: '00:00', quietEnd: '00:00' }]) {
+      expect(nextLocalReminder({ ...base, prefs: p, enrollments: [], now })).toBeNull();
+      expect(nextLocalReminder({ ...base, prefs: p, enrollments: [], now, lastFiredDate: null, signedIn: true })).toBeNull();
+    }
+    const ended: GoalEnrollment = { ...goal('2026-10-01'), endedOn: '2026-11-01' };
+    expect(nextLocalReminder({ ...base, enrollments: [ended], now })).toBeNull();
+  });
+
   it('does not schedule a second local reminder after today already fired', () => {
     expect(nextLocalReminder({ ...base, now: utc('2026-11-04T19:00:00.000Z'), lastFiredDate: '2026-11-04' })?.toISOString()).toBe('2026-11-05T18:00:00.000Z');
   });

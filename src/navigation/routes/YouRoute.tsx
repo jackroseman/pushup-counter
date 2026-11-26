@@ -1,47 +1,93 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { ProgressScreen } from '../../screens/ProgressScreen';
+import { YouScreen } from '../../screens/YouScreen';
 import { useBackend } from '../../backend/BackendProvider';
+import { useIdentity } from '../../backend/IdentityProvider';
+import { isAppleSignInAvailable, signInWithApple } from '../../backend/auth';
 import { historyStore } from '../../session/useSession';
 import { deviceTimeZone } from '../../backend/profile';
-import { REFRESH_FAILED, buildProgress, localDate, signedInViews, workoutFromRecord } from '../../progress';
+import { REFRESH_FAILED, buildProgress, goalForDate, localDate, mergeWorkouts, signedInViews, workoutFromRecord } from '../../progress';
+import { formatSinceMonth } from '../../progress/format';
+import { buildYou } from '../../progress/you';
+import type { SessionRecord } from '../../storage/history';
 import { useAppState } from '../appState';
 import { Frame } from '../frame';
 import type { TabProps } from '../types';
+import { useFocusNow } from './useFocusNow';
 
 export function YouRoute({ navigation }: TabProps<'You'>) {
   const { enrollments, remote, refreshRemote } = useAppState();
-  const { session } = useBackend();
-  const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
-  const [storedCount, setStoredCount] = useState(0);
+  const { configured, session } = useBackend();
+  const { profile } = useIdentity();
+  const [records, setRecords] = useState<SessionRecord[]>([]);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [signInMessage, setSignInMessage] = useState<string | null>(null);
   const reload = useCallback(() => {
     refreshRemote();
     historyStore
       .load()
-      .then((rows) => {
-        setWorkouts(rows.map(workoutFromRecord));
-        setStoredCount(rows.length);
-      })
+      .then(setRecords)
       .catch(() => {});
   }, [refreshRemote]);
   useEffect(() => {
     reload();
     return navigation.addListener('focus', reload);
   }, [navigation, reload]);
+  useEffect(() => {
+    isAppleSignInAvailable().then(setAppleAvailable);
+  }, []);
+
   const zone = deviceTimeZone();
-  const today = localDate(Date.now(), zone);
-  const phone = buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount });
-  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).progress : phone;
-  const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
+  const nowMs = useFocusNow(navigation);
+  const today = localDate(nowMs, zone);
+  const workouts = records.map(workoutFromRecord);
+  const doc = session && remote.doc && remote.status === 'ready' ? remote.doc : null;
+  const view = doc ? signedInViews(doc, workouts).progress : buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount: records.length });
+  const merged = doc ? mergeWorkouts(doc.sets, workouts).workouts : workouts;
+  const lifetimeReps = merged.reduce((sum, w) => sum + w.countedReps, 0);
+  const model = buildYou({
+    view,
+    lifetimeReps,
+    setCount: merged.length,
+    hasGoal: goalForDate(enrollments, today) != null,
+    recent: records.map((r) => ({ id: r.id, startedAt: r.startedAt, reps: workoutFromRecord(r).countedReps })),
+    nowMs,
+    timeZone: zone,
+  });
+
+  const since = session?.user.created_at ? ` · ${formatSinceMonth(session.user.created_at, nowMs, zone)}` : '';
+  const identity = session && profile ? { name: profile.displayName || profile.username, line: `@${profile.username}${since}` } : null;
+  const signIn =
+    !session && configured && appleAvailable
+      ? {
+          message: signInMessage,
+          onPress: async () => {
+            setSignInMessage(null);
+            const r = await signInWithApple();
+            if (!r.ok && !r.cancelled) setSignInMessage(r.message ?? 'Sign-in failed.');
+          },
+        }
+      : null;
+
   return (
     <Frame kind="tab">
-    <ProgressScreen
-      view={view}
-      banner={banner}
-      onAllSets={() => navigation.navigate('AllSets')}
-      onSettings={() => navigation.navigate('Settings')}
-      onProgram={() => navigation.navigate('GoalSetup')}
-    />
+      <YouScreen
+        model={model}
+        identity={identity}
+        signIn={signIn}
+        pickUsername={session && profile === null ? () => navigation.navigate('ProfileSetup') : null}
+        banner={session && remote.status === 'error' ? REFRESH_FAILED : null}
+        timeZone={zone}
+        nowMs={nowMs}
+        onSettings={() => navigation.navigate('Settings')}
+        onSetGoal={() => navigation.navigate('GoalSetup')}
+        onStartSet={() => navigation.navigate('Session')}
+        onAllSets={() => navigation.navigate('AllSets')}
+        onOpenSet={(id) => {
+          const record = records.find((r) => r.id === id);
+          if (record) navigation.navigate('Summary', { record, from: 'history' });
+        }}
+      />
     </Frame>
   );
 }

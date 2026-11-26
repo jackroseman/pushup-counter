@@ -2,7 +2,7 @@
 export * from './tokens';
 export { Text, toneColor } from './Text';
 export type { TextProps, TextTone } from './Text';
-export { Icon, ICON_NAMES } from './Icon';
+export { Icon, ICON_NAMES, SF_SYMBOLS } from './Icon';
 export type { IconName } from './Icon';
 export { Button, usePressScale } from './Button';
 export type { ButtonKind } from './Button';

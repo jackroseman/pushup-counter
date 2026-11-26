@@ -60,7 +60,7 @@ import { AllSetsRoute } from './routes/AllSetsRoute';
 import { DailyReminderRoute, QuietHoursRoute, SettingsRoute } from './routes/SettingsRoute';
 import { GoalRoute, ProfileSetupRoute } from './routes/GoalRoutes';
 import { GoalPickRoute, HowItWorksRoute, WelcomeRoute } from './routes/OnboardingRoutes';
-import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, NewBattleRoute } from './routes/ChallengeRoutes';
+import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, LeagueInfoRoute, NewBattleRoute } from './routes/ChallengeRoutes';
 
 export type { RootStackParamList, TabParamList } from './types';
 
@@ -73,6 +73,24 @@ let webBaseUrl: string | null = null;
 const GOAL_SHEET: NativeStackNavigationOptions = {
   presentation: 'formSheet',
   sheetAllowedDetents: [0.62, 1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: colors.card },
+};
+
+/** Frame 21: New challenge, a full-height native form sheet with its own Cancel / title row. */
+const NEW_CHALLENGE_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: [1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: colors.card },
+};
+
+/** The league's (i): how the two boards work, a short native sheet. */
+const LEAGUE_INFO_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
   sheetGrabberVisible: true,
   sheetCornerRadius: 34,
   contentStyle: { backgroundColor: colors.card },
@@ -455,7 +473,8 @@ export function RootNavigator() {
           <Stack.Screen name="QuietHours" component={QuietHoursRoute} options={header('Quiet hours')} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupRoute} />
           <Stack.Screen name="Battle" component={BattleRoute} options={header('')} />
-          <Stack.Screen name="NewBattle" component={NewBattleRoute} options={header('New challenge')} />
+          <Stack.Screen name="NewBattle" component={NewBattleRoute} options={NEW_CHALLENGE_SHEET} />
+          <Stack.Screen name="LeagueInfo" component={LeagueInfoRoute} options={LEAGUE_INFO_SHEET} />
           <Stack.Screen name="Friends" component={FriendsRoute} options={header('Friends')} />
           <Stack.Screen name="Friend" component={FriendRoute} options={({ route }) => header(personName(route.params.friend))} />
           <Stack.Screen name="Invite" component={InviteRoute} options={header('Challenge invite')} />

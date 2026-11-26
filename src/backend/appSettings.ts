@@ -97,7 +97,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   inviteLinks: { scheme: 'pushupcounter', webBaseUrl: null },
   asyncBattleDefaults: {
     deadlineHours: 24,
-    deadlineOptionsHours: [6, 24, 72],
+    deadlineOptionsHours: [24, 72, 168],
     maxDeadlineHours: 168,
     inviteExpiryHours: 24,
     timedDurationsS: [60, 120],

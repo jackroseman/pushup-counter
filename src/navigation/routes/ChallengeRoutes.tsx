@@ -7,6 +7,7 @@ import { LinkInviteScreen } from '../../screens/compete/LinkInviteScreen';
 import { rematchParams } from '../../battles/challengeView';
 import { IconButton } from '../../ui';
 import { NewChallengeSheet } from '../../screens/compete/NewChallengeSheet';
+import { LeagueInfoSheet } from '../../screens/compete/LeagueInfoSheet';
 import { shareInvite } from '../../battles/inviteFriends';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { FriendsScreen, type FriendsScreenHandle } from '../../screens/compete/FriendsScreen';
@@ -95,6 +96,7 @@ export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
           hasGoal={openGoal(enrollments)}
           onNeedGoal={() => navigation.navigate('GoalSetup')}
           onInvite={() => profile && shareInvite(profile.username)}
+          onCancel={() => navigation.goBack()}
           onCreated={(challengeId, share, extras) =>
             navigation.replace('Battle', {
               challengeId,
@@ -108,6 +110,10 @@ export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
       </CompeteGate>
     </Frame>
   );
+}
+
+export function LeagueInfoRoute({ navigation }: Props<'LeagueInfo'>) {
+  return <LeagueInfoSheet onClose={() => navigation.goBack()} />;
 }
 
 export function FriendsRoute({ navigation }: Props<'Friends'>) {

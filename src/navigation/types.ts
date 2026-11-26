@@ -38,6 +38,8 @@ export type RootStackParamList = {
     promptNotifications?: boolean;
   };
   NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
+  /** The league's (i) sheet: how Total and Improvement work. */
+  LeagueInfo: undefined;
   Friends: undefined;
   Friend: { friend: Friend };
   Invite: { token: string };

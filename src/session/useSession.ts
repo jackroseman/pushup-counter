@@ -21,7 +21,7 @@ import {
 } from '../core';
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
-import { PushupSensors, faceTrackingSupported, startGravity, stopGravity } from '../sensors';
+import { PushupSensors, faceTrackingSupported, restartFaceTracking, startGravity, stopGravity } from '../sensors';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
@@ -253,6 +253,15 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     say('Get into the top position, face over the phone');
   }, [patch]);
 
+  /**
+   * The face view on "Center your face" is on screen. Tracking started before it appeared (during
+   * Lay flat), so start tracking over once so the view can draw the face mesh.
+   */
+  const faceViewShown = useCallback(() => {
+    if (cancelled.current || phaseRef.current !== 'calibrating') return;
+    restartFaceTracking(FACE_HZ);
+  }, []);
+
   /** Redo calibration: allowed while locked, or once counting started but before any rep. */
   const recalibrate = useCallback(() => {
     if (cancelled.current) return;
@@ -480,5 +489,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate };
+  return { state, finish, live, recalibrate, faceViewShown };
 }

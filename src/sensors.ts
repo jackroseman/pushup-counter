@@ -36,6 +36,21 @@ export function faceMeshVariantSupported(): boolean {
   }
 }
 
+/**
+ * Re-runs face tracking (fresh ARKit start, same camera session) so a face view that appeared
+ * after tracking began can draw the face. ARKit hands the face to a view only when it first finds
+ * it, so a view added later stays empty until tracking starts over. iOS only; resolves false
+ * (never rejects) elsewhere or on failure.
+ */
+export async function restartFaceTracking(hz: number): Promise<boolean> {
+  if (Platform.OS !== 'ios') return false;
+  try {
+    return (await PushupSensors.startFaceDistance(hz)) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Starts gravity updates. Resolves false (never rejects) when the build or device can't. */
 export async function startGravity(hz: number): Promise<boolean> {
   if (!motionSupported() || typeof PushupSensors.startGravity !== 'function') return false;

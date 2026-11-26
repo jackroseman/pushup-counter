@@ -56,3 +56,28 @@ describe('existing capability checks stay safe', () => {
     expect(s.faceTrackingSupported()).toBe(false);
   });
 });
+
+describe('restartFaceTracking', () => {
+  it('starts face tracking again at the given rate on iOS', async () => {
+    const startFaceDistance = jest.fn(async () => true);
+    const s = load({ startFaceDistance });
+    await expect(s.restartFaceTracking(30)).resolves.toBe(true);
+    expect(startFaceDistance).toHaveBeenCalledWith(30);
+  });
+
+  it('does nothing off iOS (web preview has no face view)', async () => {
+    const startFaceDistance = jest.fn(async () => true);
+    const s = load({ startFaceDistance }, 'web');
+    await expect(s.restartFaceTracking(30)).resolves.toBe(false);
+    expect(startFaceDistance).not.toHaveBeenCalled();
+  });
+
+  it('never rejects when the native call fails', async () => {
+    const s = load({
+      startFaceDistance: async () => {
+        throw new Error('camera busy');
+      },
+    });
+    await expect(s.restartFaceTracking(30)).resolves.toBe(false);
+  });
+});

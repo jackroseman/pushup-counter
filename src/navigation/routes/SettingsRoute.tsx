@@ -86,6 +86,7 @@ export function SettingsRoute({ navigation }: Props<'Settings'>) {
     ? {
         profileValue: profile ? `@${profile.username}` : profile === null ? 'Not set' : profileError ? 'Retry' : '',
         onProfile: () => (profile === undefined && profileError ? refreshProfile() : navigation.navigate('ProfileSetup')),
+        onInviteLink: profile ? () => navigation.navigate('InviteLink') : undefined,
         backupValue: backupValue(sync.status, sync.running),
         onBackup: () => {
           if (!sync.running) void sync.syncNow();

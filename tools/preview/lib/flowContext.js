@@ -2,7 +2,23 @@
 const fs = require('fs');
 const path = require('path');
 
-function flowContext({ page, outDir, reduceMotion, log = console.log }) {
+// A grey circle where the tap lands (recordings only), like iOS's "Show Touches".
+async function touchDot(page, loc) {
+  const box = await loc.boundingBox({ timeout: 8000 }).catch(() => null);
+  if (!box) return;
+  await page.evaluate(({ x, y }) => {
+    const d = document.createElement('div');
+    d.style.cssText = `position:fixed;left:${x - 22}px;top:${y - 22}px;width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.45);border:2px solid rgba(255,255,255,.8);pointer-events:none;z-index:2147483647;transition:opacity .35s`;
+    document.body.appendChild(d);
+    setTimeout(() => (d.style.opacity = '0'), 450);
+    setTimeout(() => d.remove(), 900);
+  }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  await page.waitForTimeout(350);
+}
+
+// recording: hold each screenshot for a moment and show a touch dot on taps, so the .mp4 is
+// easy to follow. Screenshots are the same either way.
+function flowContext({ page, outDir, reduceMotion, recording = false, log = console.log }) {
   let n = 0;
   const sim = (method, ...args) =>
     page.evaluate(({ method, args }) => {
@@ -22,6 +38,7 @@ function flowContext({ page, outDir, reduceMotion, log = console.log }) {
       const file = path.join(outDir, `${String(n).padStart(2, '0')}-${name}.png`);
       await page.screenshot({ path: file });
       log(`  shot ${path.basename(file)}`);
+      if (recording) await page.waitForTimeout(900);
       return file;
     },
     /** Wait until text (string = exact, RegExp = match) is visible. */
@@ -32,7 +49,9 @@ function flowContext({ page, outDir, reduceMotion, log = console.log }) {
      */
     tap: async (text, o = {}) => {
       const loc = o.label ? page.getByLabel(text, { exact: typeof text === 'string' }) : page.getByText(text, { exact: typeof text === 'string' });
-      await (o.last ? loc.last() : loc.first()).click({ timeout: o.timeout || 8000 });
+      const target = o.last ? loc.last() : loc.first();
+      if (recording) await touchDot(page, target);
+      await target.click({ timeout: o.timeout || 8000 });
       await page.waitForTimeout(o.wait ?? 1200);
     },
     /** Browser back (like the back button / swipe back). */

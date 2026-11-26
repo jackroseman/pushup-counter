@@ -11,6 +11,8 @@ import { historyStore } from '../../session/useSession';
 import { faceTrackingSupported } from '../../sensors';
 import { loadOnboarded, markOnboarded, needsOnboarding } from '../../progress/onboarding';
 import { useAppState } from '../appState';
+import { personName } from '../../battles/model';
+import { pendingInvite, usePendingInvite } from '../../invites/pending';
 import { Frame } from '../frame';
 import type { Props, RootStackParamList } from '../types';
 
@@ -18,6 +20,25 @@ import type { Props, RootStackParamList } from '../types';
 let settled = false;
 
 type Nav = { navigate: (route: 'Welcome') => void };
+
+/** Whether first-run onboarding still has to run (same check as the gate). */
+export async function firstRunPending(): Promise<boolean> {
+  if (settled) return false;
+  const [stored, setCount, signedIn] = await Promise.all([
+    loadOnboarded(AsyncStorage),
+    historyStore
+      .load()
+      .then((rows) => rows.length)
+      .catch(() => 0),
+    supabase
+      ? supabase.auth
+          .getSession()
+          .then(({ data }) => !!data.session)
+          .catch(() => false)
+      : Promise.resolve(false),
+  ]);
+  return needsOnboarding({ ...stored, setCount, signedIn });
+}
 
 /**
  * First-run gate, run when Today gets focus. Returns false while it's checking so Today stays
@@ -30,21 +51,9 @@ export function useOnboardingGate(navigation: Nav): boolean {
     useCallback(() => {
       if (settled) return undefined;
       let alive = true;
-      Promise.all([
-        loadOnboarded(AsyncStorage),
-        historyStore
-          .load()
-          .then((rows) => rows.length)
-          .catch(() => 0),
-        supabase
-          ? supabase.auth
-              .getSession()
-              .then(({ data }) => !!data.session)
-              .catch(() => false)
-          : Promise.resolve(false),
-      ]).then(([stored, setCount, signedIn]) => {
+      firstRunPending().then((pending) => {
         if (!alive) return;
-        if (needsOnboarding({ ...stored, setCount, signedIn })) navigation.navigate('Welcome');
+        if (pending) navigation.navigate('Welcome');
         else settled = true;
         setReady(true);
       });
@@ -56,16 +65,24 @@ export function useOnboardingGate(navigation: Nav): boolean {
   return ready;
 }
 
-type Finisher = { reset: (state: { index: number; routes: { name: keyof RootStackParamList }[] }) => void };
+type Finisher = {
+  reset: (state: { index: number; routes: { name: keyof RootStackParamList; params?: RootStackParamList[keyof RootStackParamList] }[] }) => void;
+};
 
-/** Mark first run done and land on Today (optionally with a set open on top). */
+/**
+ * Mark first run done and land on Today (optionally with a set open on top). If an invite
+ * link opened the app, its Add friend sheet opens over Today instead (invite frame b8).
+ */
 function finish(navigation: Finisher, thenSet = false) {
   settled = true;
   markOnboarded(AsyncStorage).catch(() => {});
-  navigation.reset(thenSet ? { index: 1, routes: [{ name: 'Main' }, { name: 'Session' }] } : { index: 0, routes: [{ name: 'Main' }] });
+  const invite = pendingInvite.get();
+  if (invite) navigation.reset({ index: 1, routes: [{ name: 'Main' }, { name: 'FriendInvite', params: { code: invite.code } }] });
+  else navigation.reset(thenSet ? { index: 1, routes: [{ name: 'Main' }, { name: 'Session' }] } : { index: 0, routes: [{ name: 'Main' }] });
 }
 
 export function WelcomeRoute({ navigation }: Props<'Welcome'>) {
+  const invite = usePendingInvite();
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -73,6 +90,7 @@ export function WelcomeRoute({ navigation }: Props<'Welcome'>) {
       <WelcomeScreen
         signingIn={signingIn}
         error={error}
+        invitedBy={invite?.inviter ? personName(invite.inviter) : null}
         onStart={() => navigation.navigate('GoalPick')}
         onSignIn={async () => {
           setError(null);

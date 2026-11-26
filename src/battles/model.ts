@@ -263,6 +263,8 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('needs a goal')) return 'Set a daily goal first.';
   if (m.includes('not friends')) return 'You can only challenge friends.';
   if (m.includes('that is you')) return "That's you!";
+  if (m.includes('too many new invite links')) return "You've reset your link a lot today. Try again tomorrow.";
+  if (m.includes('too many invite links')) return "You've added a lot of people with links today. Try again tomorrow.";
   if (m.includes('too many pending')) return 'Too many open friend requests. Wait for some answers.';
   if (m.includes('no attempts left')) return 'You already did your attempt.';
   if (m.includes('not recent')) return 'That set is too old to use. Start a new attempt in the challenge.';

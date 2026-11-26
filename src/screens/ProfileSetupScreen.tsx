@@ -14,7 +14,7 @@ import {
   usernameError,
 } from '../backend/profile';
 import { profileDraftState, type Availability } from '../progress/draft';
-import { Button, Card, Icon, IconButton, SectionHeader, Text, color, gutter, space, type } from '../ui';
+import { Avatar, Button, Card, Icon, IconButton, SectionHeader, Text, color, gutter, radius, space, type } from '../ui';
 
 export type ProfileForm = ReturnType<typeof useProfileForm>;
 
@@ -95,7 +95,16 @@ export function usernameStatus(formatError: string | null, availability: Availab
  * Pick a username (frame 17): right after signing in, or from Compete / You / Settings while there
  * is none. Back leaves it for later. Editing later uses the same fields under a native header with Save.
  */
-export function ProfileSetupScreen({ form, onCancel }: { form: ProfileForm; onCancel: () => void }) {
+export function ProfileSetupScreen({
+  form,
+  onCancel,
+  invitedBy,
+}: {
+  form: ProfileForm;
+  onCancel: () => void;
+  /** Name of the person whose invite link brought them here (invite frame b7). */
+  invitedBy?: string | null;
+}) {
   const { editing, username, setUsername, displayName, setDisplayName, availability, saving, message, formatError, nameError, save } = form;
   const status = usernameStatus(formatError, availability);
   const canContinue = !!username.trim() && !formatError && !nameError && availability !== 'taken' && availability !== 'checking';
@@ -108,7 +117,13 @@ export function ProfileSetupScreen({ form, onCancel }: { form: ProfileForm; onCa
             <View style={styles.nav}>
               <IconButton icon="back" accessibilityLabel="Back" onPress={onCancel} />
             </View>
-            <Text variant="title1" accessibilityRole="header" style={styles.title}>
+            {invitedBy ? (
+              <View style={styles.invited}>
+                <Avatar name={invitedBy} size={22} />
+                <Text variant="footnote" tone="label" weight="600">{`${invitedBy} invited you`}</Text>
+              </View>
+            ) : null}
+            <Text variant="title1" accessibilityRole="header" style={[styles.title, invitedBy ? styles.titleInvited : null]}>
               Pick a username
             </Text>
             <Text variant="subhead" style={styles.subtitle}>
@@ -179,6 +194,19 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: gutter, paddingBottom: space.lg },
   nav: { height: 44, flexDirection: 'row', alignItems: 'center' },
   title: { marginTop: 20 },
+  titleInvited: { marginTop: 16 },
+  invited: {
+    marginTop: 14,
+    height: 30,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    paddingLeft: 4,
+    paddingRight: 10,
+    borderRadius: radius.capsule,
+    backgroundColor: color.fill.pill,
+  },
   subtitle: { fontSize: 17, lineHeight: 22, marginTop: 6 },
   field: { marginTop: 24 },
   fieldEditing: { marginTop: space.md },

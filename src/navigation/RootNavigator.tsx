@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState as AppLifecycle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DarkTheme, LinkingOptions, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, LinkingOptions, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
@@ -61,6 +61,8 @@ import { DailyReminderRoute, QuietHoursRoute, SettingsRoute } from './routes/Set
 import { GoalRoute, ProfileSetupRoute } from './routes/GoalRoutes';
 import { GoalPickRoute, HowItWorksRoute, WelcomeRoute } from './routes/OnboardingRoutes';
 import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, LeagueInfoRoute, NewBattleRoute } from './routes/ChallengeRoutes';
+import { FriendInviteRoute, InviteLinkRoute, InviteQrRoute } from './routes/InviteRoutes';
+import { pendingInvite } from '../invites/pending';
 
 export type { RootStackParamList, TabParamList } from './types';
 
@@ -96,12 +98,28 @@ const LEAGUE_INFO_SHEET: NativeStackNavigationOptions = {
   contentStyle: { backgroundColor: color.surface },
 };
 
+/** Invite sheets (invite frames a3, a6, b1–b6): native form sheets sized to their content. */
+const INVITE_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: color.surface },
+};
+
 const normalizeUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
   const link = parseAppLink(url, webBaseUrl);
-  if (link?.type === 'invite' && !url.toLowerCase().startsWith(`${APP_SCHEME}://`)) return `${APP_SCHEME}://invite/${link.token}`;
+  const web = !url.toLowerCase().startsWith(`${APP_SCHEME}://`);
+  if (link?.type === 'invite' && web) return `${APP_SCHEME}://invite/${link.token}`;
+  if (link?.type === 'friendInvite' && web) return `${APP_SCHEME}://i/${link.code}`;
   return url;
 };
+
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+/** Screens where a held invite waits instead of opening its sheet on top. */
+const HOLD_INVITE_ON: ReadonlySet<string> = new Set(['FriendInvite', 'Welcome', 'GoalPick', 'HowItWorks', 'ProfileSetup', 'Session', 'GoalSetup']);
 const pushUrl = (r: Notifications.NotificationResponse | null | undefined) =>
   r ? notificationLink(r.notification.request.content.data, webBaseUrl) : null;
 
@@ -145,6 +163,17 @@ export function RootNavigator() {
   const { appSettings, session } = useBackend();
   const { profile, push } = useIdentity();
   webBaseUrl = appSettings.inviteLinks.webBaseUrl;
+
+  // An invite held while signing in or picking a username opens again once there is one.
+  const hasProfile = !!session && !!profile;
+  const resumeInvite = useCallback(() => {
+    const invite = pendingInvite.get();
+    if (!invite || !hasProfile || !navigationRef.isReady()) return;
+    const current = navigationRef.getCurrentRoute()?.name;
+    if (!current || HOLD_INVITE_ON.has(current)) return;
+    navigationRef.navigate('FriendInvite', { code: invite.code });
+  }, [hasProfile]);
+  useEffect(resumeInvite, [resumeInvite]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [nudges, setNudges] = useState<NudgePrefs>(DEFAULT_NUDGE_PREFS);
   const [nudgesReady, setNudgesReady] = useState(false);
@@ -461,7 +490,7 @@ export function RootNavigator() {
 
   return (
     <AppStateContext.Provider value={value}>
-      <NavigationContainer linking={linking} theme={theme}>
+      <NavigationContainer ref={navigationRef} linking={linking} theme={theme} onStateChange={resumeInvite}>
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}>
           <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="Welcome" component={WelcomeRoute} options={{ gestureEnabled: false, animation: 'none' }} />
@@ -481,6 +510,9 @@ export function RootNavigator() {
           <Stack.Screen name="Friends" component={FriendsRoute} options={header('Friends')} />
           <Stack.Screen name="Friend" component={FriendRoute} options={({ route }) => header(personName(route.params.friend))} />
           <Stack.Screen name="Invite" component={InviteRoute} options={header('Challenge invite')} />
+          <Stack.Screen name="InviteLink" component={InviteLinkRoute} options={INVITE_SHEET} />
+          <Stack.Screen name="InviteQr" component={InviteQrRoute} options={INVITE_SHEET} />
+          <Stack.Screen name="FriendInvite" component={FriendInviteRoute} options={INVITE_SHEET} />
         </Stack.Navigator>
       </NavigationContainer>
     </AppStateContext.Provider>

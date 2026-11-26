@@ -47,6 +47,8 @@ export const SF_SYMBOLS = {
   arrowUp: 'arrow.up',
   team: 'person.3.fill',
   search: 'magnifyingglass',
+  copy: 'doc.on.doc',
+  qr: 'qrcode',
 } as const satisfies Record<IconName, SFSymbol>;
 
 function SvgIcon({

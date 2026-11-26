@@ -34,7 +34,7 @@ async function launch({ headed = false } = {}) {
  * Opens one page. Options (all optional):
  *   user, rpc, tables, storage, now  -> mock/backend.js
  *   reduceMotion: true               -> prefers-reduced-motion: reduce (iOS Reduce Motion)
- *   video: '<dir>'                   -> record a .webm of the page into dir
+ *   video: true                      -> device pixel ratio 2 for recording (see lib/recorder.js)
  *   scale: 3                         -> device pixel ratio for screenshots
  *   headed, keyboard                 -> interactive window with simulator shortcuts (web.js)
  */
@@ -49,7 +49,6 @@ async function openApp(appUrl, opts = {}) {
     reducedMotion: opts.reduceMotion ? 'reduce' : 'no-preference',
     timezoneId: 'America/New_York',
     locale: 'en-US',
-    recordVideo: opts.video ? { dir: opts.video, size: { width: PHONE.width * 2, height: PHONE.height * 2 } } : undefined,
   });
   await context.clock.install({ time: backend.fixtures.now });
 

@@ -194,7 +194,16 @@ function build(now = FIXED_NOW) {
   };
   const profile = { id: ME, username: 'sunny', display_name: 'Sunny', time_zone: TZ };
 
-  return { now, ME, history, enrollment, progress, emptyProgress, league, challenges, friends, friendRecord, profile };
+  // Personal invite links (src/invites): Sunny's code, the code after Reset link, and how
+  // friend_invite_preview describes Sunny to someone else. maya is the friend who opens it.
+  const inviteCode = 'k7m2qx9p';
+  const inviteCodeAfterReset = 'w4h8n3tc';
+  const inviter = { username: 'sunny', displayName: 'Sunny', userId: ME };
+  const maya = { id: '77777777-7777-4777-8777-777777777777', username: 'maya', display_name: 'Maya', time_zone: TZ };
+  return {
+    now, ME, history, enrollment, progress, emptyProgress, league, challenges, friends, friendRecord, profile,
+    inviteCode, inviteCodeAfterReset, inviter, maya,
+  };
 }
 
 module.exports = { FIXED_NOW, ME, TZ, DAY, isoDay, isoTime, build, makeSet, seeded };

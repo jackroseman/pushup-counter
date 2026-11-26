@@ -117,3 +117,33 @@ describe('navigation shell links (every old path)', () => {
     }
   });
 });
+
+describe('personal invite links', () => {
+  it('parses the scheme and web forms', () => {
+    expect(parseAppLink('pushupcounter://i/k7m2qx9p')).toEqual({ type: 'friendInvite', code: 'k7m2qx9p' });
+    expect(parseAppLink('pushupcounter://i/K7M2QX9P')).toEqual({ type: 'friendInvite', code: 'k7m2qx9p' });
+    expect(parseAppLink('https://reproyale.vercel.app/i/k7m2qx9p')).toEqual({ type: 'friendInvite', code: 'k7m2qx9p' });
+    expect(parseAppLink('https://reproyale.vercel.app/i/k7m2qx9p/?utm=x')).toEqual({ type: 'friendInvite', code: 'k7m2qx9p' });
+  });
+
+  it('rejects bad codes and other hosts', () => {
+    for (const url of [
+      'pushupcounter://i/k7m2qx9',
+      'pushupcounter://i/k7m2qx9p0',
+      'pushupcounter://i/k7m2qx9o',
+      'pushupcounter://i/k7m2qx9p/extra',
+      'https://reproyale.vercel.app/i/',
+      'https://reproyale.vercel.app/x/k7m2qx9p',
+      'https://example.com/i/k7m2qx9p',
+    ]) {
+      expect(parseAppLink(url)).toBeNull();
+    }
+  });
+
+  it('routes i/<code> to the invite sheet', () => {
+    const state = getStateFromPath('i/k7m2qx9p', { screens: linkingConfig.screens, initialRouteName: 'Main' });
+    const top = state?.routes[state.routes.length - 1];
+    expect(top?.name).toBe('FriendInvite');
+    expect(top?.params).toEqual({ code: 'k7m2qx9p' });
+  });
+});

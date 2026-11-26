@@ -7,6 +7,7 @@
 //         'empty'   signed in, no sets, no goal, no friends
 //         'new'     signed out, nothing on the phone -> onboarding
 //   rpc:     { my_league: {...} | (args) => {...} }   replace one RPC result
+//   path:    'i/k7m2qx9p'                               open the app at a link (deep-link path)
 //   tables:  { profiles: [...] }                        replace a REST table read
 //   storage: { 'pushupcounter.goal.v1': '...' | null } set or clear a local storage key
 /* global Buffer */
@@ -42,6 +43,12 @@ function createBackend(options = {}) {
     my_recap_ranks: () => null,
     register_device: () => 'preview-device',
     username_available: () => true,
+    // Personal invite links. The preview user is Sunny; flows that play the friend who opens
+    // Sunny's link override friend_invite_preview / redeem_friend_invite and the profile.
+    my_friend_invite: () => F.inviteCode,
+    reset_friend_invite: () => F.inviteCodeAfterReset,
+    friend_invite_preview: () => ({ status: signedIn ? 'own' : 'ok', inviter: F.inviter }),
+    redeem_friend_invite: () => 'added',
   };
   const tables = {
     profiles: signedIn ? [F.profile] : [],

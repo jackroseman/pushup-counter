@@ -12,7 +12,6 @@ import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } fro
 import { supabase } from '../../backend/supabase';
 import { REFRESH_FAILED } from '../../progress';
 import { leagueView, type LeagueMode } from '../../progress/leagueView';
-import { shareInvite } from '../../battles/inviteFriends';
 import { EmptyState, color } from '../../ui';
 import { useAppState } from '../appState';
 import { openGoal } from './gate';
@@ -92,7 +91,7 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
       onMode={setMode}
       banner={banner}
       onStart={() => navigation.navigate('Session')}
-      onInvite={() => shareInvite(profile.username)}
+      onInvite={() => navigation.navigate('InviteLink')}
       onInfo={() => navigation.navigate('LeagueInfo')}
       onOpenPerson={(person) => {
         if (person.me) return;
@@ -108,7 +107,6 @@ export function LeagueBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation
 
 /** Challenges segment of Compete (frame 20, E10, E11). */
 export function ChallengesBody({ navigation }: Pick<TabProps<'Compete'>, 'navigation'>) {
-  const { profile } = useIdentity();
   const { enrollments } = useAppState();
   return (
     <CompeteGate onProfile={() => navigation.navigate('ProfileSetup')}>
@@ -117,7 +115,7 @@ export function ChallengesBody({ navigation }: Pick<TabProps<'Compete'>, 'naviga
         onNeedGoal={() => navigation.navigate('GoalSetup')}
         onOpen={(battle) => navigation.navigate('Battle', { challengeId: battle.id, battle })}
         onNew={() => navigation.navigate('NewBattle')}
-        onInvite={() => profile && shareInvite(profile.username)}
+        onInvite={() => navigation.navigate('InviteLink')}
       />
     </CompeteGate>
   );

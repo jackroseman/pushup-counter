@@ -1,8 +1,8 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Text } from '../../ui';
-import { gutter } from '../../ui/tokens';
+import { Avatar, Button, Text, color } from '../../ui';
+import { gutter, radius } from '../../ui/tokens';
 import { BrandMark } from '../today/BrandMark';
 
 /** Frame 1. */
@@ -11,11 +11,14 @@ export function WelcomeScreen({
   onSignIn,
   signingIn,
   error,
+  invitedBy,
 }: {
   onStart: () => void;
   onSignIn: () => void;
   signingIn?: boolean;
   error?: string | null;
+  /** Name of the person whose invite link opened the app (invite frame b8). */
+  invitedBy?: string | null;
 }) {
   return (
     <View style={styles.root}>
@@ -27,6 +30,15 @@ export function WelcomeScreen({
         <Text variant="body" tone="secondary" align="center" style={styles.lead}>
           {'Push-ups every day.\nYour phone counts every rep.'}
         </Text>
+        {invitedBy ? (
+          <View style={styles.invite}>
+            <Avatar name={invitedBy} size={38} />
+            <View style={styles.inviteText}>
+              <Text variant="subhead" weight="600" tone="label">{`${invitedBy} invited you`}</Text>
+              <Text variant="footnote">{`You can add ${invitedBy} after you sign in.`}</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
       <View style={styles.actions}>
         {error ? (
@@ -48,5 +60,19 @@ const styles = StyleSheet.create({
   lead: { marginTop: 12, fontSize: 19, lineHeight: 27 },
   actions: { marginTop: 'auto', marginBottom: 22 },
   plain: { marginTop: 4 },
+  invite: {
+    marginTop: 44,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.card,
+    backgroundColor: color.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+  },
+  inviteText: { flex: 1 },
   error: { marginBottom: 12 },
 });

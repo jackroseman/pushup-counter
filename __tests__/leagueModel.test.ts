@@ -1,5 +1,4 @@
 import type { LeagueBoard, LeagueImprovementRow, LeagueTotalRow } from '../src/backend/leagueClient';
-import { inviteFriendsMessage } from '../src/battles/inviteFriends';
 import { LEAGUE_INFO, formatEndsIn, hasCrown, isNewWeek, leagueHeader, leagueView, ordinal, toPass, zonedMidnight } from '../src/progress/leagueView';
 
 const ME = 'me';
@@ -236,12 +235,6 @@ describe('league helpers', () => {
     expect(leagueHeader({ weekEnd: '2026-11-30', timeZone: 'America/New_York' }, false, Date.parse('2026-11-30T05:00:00Z'))).toBe(
       'This week · ending now',
     );
-  });
-
-  it('invite message: plain text with the username and no link until one exists', () => {
-    expect(inviteFriendsMessage('sunny')).toBe('Join me on Rep Royale. Add me: @sunny');
-    expect(inviteFriendsMessage('@sunny', 'https://example.com/x')).toBe('Join me on Rep Royale. Add me: @sunny\nhttps://example.com/x');
-    expect(inviteFriendsMessage(null)).toBe('Join me on Rep Royale.');
   });
 });
 

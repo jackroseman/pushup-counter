@@ -9,6 +9,8 @@ import { Frame } from '../frame';
 import { header } from '../headerOptions';
 import { useDiscardGuard, useSaveHeader } from '../draft';
 import type { Props } from '../types';
+import { personName } from '../../battles/model';
+import { usePendingInvite } from '../../invites/pending';
 
 export function GoalRoute({ navigation }: Props<'GoalSetup'>) {
   const { enrollments, saveChoice } = useAppState();
@@ -22,6 +24,7 @@ export function GoalRoute({ navigation }: Props<'GoalSetup'>) {
 
 /** Username screen. First time: Continue / Later. Editing: a draft with a native Save button and the Discard prompt. */
 export function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
+  const invite = usePendingInvite();
   const [leaving, setLeaving] = useState(false);
   const form = useProfileForm({ onDone: () => setLeaving(true) });
   const leave = useDiscardGuard(navigation, form.editing && form.dirty && !leaving);
@@ -34,7 +37,7 @@ export function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
   useSaveHeader(navigation, { canSave: form.editing && form.canSave, saving: form.saving, onSave: form.save });
   return (
     <Frame kind={form.editing ? 'header' : 'bare'}>
-      <ProfileSetupScreen form={form} onCancel={() => navigation.goBack()} />
+      <ProfileSetupScreen form={form} onCancel={() => navigation.goBack()} invitedBy={invite?.inviter ? personName(invite.inviter) : null} />
     </Frame>
   );
 }

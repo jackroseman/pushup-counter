@@ -12,11 +12,13 @@ const norm = (p) => p.split(path.sep).join('/');
 const REPLACE_FILE = {
   'modules/pushup-sensors/src/PushupSensorsModule.web.ts': path.join(SHIMS, 'PushupSensorsModule.ts'),
   'modules/pushup-sensors/src/FaceMeshView.tsx': path.join(SHIMS, 'FaceMeshView.tsx'),
+  'src/invites/native.ts': path.join(SHIMS, 'inviteNative.ts'),
 };
 
 /** Package name -> stand-in, for every importer. */
 const REPLACE_PACKAGE = {
   'expo-secure-store': path.join(SHIMS, 'secureStore.ts'),
+  'expo-apple-authentication': path.join(SHIMS, 'appleAuthentication.tsx'),
 };
 
 function previewResolveRequest(context, moduleName, platform) {

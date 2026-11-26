@@ -1,6 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { fetchMyLeague } from '../../backend/leagueClient';
 import { normalizeUsername } from '../../backend/profile';
@@ -8,7 +9,8 @@ import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
 import { friendRowSubtitle } from '../../battles/friendsView';
 import { Friend, friendlyError, groupFriends, personName } from '../../battles/model';
-import { Avatar, Button, EmptyState, Icon, ListGroup, ListRow, SectionHeader, Text, color, gutter, space } from '../../ui';
+import { newFirst, newFriendIds, takeFriendsSeenAt } from '../../invites/newFriends';
+import { Avatar, Button, EmptyState, Icon, ListGroup, ListRow, Pill, SectionHeader, Text, color, gutter, space } from '../../ui';
 
 export interface FriendsScreenHandle {
   focusSearch: () => void;
@@ -26,6 +28,13 @@ export const FriendsScreen = forwardRef<FriendsScreenHandle, { onOpenFriend: (f:
     const searchSeq = useRef(0);
     const input = useRef<React.ComponentRef<typeof TextInput>>(null);
     useImperativeHandle(ref, () => ({ focusSearch: () => input.current?.focus() }), []);
+
+    const [seenAt, setSeenAt] = useState<number | null>(null);
+    useFocusEffect(
+      useCallback(() => {
+        takeFriendsSeenAt(AsyncStorage).then(setSeenAt);
+      }, []),
+    );
 
     const load = useCallback(async () => {
       if (!supabase) return;
@@ -91,6 +100,7 @@ export const FriendsScreen = forwardRef<FriendsScreenHandle, { onOpenFriend: (f:
     };
 
     const g = groupFriends(rows ?? []);
+    const fresh = newFriendIds(g.friends, seenAt);
     const empty = rows !== null && g.friends.length === 0 && g.incoming.length === 0 && g.outgoing.length === 0 && g.blocked.length === 0;
     const avatar = (f: Friend) => <Avatar name={personName(f)} size={36} />;
 
@@ -194,12 +204,13 @@ export const FriendsScreen = forwardRef<FriendsScreenHandle, { onOpenFriend: (f:
           <>
             <SectionHeader title={`Friends · ${g.friends.length}`} />
             <ListGroup>
-              {g.friends.map((f) => (
+              {newFirst(g.friends, fresh).map((f) => (
                 <ListRow
                   key={f.userId}
                   title={personName(f)}
-                  subtitle={weekReps ? friendRowSubtitle(weekReps.get(f.userId)) : undefined}
+                  subtitle={fresh.has(f.userId) ? 'Just added' : weekReps ? friendRowSubtitle(weekReps.get(f.userId)) : undefined}
                   leading={avatar(f)}
+                  trailing={fresh.has(f.userId) ? <Pill label="New" tone="signal" /> : undefined}
                   chevron
                   onPress={() => onOpenFriend(f)}
                 />
@@ -248,7 +259,7 @@ export const FriendsScreen = forwardRef<FriendsScreenHandle, { onOpenFriend: (f:
 
         {!empty && rows !== null ? (
           <ListGroup style={styles.invite}>
-            <ListRow title="Invite with a link" leading={<Icon name="share" size={18} color={color.label} />} onPress={onInvite} />
+            <ListRow title="Invite with a link" leading={<Icon name="share" size={18} color={color.label} />} chevron onPress={onInvite} />
           </ListGroup>
         ) : null}
       </ScrollView>

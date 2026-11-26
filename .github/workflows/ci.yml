@@ -1,23 +1,32 @@
-# CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev (after a
-# merge). Feature branches get CI through their PR only, so a push is not checked twice. The "checks" job is the REQUIRED status check in branch protection: keep its
+# CI: runs on every commit pushed to a PR into main/dev, and on pushes to dev or main
+# (after a merge). Feature branches get CI through their PR only, so a push is not checked
+# twice. The "checks" job is the REQUIRED status check in branch protection: keep its
 # name stable (renaming it means updating the protection rules).
-# Deploys are NOT done here: eas-ship.yml ships the app (OTA, or an EAS build for a native
-# change) and supabase-deploy.yml applies database migrations, both after a merge.
+#
+# Deploys of the app are gated here: after checks pass on a push to dev or main, and only
+# if the commit changed something other than docs, tests, supabase/ or .github/, the
+# "ship" job starts eas-ship.yml for this exact SHA. That is what publishes an OTA or
+# starts a native build. eas-ship.yml is no longer triggered by push alone, so a red
+# checks run cannot reach a phone. supabase-deploy.yml stays a separate push workflow.
 name: CI
 
 on:
   pull_request:
     branches: [main, dev]
   push:
-    branches: [dev]
+    branches: [dev, main]
   workflow_dispatch:
 
 concurrency:
+  # Cancel superseded checks on a PR. Do not cancel a push run: its ship job may already
+  # be publishing, and a docs-only follow-up must not abort that.
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  actions: read
+  checks: read
 
 jobs:
   checks:
@@ -66,3 +75,59 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx expo-doctor
+
+  # Parallel with checks. Decides whether this push should start eas-ship.yml (same
+  # ignore list as the old eas-ship paths-ignore, plus .github/ so a workflow-only
+  # merge cannot publish an OTA or start a build).
+  should-ship:
+    name: should-ship
+    if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ship: ${{ steps.filter.outputs.ship }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the first parent of merge commits for git diff HEAD^.
+          fetch-depth: 0
+
+      - name: Detect shippable path changes
+        id: filter
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^ >/dev/null; then
+            echo "Could not find a parent commit; treating as shippable."
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Use :(exclude) / glob, not :!__tests__: git parses '_' after :! as pathspec magic.
+          changed="$(git diff --name-only HEAD^ HEAD -- \
+            ':(exclude,glob)**/*.md' \
+            ':(exclude)docs/**' \
+            ':(exclude)__tests__/**' \
+            ':(exclude)supabase/**' \
+            ':(exclude).github/**')"
+          if [ -z "$changed" ]; then
+            echo "No shippable paths changed; eas-ship will not run."
+            echo "ship=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Shippable paths changed:"
+            printf '%s\n' "$changed"
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  ship:
+    name: ship (${{ github.ref_name == 'main' && 'production' || 'development' }})
+    needs: [checks, should-ship]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref_name == 'dev' || github.ref_name == 'main') &&
+      needs.checks.result == 'success' &&
+      needs.should-ship.outputs.ship == 'true'
+    uses: ./.github/workflows/eas-ship.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+      checks: read

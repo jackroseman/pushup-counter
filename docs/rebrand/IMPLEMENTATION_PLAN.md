@@ -18,7 +18,7 @@ Updated 2026-11-25 (America/New_York). The status column in §6 is the source of
 
 | PR | Status | Link | Notes |
 |---|---|---|---|
-| Docs | In review | (docs PR: this plan + the final frames in `docs/rebrand/`) | Frames and empty states are 3x, 256-colour PNG copies (key colours exact), 2.4 MB in total. Originals: `/workspace/design/rebrand/final-A/` on the box. |
+| Docs (plan + frames in `docs/rebrand/`) | In review | [#32](https://github.com/jackroseman/pushup-counter/pull/32) | Frames and empty states are 3x, 256-colour PNG copies (key colours exact), 2.4 MB in total. Originals: `/workspace/design/rebrand/final-A/` on the box. |
 | 1 · Tokens + primitives | **In review** | [#31](https://github.com/jackroseman/pushup-counter/pull/31) | `src/ui/` tokens + all §1 components (no screen uses them yet); `theme.ts` shim; colour-only literal swaps; `tokens.test.ts`. Lint 26 (unchanged), jest 280/280, tsc, iOS export OK; fingerprint unchanged (`9efd103…`). Review screenshots: branch `rebrand/review-assets` (`pr1/`). |
 | 2–15 | Not started | | |
 

@@ -80,7 +80,7 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
 
 ```bash
 scripts/eas-ship.sh development --dry-run           # what a merge to dev would do
-node --test scripts/tests/eas-ship.test.mjs         # eas-ship.sh decisions against a fake eas (CI runs it)
+node --test scripts/tests/eas-ship-cases.mjs         # eas-ship.sh decisions against a fake eas (CI runs it)
 scripts/eas-ship.sh production --rollout 10         # publish to 10% of production (from main)
 eas workflow:run .eas/workflows/build-dev.yml --ref dev           # new dev client (1 build)
 eas workflow:run .eas/workflows/build-production.yml --ref main   # new store build + upload (1 build)

@@ -1,5 +1,6 @@
+// node --test scripts/tests/eas-ship-cases.mjs (named so jest does not pick it up).
 // Runs scripts/eas-ship.sh against a fake `eas` on PATH and checks which eas commands it
-// would run (dry run) or runs. No network, no EXPO_TOKEN. `npm run test:scripts`.
+// would run (dry run) or runs. No network, no EXPO_TOKEN.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

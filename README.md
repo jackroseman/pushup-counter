@@ -266,7 +266,7 @@ When `eas-ship` does run, `scripts/eas-ship.sh` fingerprints the project with
   it publishes nothing. A new version starts `.eas/workflows/build-production.yml` (store
   build + upload to TestFlight). In both cases the same run then publishes an OTA update
   for the new runtime, so the new build's Updates tab is never empty (republish and
-  rollback work from day one). Tests: `node --test scripts/tests/eas-ship.test.mjs`.
+  rollback work from day one). Tests: `node --test scripts/tests/eas-ship-cases.mjs`.
 
 Runtime version (`app.config.ts`): the store app uses `appVersion` (`expo.version` in
 `app.json`). The dev client uses `fingerprint`, so a native change on `dev` gets a new

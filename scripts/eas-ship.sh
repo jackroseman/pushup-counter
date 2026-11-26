@@ -26,7 +26,7 @@
 #      be republished or rolled back to like any other update. The build embeds the same JS,
 #      and this update is older than the build's embedded one, so expo-updates does not download it again.
 #      A failed publish fails the job; re-running it finds the queued build and publishes.
-#   Tests: scripts/tests/eas-ship.test.mjs (npm run test:scripts) runs this script against a
+#   Tests: scripts/tests/eas-ship-cases.mjs runs this script against a
 #   fake eas on PATH.
 set -euo pipefail
 

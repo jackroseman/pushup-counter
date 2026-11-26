@@ -1,15 +1,16 @@
-import { RepQuality } from './core';
+import { color } from './ui/tokens';
 
+/**
+ * Temporary shim (rebrand PR 1): the old theme names now point at the Direction A palette in
+ * `src/ui/tokens.ts`, so screens that have not been rebuilt yet go monochrome without layout
+ * changes. New code imports `src/ui` instead. Deleted in the cleanup PR (plan PR 15).
+ */
 export const colors = {
-  bg: '#0B0F1A',
-  card: '#151B2B',
-  text: '#F4F6FB',
-  muted: '#8A93A8',
-  accent: '#FFB020',
-  danger: '#FF5A5F',
-  quality: {
-    full: '#2BD67B',
-    good: '#FFB020',
-    shallow: '#FF5A5F',
-  } satisfies Record<RepQuality, string>,
+  bg: color.bg,
+  card: color.surface,
+  text: color.label,
+  muted: color.secondary,
+  accent: color.label,
+  danger: color.destructive,
+  quality: color.quality,
 };

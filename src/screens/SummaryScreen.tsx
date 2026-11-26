@@ -6,6 +6,7 @@ import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core'
 import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
 /** Plain line shown when the phone moved and ended the set. */
 export const PHONE_MOVED = 'Your phone moved.';
@@ -234,8 +235,8 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '600',
-    backgroundColor: 'rgba(255, 176, 32, 0.1)',
-    borderColor: 'rgba(255, 176, 32, 0.35)',
+    backgroundColor: color.elevated,
+    borderColor: color.separator,
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 10,
@@ -257,8 +258,8 @@ const styles = StyleSheet.create({
   celebrateTitle: { color: colors.accent, fontSize: 18, fontWeight: '800' },
   celebrateAlso: { color: colors.text, fontSize: 15, marginTop: 4 },
   challenge: { marginTop: 12, paddingVertical: 12 },
-  repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
-  repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
+  repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.separator },
+  repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.separator },
   cell: { color: colors.muted, fontSize: 14, fontVariant: ['tabular-nums'] },
   cIdx: { width: 34 },
   cQual: { width: 74 },

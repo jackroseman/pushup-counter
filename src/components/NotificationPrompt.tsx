@@ -12,6 +12,7 @@ import {
   writeNotificationSnooze,
 } from '../notifications/prompt';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 import { Button } from './ui';
 
 function Bell({ size }: { size: number }) {
@@ -110,7 +111,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#3A3018',
+    backgroundColor: color.elevated,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -132,7 +133,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#3A3018',
+    backgroundColor: color.elevated,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,

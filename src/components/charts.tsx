@@ -3,9 +3,10 @@ import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { DEFAULT_CONFIG, RepQuality, distanceForRatio } from '../core';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 
-const GRID = '#2A3145';
-const LINE = '#5CC8FF';
+const GRID = color.graphite;
+const LINE = color.label;
 
 /** Measures its own width so charts fill the available space. */
 function useWidth(initial = 320): [number, (e: LayoutChangeEvent) => void] {

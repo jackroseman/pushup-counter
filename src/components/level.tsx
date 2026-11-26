@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { CheckState, DEFAULT_TILT_OPTIONS, TiltSnapshot } from '../core';
 import { colors } from '../theme';
+import { color } from '../ui/tokens';
 import { ProgressRing } from './calibration';
 
 const SIZE = 190;
@@ -61,7 +62,7 @@ export function LevelCard({ level }: { level: TiltSnapshot | null }) {
         <Circle cx={c} cy={c} r={R * 0.66} fill="none" stroke="#2A3145" strokeWidth={1} strokeDasharray="4,4" />
         <Line x1={c} y1={c - R} x2={c} y2={c + R} stroke="#1E2538" strokeWidth={1} />
         <Line x1={c - R} y1={c} x2={c + R} y2={c} stroke="#1E2538" strokeWidth={1} />
-        <Circle cx={c} cy={c} r={Math.max(18, TARGET_R)} fill="rgba(43, 214, 123, 0.08)" stroke={colors.quality.full} strokeWidth={2} />
+        <Circle cx={c} cy={c} r={Math.max(18, TARGET_R)} fill="rgba(48, 209, 88, 0.08)" stroke={colors.quality.full} strokeWidth={2} />
         {known ? (
           <>
             <Circle cx={c + dx} cy={c + dy} r={14} fill={color} fillOpacity={0.22} stroke={color} strokeWidth={2.5} />
@@ -100,8 +101,8 @@ export function LevelPanel({ level, message }: { level: TiltSnapshot | null; mes
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    backgroundColor: '#05070D',
-    borderColor: '#1C2338',
+    backgroundColor: color.bg,
+    borderColor: color.separator,
     borderWidth: 1,
     borderRadius: 20,
     alignItems: 'center',

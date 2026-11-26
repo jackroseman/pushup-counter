@@ -17,6 +17,9 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
+  Welcome: undefined;
+  GoalPick: undefined;
+  HowItWorks: { onboarding?: boolean } | undefined;
   GoalSetup: undefined;
   Session: { battle?: BattleSessionOptions } | undefined;
   Summary: { record: SessionRecord; from: 'session' | 'history' };

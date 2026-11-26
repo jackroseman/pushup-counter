@@ -55,6 +55,11 @@ jobs:
       - name: Database tests (PGlite, supabase/migrations)
         run: npm run test:db
 
+      # scripts/eas-ship.sh against a fake eas (no network): OTA vs build decisions for both
+      # profiles. Not an npm script on purpose: package.json scripts feed the native fingerprint.
+      - name: Ship script tests (scripts/eas-ship.sh)
+        run: node --test scripts/tests/eas-ship.test.mjs
+
       - name: Type check (tsc)
         run: npx tsc --noEmit
 

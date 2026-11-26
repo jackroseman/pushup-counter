@@ -11,7 +11,10 @@ and the exact steps for a release. CONTRIBUTING.md covers branches, PRs and CI.
 | `main`     | `eas-ship.yml`         | Rep Royale on TestFlight (profile/channel/EAS env `production`) |
 | `dev`/`main`, only if `supabase/` changed | `supabase-deploy.yml` | staging / prod Supabase |
 
-`eas-ship.yml` runs `scripts/eas-ship.sh` on a GitHub runner (no EAS queue):
+`eas-ship.yml` is started by the `ship` job in `ci.yml` after a merge, and only after
+the `checks` job has passed for that exact merge commit (it is no longer triggered by
+push alone, so a red CI run cannot reach a phone). It then runs `scripts/eas-ship.sh`
+on a GitHub runner (no EAS queue):
 
 1. Fingerprint the project with `eas fingerprint:generate` (same hash EAS builds record).
 2. **A build of that profile has this fingerprint** (finished, queued or building, any
@@ -26,9 +29,12 @@ and the exact steps for a release. CONTRIBUTING.md covers branches, PRs and CI.
      starts `.eas/workflows/build-production.yml` (1 build + upload to TestFlight).
    * A build workflow that is already running is not started twice.
 
-Markdown, `docs/`, `supabase/` and `__tests__/` changes do not run `eas-ship.yml` at all.
-A newer merge to the same branch cancels a running ship (it ships the newer head instead),
-so duplicate runs never need cancelling by hand.
+Markdown, `docs/`, `supabase/`, `__tests__/` and `.github/` changes do not start
+`eas-ship.yml` at all. A newer merge that will ship cancels a running ship (it ships
+the newer passing commit instead), so duplicate runs never need cancelling by hand. A
+docs-only merge, or a merge whose `checks` job failed, does not start a ship and does
+not cancel one that is already running. A ship also skips if its commit is no longer
+the branch tip, so a superseded run cannot publish stale code.
 
 The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run when
 `eas-ship.sh` starts them or when you run them by hand.
@@ -51,7 +57,9 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
 3. `scripts/release.sh`: opens (or reuses) the PR `dev` -> `main`, lists the commits, and
    brings the PR up to date with `main` if it is BEHIND. It never merges.
 4. Wait for `checks`, then merge it (**merge commit**, not squash).
-5. Watch **Actions -> EAS ship** on GitHub:
+5. Watch **Actions -> CI** (the merge commit's `checks`, then `ship` if the change is
+   shippable) and **Actions -> EAS ship** on GitHub. If `checks` is red, nothing is
+   published and no build is started.
    * OTA: TestFlight installs get it on the next launch and run it on the launch after.
    * Build: follow the link to the EAS workflow. Testers get it in TestFlight once Apple has
      processed it (about 10-30 min; the first build of a version for external testers needs

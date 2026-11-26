@@ -243,10 +243,12 @@ modules/pushup-sensors (Swift)          src/core (pure TypeScript, unit-tested)
 * Runtime version: `appVersion` for the store app, `fingerprint` for the dev client
   (`app.config.ts`).
 * **CI** (`.github/workflows/ci.yml`): the required `checks` job runs lint, jest, the
-  database tests, tsc and an `expo export` bundle test on every PR commit.
-* **CD** (`.github/workflows/eas-ship.yml`): after a merge to `dev` or `main`, a JS-only
-  change is published as an OTA update in minutes; a native change starts one EAS build
-  (`.eas/workflows/build-*.yml`). On `main` a native change needs a `version` bump first.
+  database tests, tsc and an `expo export` bundle test on every PR commit and on every
+  push to `dev` or `main`.
+* **CD** (`.github/workflows/eas-ship.yml`): after those `checks` pass on a merge to
+  `dev` or `main`, a JS-only change is published as an OTA update in minutes; a native
+  change starts one EAS build (`.eas/workflows/build-*.yml`). On `main` a native change
+  needs a `version` bump first. A failed `checks` run does not ship.
 
 Everything about shipping, including by-hand commands and the release steps, is in
 [docs/RELEASING.md](docs/RELEASING.md).

@@ -67,8 +67,8 @@ docs: explain OTA vs native builds
 
 ## 4. CI (GitHub Actions, `.github/workflows/ci.yml`)
 
-Runs on every commit pushed to a PR into `main` or `dev`, and on pushes to `dev`. Work
-branches are checked through their PR (not twice):
+Runs on every commit pushed to a PR into `main` or `dev`, and on pushes to `dev` or
+`main` (the merge commit). Work branches are checked through their PR (not twice):
 
 | job                        | what it does                                              | required |
 |----------------------------|-----------------------------------------------------------|----------|
@@ -86,14 +86,20 @@ npm run doctor       # expo-doctor
 
 Don't rename the `checks` job without updating branch protection.
 
+After a push to `dev` or `main`, a `should-ship` job (not required to merge) decides
+whether the commit has app changes, and a `ship` job starts `eas-ship.yml` only if
+`checks` has passed for that exact SHA.
+
 ## 5. CD (`.github/workflows/eas-ship.yml`, `.eas/workflows/`)
 
-Deploys run **only after a merge** (a push to `dev` or `main`), never on PR events. The full
-recipe is in [docs/RELEASING.md](docs/RELEASING.md). In short:
+Deploys run **only after a merge** (a push to `dev` or `main`) **and only after the
+`checks` job for that exact commit has passed**, never on PR events, and never when
+those checks failed. The full recipe is in [docs/RELEASING.md](docs/RELEASING.md). In
+short:
 
 | file                                 | trigger                     | does |
 |--------------------------------------|-----------------------------|------|
-| `.github/workflows/eas-ship.yml`     | push to `dev` / `main`, or by hand | `scripts/eas-ship.sh`: OTA update if a build has this fingerprint, else start a build workflow |
+| `.github/workflows/eas-ship.yml`     | after `checks` pass on a push to `dev` / `main`, or by hand | `scripts/eas-ship.sh`: OTA update if a build has this fingerprint, else start a build workflow |
 | `.eas/workflows/build-dev.yml`       | started by eas-ship, or by hand | dev client build (`development`) |
 | `.eas/workflows/build-production.yml`| started by eas-ship, or by hand | store build + upload to TestFlight (`production`) |
 

@@ -1,6 +1,3 @@
-/** How long Not now hides the sheet. */
-export const NOTIFICATION_SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
-
 export const NOTIFICATION_PROMPT_COPY = {
   title: 'Turn on notifications',
   line: 'Stay in the loop with your friends and challenges.',
@@ -11,25 +8,15 @@ export const NOTIFICATION_PROMPT_COPY = {
 export type NotificationSurface = 'sheet' | 'none';
 
 /**
- * The only surface is the sheet, right after creating, accepting, or joining a challenge,
- * and only when Not now has worn off. No banner on any other visit.
+ * The only surface is the sheet (frame 22), shown once: right after the first create, accept,
+ * or join while notifications are off. After either answer it never comes back (Settings has
+ * the Notifications row). No banner on any other visit.
  */
 export type NotificationPermission = 'granted' | 'denied' | 'undetermined';
 
-export function notificationSurface(input: {
-  permission: NotificationPermission;
-  justActed: boolean;
-  snoozedUntil: number | null;
-  now: number;
-}): NotificationSurface {
-  if (input.permission === 'granted') return 'none';
-  const snoozed = input.snoozedUntil != null && input.now < input.snoozedUntil;
-  if (input.justActed && !snoozed) return 'sheet';
-  return 'none';
-}
-
-export function snoozeUntil(now: number): number {
-  return now + NOTIFICATION_SNOOZE_MS;
+export function notificationSurface(input: { permission: NotificationPermission; justActed: boolean; shown: boolean }): NotificationSurface {
+  if (input.permission === 'granted' || input.shown) return 'none';
+  return input.justActed ? 'sheet' : 'none';
 }
 
 /** Undetermined asks iOS. Denied can only be changed in Settings. Granted just saves the token. */
@@ -39,15 +26,13 @@ export function notificationTurnOn(permission: NotificationPermission): 'request
   return 'request';
 }
 
-const SNOOZE_KEY = 'notification-prompt-snooze-until';
+const SHOWN_KEY = 'notification-prompt-shown.v1';
 
-export async function readNotificationSnooze(storage: { getItem: (key: string) => Promise<string | null> }): Promise<number | null> {
-  const raw = await storage.getItem(SNOOZE_KEY).catch(() => null);
-  if (!raw) return null;
-  const until = Number(raw);
-  return Number.isFinite(until) ? until : null;
+/** Whether the sheet has been answered on this phone. */
+export async function readNotificationPromptShown(storage: { getItem: (key: string) => Promise<string | null> }): Promise<boolean> {
+  return (await storage.getItem(SHOWN_KEY).catch(() => null)) === '1';
 }
 
-export async function writeNotificationSnooze(storage: { setItem: (key: string, value: string) => Promise<void> }, until: number): Promise<void> {
-  await storage.setItem(SNOOZE_KEY, String(until));
+export async function markNotificationPromptShown(storage: { setItem: (key: string, value: string) => Promise<void> }): Promise<void> {
+  await storage.setItem(SHOWN_KEY, '1');
 }

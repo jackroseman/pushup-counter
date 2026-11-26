@@ -5,28 +5,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
-import {
-  NOTIFICATION_PROMPT_COPY,
-  notificationSurface,
-  readNotificationSnooze,
-  snoozeUntil,
-  writeNotificationSnooze,
-} from '../notifications/prompt';
+import { NOTIFICATION_PROMPT_COPY, markNotificationPromptShown, notificationSurface, readNotificationPromptShown } from '../notifications/prompt';
 import { Button, Icon, Text, color, radius, space } from '../ui';
 
-/** The sheet after creating, accepting, or joining a challenge (frame 22). No banner anywhere. */
+/** The sheet after the first create, accept, or join (frame 22), shown once. No banner anywhere. */
 export function ChallengeNotifications({ justActed, onConsumed }: { justActed: boolean; onConsumed: () => void }) {
   const { session } = useBackend();
   const { push } = useIdentity();
   const insets = useSafeAreaInsets();
-  const [snoozedUntil, setSnoozedUntil] = useState<number | null>(null);
+  const [shown, setShown] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    readNotificationSnooze(AsyncStorage).then((until) => {
+    readNotificationPromptShown(AsyncStorage).then((seen) => {
       if (!alive) return;
-      setSnoozedUntil(until);
+      setShown(seen);
       setReady(true);
     });
     return () => {
@@ -35,24 +29,19 @@ export function ChallengeNotifications({ justActed, onConsumed }: { justActed: b
   }, []);
 
   if (!session || !ready || !push.checked) return null;
-  const surface = notificationSurface({
-    permission: push.permission,
-    justActed,
-    snoozedUntil,
-    now: Date.now(),
-  });
+  const surface = notificationSurface({ permission: push.permission, justActed, shown });
   if (surface !== 'sheet') return null;
 
-  const turnOn = () => {
+  const answered = () => {
+    setShown(true);
     onConsumed();
+    markNotificationPromptShown(AsyncStorage).catch(() => {});
+  };
+  const turnOn = () => {
+    answered();
     void push.enable();
   };
-  const notNow = () => {
-    const until = snoozeUntil(Date.now());
-    setSnoozedUntil(until);
-    onConsumed();
-    writeNotificationSnooze(AsyncStorage, until).catch(() => {});
-  };
+  const notNow = answered;
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={notNow}>

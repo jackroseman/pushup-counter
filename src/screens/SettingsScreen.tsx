@@ -3,6 +3,14 @@ import { ScrollView, StyleSheet } from 'react-native';
 
 import { ICON_ROW_INSET, ListGroup, ListRow, SectionHeader, Text, color, gutter } from '../ui';
 
+/** Friend pings, signed in only (no mockup spot; kept under Notifications). Toggles save at once. */
+export interface SettingsPings {
+  passPing: boolean;
+  onPassPing: (value: boolean) => void;
+  weeklyRecap: boolean;
+  onWeeklyRecap: (value: boolean) => void;
+}
+
 export interface SettingsAccount {
   /** `@sunny`, `Not set` while there is no username, or empty while it loads. */
   profileValue: string;
@@ -20,14 +28,15 @@ export interface SettingsAccount {
 export function SettingsScreen({
   goalValue,
   onGoal,
-  speakQuality,
-  onSpeakQuality,
+  countOutLoud,
+  onCountOutLoud,
   notificationsValue,
   onNotifications,
   reminderValue,
   onReminder,
   quietHoursValue,
   onQuietHours,
+  pings,
   account,
   signIn,
   message,
@@ -36,8 +45,8 @@ export function SettingsScreen({
   /** Null = no daily goal (E15). */
   goalValue: string | null;
   onGoal: () => void;
-  speakQuality: boolean;
-  onSpeakQuality: (value: boolean) => void;
+  countOutLoud: boolean;
+  onCountOutLoud: (value: boolean) => void;
   notificationsValue: string;
   onNotifications: () => void;
   /** `6:00 PM`, or `Off`. */
@@ -45,6 +54,8 @@ export function SettingsScreen({
   onReminder: () => void;
   quietHoursValue: string;
   onQuietHours: () => void;
+  /** Signed in: Pass ping and Sunday recap. */
+  pings: SettingsPings | null;
   /** Signed in. */
   account: SettingsAccount | null;
   /** Signed out and Sign in with Apple is available. */
@@ -62,7 +73,7 @@ export function SettingsScreen({
 
       <SectionHeader title="During a set" />
       <ListGroup inset={ICON_ROW_INSET}>
-        <ListRow icon="speaker" title="Speak rep quality" switchValue={speakQuality} onSwitchChange={onSpeakQuality} />
+        <ListRow icon="speaker" title="Count out loud" switchValue={countOutLoud} onSwitchChange={onCountOutLoud} />
       </ListGroup>
 
       <SectionHeader title="Notifications" />
@@ -71,6 +82,24 @@ export function SettingsScreen({
         {hasGoal ? <ListRow icon="clock" title="Daily reminder" value={reminderValue} chevron onPress={onReminder} /> : null}
         {hasGoal ? <ListRow icon="moon" title="Quiet hours" value={quietHoursValue} chevron onPress={onQuietHours} /> : null}
         {!hasGoal ? <ListRow icon="clock" title="Set a daily goal to get reminders" chevron onPress={onGoal} /> : null}
+        {pings ? (
+          <ListRow
+            icon="trophy"
+            title="Pass ping"
+            subtitle="When a friend passes you"
+            switchValue={pings.passPing}
+            onSwitchChange={pings.onPassPing}
+          />
+        ) : null}
+        {pings ? (
+          <ListRow
+            icon="calendar"
+            title="Sunday recap"
+            subtitle="How your week went"
+            switchValue={pings.weeklyRecap}
+            onSwitchChange={pings.onWeeklyRecap}
+          />
+        ) : null}
       </ListGroup>
 
       {account ? (

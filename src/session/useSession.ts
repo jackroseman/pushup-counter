@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
+import { repCallout } from './repCallout';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -16,7 +17,6 @@ import {
   TiltMonitor,
   TiltSnapshot,
   TraceRecorder,
-  qualityLabel,
   summarize,
 } from '../core';
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
@@ -150,8 +150,8 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   const onRep = useCallback(
     (rep: Rep) => {
       const s = settingsRef.current;
-      const label = qualityLabel(rep.quality);
-      say(s.speakQuality && rep.quality !== 'full' ? `${rep.index}, ${label.toLowerCase()}` : String(rep.index));
+      const callout = repCallout(rep, s.countOutLoud);
+      if (callout) say(callout);
       live.current.reps.push({ t: rep.timestamp, quality: rep.quality, index: rep.index });
       lastRepAt.current = Date.now();
       patch({ count: rep.index, lastRep: rep });

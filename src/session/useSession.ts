@@ -22,7 +22,7 @@ import {
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported, startGravity, stopGravity } from '../sensors';
-import { faceRestartDue } from './sessionView';
+import { FaceDiag, emptyFaceDiag, faceRestartDue } from './sessionView';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
@@ -133,6 +133,8 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   const faceStarted = useRef(false);
   const calibratingSince = useRef(0);
   const lastFaceRestart = useRef(0);
+  /** Dev-only face diagnostics (shown on the face screen in Pushup Dev). Read by polling, no re-renders. */
+  const diag = useRef<FaceDiag>(emptyFaceDiag());
 
   const [state, setState] = useState<SessionState>({
     phase: 'starting',
@@ -269,6 +271,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   useEffect(() => {
     cancelled.current = false;
     faceStarted.current = false;
+    diag.current = emptyFaceDiag();
     voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
@@ -277,6 +280,9 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       }),
       PushupSensors.addListener('onFaceDistance', (e) => {
         const d = e.tracked && e.distance > 0 ? e.distance : null;
+        diag.current.events += 1;
+        if (d !== null) diag.current.tracked += 1;
+        diag.current.lastEventAt = Date.now();
         if (d !== null) lastTrackedAt.current = e.timestamp;
         const g = guide.current;
         if (g && !cancelled.current) {
@@ -336,6 +342,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
         setState((s) => (s.faceVisible === (d !== null) ? s : { ...s, faceVisible: d !== null }));
       }),
       PushupSensors.addListener('onFaceTrackingError', (e) => {
+        diag.current.lastError = e.message;
         patch({ status: `Depth tracking problem: ${e.message}` });
       }),
       PushupSensors.addListener('onGravity', (e) => {
@@ -380,6 +387,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       const faceOk = await PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
       if (cancelled.current) return;
       faceStarted.current = faceOk;
+      diag.current.faceStart = faceOk ? 'ok' : 'failed';
       if (!faceOk) {
         patch({
           phase: 'unavailable',
@@ -417,6 +425,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
         faceRestartDue({ now, since: calibratingSince.current, lastTracked: lastTrackedAt.current, lastRestart: lastFaceRestart.current })
       ) {
         lastFaceRestart.current = now;
+        diag.current.restarts += 1;
         PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
       }
       if (!active.current) return;
@@ -499,5 +508,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate };
+  return { state, finish, live, recalibrate, diag };
 }

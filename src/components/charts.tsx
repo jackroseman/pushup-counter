@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { DEFAULT_CONFIG, RepQuality, distanceForRatio } from '../core';
-import { colors } from '../theme';
 import { color } from '../ui/tokens';
 
-const GRID = color.graphite;
 const LINE = color.label;
 
 /** Measures its own width so charts fill the available space. */
@@ -175,110 +173,55 @@ export function LiveDistanceChart({
   );
 }
 
-/**
- * Simple per-rep chart: x = rep number, y = value. 'line' draws a connected line with dots
- * (e.g. time between reps), 'bar' draws bars (e.g. depth %). Optional dashed reference lines.
- */
-export function RepChart({
-  data,
-  kind,
-  unit,
-  height = 170,
-  yMin,
-  yMax,
-  refs = [],
-  barColor,
-}: {
-  data: { rep: number; value: number; color?: string }[];
-  kind: 'line' | 'bar';
-  unit: string;
-  height?: number;
-  yMin?: number;
-  yMax?: number;
-  refs?: { value: number; label: string; color: string }[];
-  barColor?: string;
-}) {
-  const [width, onLayout] = useWidth();
-  if (data.length === 0) {
-    return (
-      <View style={[styles.empty, { height: 60 }]}>
-        <Text style={styles.emptyText}>Not enough reps to chart.</Text>
-      </View>
-    );
+/** Smooth path through points (Catmull-Rom as cubic Béziers). */
+function smoothPath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return '';
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
   }
-  const padL = 34;
-  const padR = 40;
-  const padT = 12;
-  const padB = 22;
-  const vals = data.map((d) => d.value);
-  const lo = yMin ?? Math.max(0, Math.min(...vals) * 0.8);
-  let hi = yMax ?? Math.max(...vals, ...refs.map((r) => r.value)) * 1.15;
-  if (hi - lo < 1e-6) hi = lo + 1;
-  const n = data.length;
-  const plotW = width - padL - padR;
-  const slot = plotW / n;
-  const x = (i: number) => padL + slot * (i + 0.5);
-  const y = (v: number) => padT + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (height - padT - padB);
-  const labelEvery = Math.max(1, Math.ceil(n / 12));
-  const path = data.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(d.value).toFixed(1)}`).join('');
-  const fmt = (v: number) => (hi - lo < 5 ? v.toFixed(1) : Math.round(v).toString());
+  return d;
+}
 
+/** Moving average so the curve shows the trend, not every rep. */
+function smooth(values: readonly number[], window: number): number[] {
+  const half = Math.floor(window / 2);
+  return values.map((_, i) => {
+    const part = values.slice(Math.max(0, i - half), Math.min(values.length, i + half + 1));
+    return part.reduce((a, b) => a + b, 0) / part.length;
+  });
+}
+
+/**
+ * Pace over the set (Set details, frame 12): one smooth white line, higher = quicker, no axes
+ * or per-rep marks. Needs at least two points.
+ */
+export function PaceCurve({ values, height = 64 }: { values: readonly number[]; height?: number }) {
+  const [width, onLayout] = useWidth();
+  if (values.length < 2) return null;
+  const v = smooth(values, Math.max(1, Math.round(values.length / 6)));
+  const hi = Math.max(...v);
+  const lo = Math.min(...v);
+  const range = Math.max(hi - lo, hi * 0.15, 1e-6);
+  const mid = (hi + lo) / 2;
+  const pad = 6;
+  const pts = v.map((val, i) => ({
+    x: (i / (v.length - 1)) * (width - 12),
+    y: pad + (1 - ((val - mid) / range + 0.5)) * (height - pad * 2),
+  }));
   return (
-    <View onLayout={onLayout} style={{ width: '100%', height }}>
+    <View onLayout={onLayout} style={{ width: '100%', height }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Svg width={width} height={height}>
-        <Rect x={0} y={0} width={width} height={height} fill={colors.card} rx={10} />
-        {[lo, (lo + hi) / 2, hi].map((v, i) => (
-          <G key={i}>
-            <Line x1={padL} x2={width - padR} y1={y(v)} y2={y(v)} stroke={GRID} strokeWidth={1} />
-            <SvgText x={padL - 4} y={y(v) + 4} fill={colors.muted} fontSize={10} textAnchor="end">
-              {fmt(v)}
-            </SvgText>
-          </G>
-        ))}
-        {refs.map((r) => (
-          <G key={r.label}>
-            <Line x1={padL} x2={width - padR} y1={y(r.value)} y2={y(r.value)} stroke={r.color} strokeDasharray="4,4" strokeWidth={1} />
-            <SvgText x={width - padR + 4} y={y(r.value) + 4} fill={r.color} fontSize={10}>
-              {r.label}
-            </SvgText>
-          </G>
-        ))}
-        {kind === 'bar'
-          ? data.map((d, i) => (
-              <Rect
-                key={d.rep}
-                x={x(i) - Math.min(14, slot * 0.35)}
-                width={Math.min(28, slot * 0.7)}
-                y={y(d.value)}
-                height={Math.max(1, y(lo) - y(d.value))}
-                fill={d.color ?? barColor ?? LINE}
-                rx={2}
-              />
-            ))
-          : (
-            <G>
-              <Path d={path} stroke={LINE} strokeWidth={2} fill="none" strokeLinejoin="round" />
-              {data.map((d, i) => (
-                <Circle key={d.rep} cx={x(i)} cy={y(d.value)} r={3.5} fill={d.color ?? LINE} />
-              ))}
-            </G>
-          )}
-        {data.map((d, i) =>
-          i % labelEvery === 0 || i === n - 1 ? (
-            <SvgText key={`l${d.rep}`} x={x(i)} y={height - 6} fill={colors.muted} fontSize={10} textAnchor="middle">
-              {d.rep}
-            </SvgText>
-          ) : null
-        )}
-        <SvgText x={width - 4} y={height - 6} fill={colors.muted} fontSize={10} textAnchor="end">
-          {unit}
-        </SvgText>
+        <Path d={smoothPath(pts)} stroke={LINE} strokeWidth={2} fill="none" strokeLinecap="round" />
       </Svg>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  empty: { backgroundColor: colors.card, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: colors.muted, fontSize: 13 },
-});

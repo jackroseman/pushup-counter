@@ -1,10 +1,9 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, AvatarStack, Button, Card, Icon, Ring, StreakChip, Text, WeekStrip } from '../ui';
+import { Avatar, AvatarStack, Button, Card, Icon, Ring, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
 import { color, gutter, radius } from '../ui/tokens';
 import { heroLabel, type TodayChallengeCard, type TodayHero, type TodayView } from '../ui/models/today';
-import { BrandMark } from './today/BrandMark';
 
 /** A ring at 0 still shows its start as a dot (E1, E3). */
 const RING_START = 0.0001;
@@ -43,16 +42,7 @@ export function TodayScreen({
 }) {
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      <View style={styles.navbar}>
-        <BrandMark />
-        {view.streak != null ? <StreakChip days={view.streak} /> : null}
-      </View>
-      <Text variant="largeTitle" accessibilityRole="header">
-        Today
-      </Text>
-      <Text variant="subhead" style={styles.date}>
-        {date}
-      </Text>
+      <TabHeader title="Today" subtitle={date} right={view.streak != null ? <StreakChip days={view.streak} /> : null} />
       {banner ? (
         <Text variant="footnote" style={styles.banner}>
           {banner}
@@ -252,8 +242,6 @@ function ChallengeRow({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
   content: { paddingHorizontal: gutter, paddingBottom: 32 },
-  navbar: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  date: { marginTop: 2 },
   banner: { marginTop: 8 },
   ringWrap: { alignSelf: 'center', marginTop: 16 },
   ringCaption: { marginTop: 6 },

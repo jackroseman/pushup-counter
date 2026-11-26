@@ -3,7 +3,7 @@ import { initialOf } from '../src/ui/Avatar';
 import { splitSegments } from '../src/ui/FormSplitBar';
 import { clamp01 } from '../src/ui/ProgressBar';
 import { ringGeometry } from '../src/ui/Ring';
-import { color, composite, contrast, hero, parseColor, radius, space, type } from '../src/ui/tokens';
+import { color, composite, contrast, hero, heroTrim, parseColor, radius, space, type } from '../src/ui/tokens';
 
 describe('tokens: contrast', () => {
   const surfaces = { bg: color.bg, surface: color.surface } as const;
@@ -72,7 +72,12 @@ describe('tokens: values match the plan (§1)', () => {
   });
 
   it('hero numbers are clamped to 28–150 and tabular', () => {
-    expect(hero(84)).toMatchObject({ fontSize: 84, lineHeight: 77, fontWeight: '700', fontVariant: ['tabular-nums'] });
+    expect(hero(84)).toMatchObject({ fontSize: 84, fontWeight: '700', fontVariant: ['tabular-nums'] });
+    // No lineHeight below the font size: it clips the top of the digits on iOS.
+    expect(hero(84).lineHeight).toBe(100);
+    expect(hero(84).lineHeight).toBeGreaterThanOrEqual(84);
+    // The tight 0.92 box comes from margins: 84 × (1.19 − 0.92) / 2 ≈ 11 on each side.
+    expect(heroTrim(84)).toBe(11);
     expect(hero(10).fontSize).toBe(28);
     expect(hero(400).fontSize).toBe(150);
   });

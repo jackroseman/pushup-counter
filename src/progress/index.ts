@@ -9,7 +9,6 @@ export {
   formatSinceMonth,
   formatTodaySubtitle,
 } from './format';
-export { formatFormScore, formScoreForReps } from './form';
 export { GOAL_KEY, goalForDate, loadGoal, programComplete, saveEnrollment, saveGoal } from './goals';
 export type { DayGoal, GoalChoice, GoalEnrollment, SaveResult } from './goals';
 export { CUSTOM_GOAL, PROGRAMS, currentTargetLabel, programById, scheduledReps, segmentForDay, segmentsCoverRamp } from './programs';
@@ -20,7 +19,6 @@ export {
   MILESTONES,
   STREAK_NOW,
   buildProgress,
-  chartCeiling,
   formatCount,
   lockedBadgeText,
 } from './progress';
@@ -60,7 +58,7 @@ export {
   weekCardLine,
 } from './nudges';
 export type { NudgePrefs, NudgeSyncAction, NudgeSyncState, WeekCardModel, WeekRanks } from './nudges';
-export { buildToday, celebrate, celebrationText, contributionFor, contributionLine, presentToday, streaks, travelLine } from './today';
+export { buildToday, celebrate, presentToday, streaks, travelLine } from './today';
 export type { Celebration, CelebrationKind, TodayModel } from './today';
 export { countedRepList, countsForStreak, PERSONAL_BACKFILL_MS, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';
 export type { Workout } from './workouts';

@@ -22,7 +22,6 @@ import {
 import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
 import { PushupSensors, faceTrackingSupported, startGravity, stopGravity } from '../sensors';
-import { FaceDiag, emptyFaceDiag } from './sessionView';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
@@ -96,16 +95,6 @@ export function setVoiceOn(on: boolean) {
   if (!on) Speech.stop().catch(() => {});
 }
 
-/** Dev diagnostics only (remove in PR 15): skip Core Motion on the next sets; sensor-effect runs. */
-let devSkipMotion = false;
-let effectRuns = 0;
-export function setDevSkipMotion(on: boolean) {
-  devSkipMotion = on;
-}
-export function devSkipMotionOn(): boolean {
-  return devSkipMotion;
-}
-
 export const historyStore = new HistoryStore(AsyncStorage);
 
 export function useSession(settings: Settings, battle?: BattleSessionOptions) {
@@ -139,8 +128,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   /** Mirrors state.phase for the sensor listeners. */
   const phaseRef = useRef<SessionPhase>('starting');
   const endReason = useRef<SessionEndReason>('user');
-  /** Dev-only face diagnostics (shown on the face screen in Pushup Dev). Read by polling, no re-renders. */
-  const diag = useRef<FaceDiag>(emptyFaceDiag());
 
   const [state, setState] = useState<SessionState>({
     phase: 'starting',
@@ -275,8 +262,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
   useEffect(() => {
     cancelled.current = false;
-    diag.current = emptyFaceDiag();
-    diag.current.effects = ++effectRuns;
     voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
@@ -285,9 +270,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       }),
       PushupSensors.addListener('onFaceDistance', (e) => {
         const d = e.tracked && e.distance > 0 ? e.distance : null;
-        diag.current.events += 1;
-        if (d !== null) diag.current.tracked += 1;
-        diag.current.lastEventAt = Date.now();
         if (d !== null) lastTrackedAt.current = e.timestamp;
         const g = guide.current;
         if (g && !cancelled.current) {
@@ -347,7 +329,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
         setState((s) => (s.faceVisible === (d !== null) ? s : { ...s, faceVisible: d !== null }));
       }),
       PushupSensors.addListener('onFaceTrackingError', (e) => {
-        diag.current.lastError = e.message;
         patch({ status: `Depth tracking problem: ${e.message}` });
       }),
       PushupSensors.addListener('onGravity', (e) => {
@@ -389,10 +370,8 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       }
       await activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
       await PushupSensors.enablePlaybackAudioSession().catch(() => {});
-      diag.current.starts += 1;
       const faceOk = await PushupSensors.startFaceDistance(FACE_HZ).catch(() => false);
       if (cancelled.current) return;
-      diag.current.faceStart = faceOk ? 'ok' : 'failed';
       if (!faceOk) {
         patch({
           phase: 'unavailable',
@@ -408,11 +387,9 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
       // Flat-phone check. Builds before 1.2.1 (no Core Motion) and devices without device motion
       // skip it and go straight to calibration, exactly as before.
-      // Dev diagnostics can skip Core Motion for a set (the 1.2.0 flow: no flat check).
-      const motionOk = devSkipMotion ? false : await startGravity(GRAVITY_HZ);
+      const motionOk = await startGravity(GRAVITY_HZ);
       if (cancelled.current) return;
       motionOn.current = motionOk;
-      diag.current.motion = devSkipMotion ? 'skipped' : motionOk ? 'on' : 'none';
       patch({ flatCheck: motionOk });
 
       // Place the phone flat, then guided calibration (see CalibrationGuide); locking in starts a
@@ -453,20 +430,12 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       clearInterval(warn);
       subs.forEach((s) => s.remove());
       PushupSensors.stopProximity().catch(() => {});
-      diag.current.stops += 1;
       PushupSensors.stopFaceDistance().catch(() => {});
       motionOn.current = false;
       stopGravity();
       deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
   }, [onRep, onLocked, startCalibration, startPlacing, patch]);
-
-  /** Dev diagnostics: stop Core Motion now (the flat check stops; nothing else changes). */
-  const devStopMotion = useCallback(() => {
-    motionOn.current = false;
-    diag.current.motion = 'off';
-    stopGravity();
-  }, []);
 
   /** Ends the session, persists it (if it has reps) and returns the record. */
   const finish = useCallback((): Promise<SessionRecord> => {
@@ -481,7 +450,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     guide.current = null;
     clearCountdown();
     await PushupSensors.stopProximity().catch(() => {});
-    diag.current.stops += 1;
     await PushupSensors.stopFaceDistance().catch(() => {});
     motionOn.current = false;
     await stopGravity();
@@ -512,5 +480,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate, diag, devStopMotion };
+  return { state, finish, live, recalibrate };
 }

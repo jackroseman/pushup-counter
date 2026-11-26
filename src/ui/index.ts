@@ -27,3 +27,4 @@ export type { PodiumEntry } from './Podium';
 export { LeaderRow } from './LeaderRow';
 export { EmptyState } from './EmptyState';
 export { Screen } from './Screen';
+export { TabHeader, TAB_HEADER_ROW, TAB_HEADER_TOP } from './TabHeader';

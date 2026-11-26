@@ -1,4 +1,4 @@
-import { bubbleOffset, levelHint } from '../src/components/level';
+import { bubbleOffset } from '../src/components/level';
 import { TiltMonitor } from '../src/core';
 
 function snapAt(deg: number, axis: 'x' | 'y' = 'x') {
@@ -20,12 +20,5 @@ describe('level', () => {
   it('keeps the bubble inside the ring', () => {
     const o = bubbleOffset(snapAt(80));
     expect(Math.hypot(o.dx, o.dy)).toBeLessThanOrEqual(82);
-  });
-
-  it('gives a plain hint', () => {
-    expect(levelHint(null)).toMatch(/Checking/);
-    expect(levelHint(snapAt(170))).toBe('Turn the screen up');
-    expect(levelHint(snapAt(20))).toBe('Tilt closer to center');
-    expect(levelHint(snapAt(3))).toMatch(/Hold still/);
   });
 });

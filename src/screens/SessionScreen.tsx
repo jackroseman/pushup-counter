@@ -8,7 +8,7 @@ import { BattleSessionOptions, COUNTDOWN_SECONDS, LIVE_WINDOW_MS, setVoiceOn, us
 import { rememberedBattle } from '../battles/battleCache';
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
-import { Button, Card, Countdown, IconButton, QualityPill, Text, color, gutter, type } from '../ui';
+import { Button, Card, Countdown, IconButton, QualityPill, Text, color, gutter, heroLineHeight, heroTrim, type } from '../ui';
 
 /** Top bar of the set screens: close on the left, a small title, an optional action on the right. */
 function SetBar({ title, onClose, right }: { title: string; onClose: () => void; right?: React.ReactNode }) {
@@ -40,7 +40,7 @@ export function SessionScreen({
   /** The (i) on "Get set": opens How it works (frame 3). No (i) when not given. */
   onHowItWorks?: () => void;
 }) {
-  const { state, finish, live, recalibrate, diag, devStopMotion } = useSession(settings, battle);
+  const { state, finish, live, recalibrate } = useSession(settings, battle);
   const [voice, setVoice] = useState(true);
   const [elapsedMs, setElapsedMs] = useState(0);
   const last = state.lastRep;
@@ -116,7 +116,7 @@ export function SessionScreen({
       <View style={styles.container}>
         <SetBar title="Get set" onClose={onCancel} right={infoButton} />
         <View style={styles.faceWrap}>
-          <FaceCentering guide={state.guide} flatCheck={state.flatCheck} diag={diag} status={state.status} onStopMotion={devStopMotion} />
+          <FaceCentering guide={state.guide} flatCheck={state.flatCheck} />
         </View>
       </View>
     );
@@ -198,7 +198,13 @@ const styles = StyleSheet.create({
   faceWrap: { flex: 1, paddingTop: 18 },
   readyWrap: { flex: 1, alignItems: 'center', paddingTop: 120 },
   readyTitle: { marginTop: 44 },
-  count: { ...type.counter, color: color.label, lineHeight: Math.round(type.counter.fontSize * 0.92) },
+  // Full line height (a smaller lineHeight clips the top of the digits on iOS), tight box via margins.
+  count: {
+    ...type.counter,
+    color: color.label,
+    lineHeight: heroLineHeight(type.counter.fontSize),
+    marginVertical: -heroTrim(type.counter.fontSize),
+  },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   chartCard: { alignSelf: 'stretch', marginTop: 26, paddingTop: 14, paddingBottom: 14 },
   chartHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

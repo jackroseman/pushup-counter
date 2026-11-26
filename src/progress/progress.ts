@@ -74,17 +74,6 @@ export function lockedBadgeText(remaining: number, milestone: number): string {
   return `${formatCount(remaining)} to ${formatCount(milestone)}`;
 }
 
-/**
- * Top of a chart axis. The next milestone stays on screen so a small total
- * still shows the line it is climbing toward. Past the last milestone, the
- * axis follows the total.
- */
-export function chartCeiling(peak: number, guides: readonly number[]): number {
-  const top = Math.max(0, peak);
-  const next = guides.find((g) => g >= top);
-  return Math.max(top, next ?? 0, 1);
-}
-
 function totalsByDate(workouts: readonly Workout[], zone: string): Map<string, number> {
   const totals = new Map<string, number>();
   for (const workout of workouts) {

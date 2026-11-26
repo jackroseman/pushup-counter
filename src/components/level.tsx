@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { TiltSnapshot } from '../core';
-import { Pill, Text, color } from '../ui';
+import { Text, color } from '../ui';
 
 /** Level size (frame 6): a 240 pt dial with a 100 pt target ring and a 32 pt bubble. */
 const SIZE = 240;
@@ -34,15 +34,7 @@ export function bubbleOffset(
   return { dx, dy };
 }
 
-/** Plain hint under the level. */
-export function levelHint(level: TiltSnapshot | null): string {
-  if (!level || level.tiltDeg === null) return 'Checking your phone…';
-  if (!level.screenUp) return 'Turn the screen up';
-  if (!level.flat) return 'Tilt closer to center';
-  return 'Hold still…';
-}
-
-/** "Lay your phone flat" (frame 6): the level, the title and a Flat pill. */
+/** "Lay your phone flat" (frame 6): the level and the title. */
 export function LevelView({ level }: { level: TiltSnapshot | null }) {
   const known = !!level && level.tiltDeg !== null;
   const flat = known && level!.flat;
@@ -61,16 +53,6 @@ export function LevelView({ level }: { level: TiltSnapshot | null }) {
       <Text variant="title2" align="center" style={styles.title}>
         Lay your phone flat
       </Text>
-      <Text variant="subhead" align="center" style={styles.sub}>
-        Screen up, on the floor under your chest.
-      </Text>
-      <View accessibilityLiveRegion="polite">
-        {flat ? (
-          <Pill label="Flat" tone="signal" size="large" icon="check" style={styles.pill} />
-        ) : (
-          <Pill label={levelHint(level)} size="large" style={styles.pill} />
-        )}
-      </View>
     </View>
   );
 }
@@ -78,6 +60,4 @@ export function LevelView({ level }: { level: TiltSnapshot | null }) {
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center' },
   title: { marginTop: 44 },
-  sub: { marginTop: 8, fontSize: 17, lineHeight: 24, maxWidth: 290 },
-  pill: { marginTop: 22 },
 });

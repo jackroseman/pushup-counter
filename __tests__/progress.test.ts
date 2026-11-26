@@ -6,10 +6,7 @@ import {
   PROGRAMS,
   addCalendarDays,
   celebrate,
-  celebrationText,
-  contributionLine,
   currentTargetLabel,
-  formScoreForReps,
   goalForDate,
   loadGoal,
   phoneCountedReps,
@@ -293,12 +290,6 @@ describe('after a set', () => {
     },
   ];
 
-  it('says what this set did for today', () => {
-    expect(contributionLine(32, 50, false)).toBe('This set put you at 32 / 50.');
-    expect(contributionLine(12, null, false)).toBe('This set put you at 12 today.');
-    expect(contributionLine(4, 0, true)).toBe('This set put you at 4. Rest day.');
-  });
-
   it('returns first_set when the merged history has a single set', () => {
     expect(celebrate([workout('2026-11-02', 12, 'only')], customGoal, '2026-11-02', 'UTC', 'only')).toEqual({
       kind: 'first_set',
@@ -314,7 +305,6 @@ describe('after a set', () => {
     const history = [workout('2026-10-01', 50), workout('2026-10-02', 50), workout('2026-10-03', 50), workout('2026-10-04', 50), workout('2026-10-05', 50)];
     const card = celebrate([...history, workout('2026-11-02', 10, 'earlier'), workout('2026-11-02', 60, 'this')], customGoal, '2026-11-02', 'UTC', 'this');
     expect(card).toEqual({ kind: 'best_set', value: 60, goalMet: true });
-    expect(celebrationText(card!)).toEqual({ title: 'New best set: 60.', also: 'Also: goal met.' });
   });
 
   it('returns structured kinds for milestone, longest_streak, best_day, best_week, best_month, goal_met, and set_marker', () => {
@@ -451,18 +441,6 @@ describe('counted reps and form score', () => {
     await awaitHistory(new MemoryKV(), record);
   });
 
-  it('scores tempo as consistency and says when three counted reps are missing', () => {
-    const steady = [rep(1, 'full', 0, 0.7), rep(2, 'good', 1000, 0.7), rep(3, 'full', 2000, 0.7)];
-    const scored = formScoreForReps(steady, { depth: 0.5, consistency: 0.3, tempo: 0.2 }, { startedAt: 0 });
-    expect(scored.tempo).toBe(100);
-    expect(scored.score).toBe(85);
-    expect(scored.tempoCaption).toBeNull();
-
-    const two = formScoreForReps(steady.slice(0, 2), { depth: 0.5, consistency: 0.3, tempo: 0.2 }, { startedAt: 0 });
-    expect(two.tempo).toBeNull();
-    expect(two.tempoCaption).toBe('Tempo needs 3 counted reps');
-    expect(two.score).toBe(65);
-  });
 });
 
 async function awaitHistory(kv: MemoryKV, record: SessionRecord) {

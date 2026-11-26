@@ -316,6 +316,6 @@ Held / skipped: invites wait for the App Store page (no change). Activity feed, 
 
 Sunny later confirmed: keep the 1-day default, no recap time picker, Count out loud on by default. The New challenge header stays the mockup's Cancel + centered title.
 
-Follow-up PR (into `dev`, after #54–#56 merged):
+Follow-up PR #57 (into `dev`, after #54–#56 merged):
 - League (i) copy is exactly "Every push-up you do this week counts. Most reps wins." and "The board starts fresh every week." (the Improvement/points line is removed).
 - Server-side `deleted_sets` tombstones: `delete_set` writes a tombstone (and a delete trigger covers the existing RLS path), `submit_set` refuses that id, and clients drop tombstoned sets on sync. Challenge sets stay. League and lifetime totals still come from live `sets` rows (the deleted row is gone). Migration `20261126135306_deleted_sets`, tested with test:db; applied to staging only after this PR merges to dev.

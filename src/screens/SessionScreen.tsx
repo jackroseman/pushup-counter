@@ -40,7 +40,7 @@ export function SessionScreen({
   /** The (i) on "Get set": opens How it works (frame 3). No (i) when not given. */
   onHowItWorks?: () => void;
 }) {
-  const { state, finish, live, recalibrate } = useSession(settings, battle);
+  const { state, finish, live, recalibrate, faceViewShown } = useSession(settings, battle);
   const [voice, setVoice] = useState(true);
   const [elapsedMs, setElapsedMs] = useState(0);
   const last = state.lastRep;
@@ -116,7 +116,7 @@ export function SessionScreen({
       <View style={styles.container}>
         <SetBar title="Get set" onClose={onCancel} right={infoButton} />
         <View style={styles.faceWrap}>
-          <FaceCentering guide={state.guide} flatCheck={state.flatCheck} />
+          <FaceCentering guide={state.guide} flatCheck={state.flatCheck} onFaceViewShown={faceViewShown} />
         </View>
       </View>
     );

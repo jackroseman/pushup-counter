@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -28,13 +28,30 @@ function Brackets({ ok }: { ok: boolean }) {
  * "Center your face" (frame 7): the live face view in a card with Phone flat / Centered pills,
  * then the title, one plain line and the hold-still progress bar. Logic stays in CalibrationGuide.
  */
-export function FaceCentering({ guide, flatCheck }: { guide: GuideSnapshot | null; flatCheck: boolean }) {
+export function FaceCentering({
+  guide,
+  flatCheck,
+  onFaceViewShown,
+}: {
+  guide: GuideSnapshot | null;
+  flatCheck: boolean;
+  /** Called once each time the face view is laid out on screen (the mesh needs tracking to start over). */
+  onFaceViewShown?: () => void;
+}) {
   const v = faceCenteringView(guide);
   const minimal = faceMeshVariantSupported();
+  const shown = useRef(false);
+  const onFaceLayout = () => {
+    if (shown.current) return;
+    shown.current = true;
+    onFaceViewShown?.();
+  };
   return (
     <View>
       <View style={styles.card}>
-        <FaceMeshView style={StyleSheet.absoluteFill} showAngles={false} {...(minimal ? { variant: 'minimal' as const } : null)} />
+        <View style={StyleSheet.absoluteFill} onLayout={onFaceLayout} pointerEvents="none" testID="face-view">
+          <FaceMeshView style={StyleSheet.absoluteFill} showAngles={false} {...(minimal ? { variant: 'minimal' as const } : null)} />
+        </View>
         <Brackets ok={v.ready} />
         {flatCheck ? <Pill label="Phone flat" tone="signal" icon="check" style={styles.pillLeft} /> : null}
         <Pill label={v.centered ? 'Centered' : 'Not centered'} tone={v.centered ? 'signal' : 'neutral'} style={styles.pillRight} />

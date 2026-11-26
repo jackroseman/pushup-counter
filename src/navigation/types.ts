@@ -22,6 +22,8 @@ export type RootStackParamList = {
   Summary: { record: SessionRecord; from: 'session' | 'history' };
   AllSets: undefined;
   Settings: undefined;
+  DailyReminder: undefined;
+  QuietHours: undefined;
   ProfileSetup: undefined;
   Battle: {
     challengeId: string;

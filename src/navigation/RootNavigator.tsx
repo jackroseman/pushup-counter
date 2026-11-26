@@ -57,7 +57,7 @@ import type { RootStackParamList } from './types';
 import { SessionRoute } from './routes/SessionRoute';
 import { SummaryRoute } from './routes/SummaryRoute';
 import { AllSetsRoute } from './routes/AllSetsRoute';
-import { SettingsRoute } from './routes/SettingsRoute';
+import { DailyReminderRoute, QuietHoursRoute, SettingsRoute } from './routes/SettingsRoute';
 import { GoalRoute, ProfileSetupRoute } from './routes/GoalRoutes';
 import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, NewBattleRoute } from './routes/ChallengeRoutes';
 
@@ -460,6 +460,8 @@ export function RootNavigator() {
           <Stack.Screen name="Summary" component={SummaryRoute} />
           <Stack.Screen name="AllSets" component={AllSetsRoute} options={header('All sets')} />
           <Stack.Screen name="Settings" component={SettingsRoute} options={header('Settings')} />
+          <Stack.Screen name="DailyReminder" component={DailyReminderRoute} options={header('Daily reminder')} />
+          <Stack.Screen name="QuietHours" component={QuietHoursRoute} options={header('Quiet hours')} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupRoute} />
           <Stack.Screen name="Battle" component={BattleRoute} options={header('')} />
           <Stack.Screen name="NewBattle" component={NewBattleRoute} options={header('New challenge')} />

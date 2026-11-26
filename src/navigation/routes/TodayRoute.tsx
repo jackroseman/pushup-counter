@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 import { TodayScreen } from '../../screens/TodayScreen';
 import { HowToSheet } from '../../components/HowToSheet';
@@ -56,11 +56,8 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
     });
   }, [userId]);
 
-  // One my_progress, one my_league and one my_challenges call per focus.
-  const reload = useCallback(() => {
-    setNow(Date.now());
-    refreshRemote();
-    historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
+  // League and challenges need a signed-in account with a username.
+  const reloadCompete = useCallback(() => {
     if (!supabase || !userId || !profile) return;
     fetchMyLeague(supabase)
       .then((doc) => {
@@ -74,8 +71,17 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
       rememberBattles(rows);
       setBattlesFor({ userId, battles: rows });
     });
-  }, [refreshRemote, userId, profile]);
-  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
+  }, [userId, profile]);
+  // One my_progress, one my_league and one my_challenges call per focus. The league and
+  // challenges also load when sign-in or the username finishes while Today is open.
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+      refreshRemote();
+      historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
+    }, [refreshRemote]),
+  );
+  useFocusEffect(reloadCompete);
   // Back from the background: today's date and the time left on challenges move on.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {

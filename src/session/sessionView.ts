@@ -102,3 +102,53 @@ export function faceRestartDue({
 }): boolean {
   return now - Math.max(since, lastTracked, lastRestart) >= gapMs;
 }
+
+/** Face diagnostics counted by useSession for the dev-only line on the face screen (remove in PR 15). */
+export interface FaceDiag {
+  /** startFaceDistance result: "ok" also means camera access was granted. */
+  faceStart: 'pending' | 'ok' | 'failed';
+  /** onFaceDistance events (native sends every tracked sample and the first lost one of a gap). */
+  events: number;
+  tracked: number;
+  lastEventAt: number;
+  lastError: string | null;
+  restarts: number;
+}
+
+export function emptyFaceDiag(): FaceDiag {
+  return { faceStart: 'pending', events: 0, tracked: 0, lastEventAt: 0, lastError: null, restarts: 0 };
+}
+
+/**
+ * One dense line, e.g. "cam ok · view 361x380 full · ev 12/9 · last 0.2s · rst 1".
+ * view "-" = the face view's card has not been laid out yet.
+ */
+export function faceDiagLine(
+  d: FaceDiag,
+  view: { width: number; height: number } | null,
+  variant: 'full' | 'minimal',
+  now: number
+): string {
+  const parts = [
+    `cam ${d.faceStart}`,
+    view ? `view ${Math.round(view.width)}x${Math.round(view.height)} ${variant}` : `view - ${variant}`,
+    `ev ${d.events}/${d.tracked}`,
+    d.lastEventAt ? `last ${(Math.max(0, now - d.lastEventAt) / 1000).toFixed(1)}s` : 'last -',
+    `rst ${d.restarts}`,
+  ];
+  if (d.lastError) parts.push(`err ${d.lastError}`);
+  return parts.join(' · ');
+}
+
+/**
+ * Pushup Dev (APP_VARIANT=development: app name "Pushup Dev", bundle id ending ".dev"; see
+ * app.config.ts) or a Metro dev bundle.
+ */
+export function isDevVariant(
+  config: { name?: string; ios?: { bundleIdentifier?: string } } | null | undefined,
+  dev: boolean
+): boolean {
+  if (dev) return true;
+  if (!config) return false;
+  return config.name === 'Pushup Dev' || (config.ios?.bundleIdentifier ?? '').endsWith('.dev');
+}

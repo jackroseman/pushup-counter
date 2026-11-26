@@ -63,7 +63,7 @@ export const type = {
   body: { fontSize: 17, lineHeight: 22, fontWeight: '400' },
   subhead: { fontSize: 15, lineHeight: 20, fontWeight: '400' },
   footnote: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
   /** Big numbers (28–150 pt). Pass the size with `hero(size)`. */
   hero: { fontWeight: '700', fontVariant: ['tabular-nums'] },
   /** The in-set rep counter: regular SF Pro Display Bold, no condensed face, no font files. */

@@ -66,7 +66,7 @@ describe('tokens: values match the plan (§1)', () => {
       body: '17/400',
       subhead: '15/400',
       footnote: '13/400',
-      caption: '12/500',
+      caption: '12/400',
     });
     expect(type.counter).toEqual({ fontSize: 180, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -4 });
   });

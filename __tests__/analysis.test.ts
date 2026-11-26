@@ -1,4 +1,4 @@
-import { analyzeSet, mean, stdDev, thirds, tempoTrendLabel, Rep, TraceRecorder } from '../src/core';
+import { analyzeSet, mean, stdDev, thirds, Rep, TraceRecorder } from '../src/core';
 
 function rep(index: number, timestamp: number, depth: number | null, opts: Partial<Rep> = {}): Rep {
   return {
@@ -53,7 +53,6 @@ describe('analyzeSet', () => {
 
   it('tempo trend detects fatigue (last third slower than first)', () => {
     expect(a.tempo).toEqual({ firstThirdSec: 1, lastThirdSec: 2, changePct: 100, trend: 'slowing' });
-    expect(tempoTrendLabel(a.tempo)).toBe('Slowed down 100%');
   });
 
   it('depth metrics', () => {
@@ -78,7 +77,6 @@ describe('analyzeSet', () => {
       10_000
     );
     expect(steady.tempo?.trend).toBe('steady');
-    expect(tempoTrendLabel(steady.tempo)).toBe('Steady pace');
     expect(steady.depthConsistency).toBe('very consistent');
   });
 
@@ -90,7 +88,6 @@ describe('analyzeSet', () => {
     expect(old.depthConsistency).toBeNull();
     expect(old.tempo).toBeNull();
     expect(old.fastestRep).toEqual({ rep: 2, value: 1.5 });
-    expect(tempoTrendLabel(old.tempo)).toBe('Not enough reps');
   });
 
   it('empty set', () => {

@@ -121,6 +121,3 @@ export async function flushBattleQueue(kv: KeyValueStore, submit: Submit): Promi
   await save(kv, { pending: rest, failed: [...s.failed, ...failed].slice(-20) });
   return { uploaded, failed, remaining: rest.length };
 }
-
-/** Battles with an attempt that is recorded on this phone but not on the server yet. */
-export const pendingBattleIds = (s: BattleQueueState) => new Set(s.pending.map((q) => q.challengeId));

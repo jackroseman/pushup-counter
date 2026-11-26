@@ -55,7 +55,7 @@
     "doctor": "expo-doctor",
     "ci": "npm run lint && jest --ci && npm run test:db && tsc --noEmit",
     "test:db": "node --test supabase/tests/db.test.mjs",
-    "lint": "expo lint"
+    "lint": "expo lint --max-warnings 16"
   },
   "private": true,
   "jest": {

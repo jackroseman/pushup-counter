@@ -52,8 +52,6 @@ export const color = {
   },
 } as const;
 
-export type ColorName = keyof typeof palette;
-
 /** System font (SF Pro; iOS switches to SF Pro Display at 20 pt and up). */
 export const type = {
   largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: '700' },

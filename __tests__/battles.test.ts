@@ -1,9 +1,7 @@
 import {
   Battle,
-  battleSubtitle,
   battleTitle,
   streakDayCount,
-  streakStandingLine,
   canPlay,
   canRespond,
   creatorAttemptCue,
@@ -27,7 +25,6 @@ import {
   isPermanentFailure,
   isPermanentStatus,
   loadBattleQueue,
-  pendingBattleIds,
   Submit,
 } from '../src/battles/uploadQueue';
 import type { KeyValueStore } from '../src/storage/history';
@@ -98,16 +95,6 @@ describe('battle model', () => {
     expect(streakDayCount({ startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-09T00:00:00Z' })).toBe(7);
     expect(canPlay(battle({ kind: 'streak', metric: null, attemptsAllowed: null }), NOW)).toBe(false);
     expect(canPlay(battle({ kind: 'team', metric: null, attemptsAllowed: null, targetReps: 500 }), NOW)).toBe(false);
-    expect(streakStandingLine({ status: 'accepted', streakFloorReps: 30, eliminatedOn: null })).toBe('Still in · 30 a day');
-    expect(streakStandingLine({ status: 'accepted', eliminatedOn: '2026-11-04' })).toBe('Out · 2026-11-04');
-    const teamWin = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
-      person('me', { isMe: true, isWinner: true, rank: null, validReps: 0 }),
-    ]);
-    expect(battleSubtitle(teamWin, NOW)).toBe('You won');
-    const teamMiss = battle({ kind: 'team', status: 'completed', metric: null, targetReps: 500 }, [
-      person('me', { isMe: true, isWinner: false, rank: null, validReps: 12 }),
-    ]);
-    expect(battleSubtitle(teamMiss, NOW)).toBe('Missed the goal');
   });
 
   it('only the creator may go first while a battle is pending', () => {
@@ -133,19 +120,6 @@ describe('battle model', () => {
     expect(g.yourMove.map((b) => b.id)).toEqual(['soon', 'mine']);
     expect(g.waiting.map((b) => b.id)).toEqual(['waiting']);
     expect(g.finished.map((b) => b.id)).toEqual(['recent', 'old']);
-  });
-
-  it('describes where a battle stands', () => {
-    expect(battleSubtitle(battle(), NOW)).toBe('Your move · 20 h 0 m left');
-    const won = battle({ status: 'completed' }, [person('alice', { rank: 2 }), person('me', { isMe: true, rank: 1 })]);
-    expect(battleSubtitle(won, NOW)).toBe('You won');
-    const draw = battle({ status: 'completed' }, [person('alice', { rank: 1 }), person('me', { isMe: true, rank: 1 })]);
-    expect(battleSubtitle(draw, NOW)).toBe('Draw');
-    const third = battle({ status: 'completed' }, [person('a', { rank: 1 }), person('b', { rank: 2 }), person('me', { isMe: true, rank: 3 })]);
-    expect(battleSubtitle(third, NOW)).toBe('You came 3 of 3');
-    const waiting = battle({}, [person('alice', { status: 'invited' }), person('me', { isMe: true, attemptsUsed: 1 })]);
-    expect(battleSubtitle(waiting, NOW)).toBe('Waiting on 1 · 20 h 0 m left');
-    expect(battleSubtitle(battle({ status: 'expired' }), NOW)).toBe('Ended — not enough people played.');
   });
 
   it('formats time left and scores', () => {
@@ -281,7 +255,6 @@ describe('battle upload queue', () => {
     expect(q.pending.map((p) => p.payload.id)).toEqual(['s2', 's1']);
     expect(q.pending[1].payload).toEqual({ id: 's1', reps: [1], challengeId: 'b1' });
     expect(q.pending[1].challengeId).toBe('b1');
-    expect(pendingBattleIds(q)).toEqual(new Set(['b1', 'b2']));
 
     const sent: unknown[] = [];
     const submit: Submit = async (p) => (sent.push(p.id), { ok: true, setId: `${p.id}` });

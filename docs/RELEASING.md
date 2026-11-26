@@ -11,10 +11,13 @@ and the exact steps for a release. CONTRIBUTING.md covers branches, PRs and CI.
 | `main`     | `eas-ship.yml`         | Rep Royale on TestFlight (profile/channel/EAS env `production`) |
 | `dev`/`main`, only if `supabase/` changed | `supabase-deploy.yml` | staging / prod Supabase |
 
-`eas-ship.yml` is started by the `ship` job in `ci.yml` after a merge, and only after
-the `checks` job has passed for that exact merge commit (it is no longer triggered by
-push alone, so a red CI run cannot reach a phone). It then runs `scripts/eas-ship.sh`
-on a GitHub runner (no EAS queue):
+On `dev`, `eas-ship.yml` is started by the `ship` job in `ci.yml` after a merge, and
+only after the `checks` job has passed for that exact merge commit (it is no longer
+triggered by push alone, so a red CI run cannot reach a phone). Until the next
+`dev` → `main` release, `main` still uses the previous ship-on-push workflow. After
+that release, merges to `main` wait for `checks` the same way.
+
+When it does run, it calls `scripts/eas-ship.sh` on a GitHub runner (no EAS queue):
 
 1. Fingerprint the project with `eas fingerprint:generate` (same hash EAS builds record).
 2. **A build of that profile has this fingerprint** (finished, queued or building, any

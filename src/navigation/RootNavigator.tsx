@@ -10,7 +10,7 @@ import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
 import { DEFAULT_SETTINGS, Settings, loadSettings, saveSettings } from '../storage/settings';
 import { historyStore } from '../session/useSession';
-import { colors } from '../theme';
+import { color } from '../ui/tokens';
 import { APP_SCHEME, notificationLink, parseAppLink } from '../backend/linking';
 import { personName } from '../battles/model';
 import { deviceTimeZone } from '../backend/profile';
@@ -75,7 +75,7 @@ const GOAL_SHEET: NativeStackNavigationOptions = {
   sheetAllowedDetents: [0.62, 1],
   sheetGrabberVisible: true,
   sheetCornerRadius: 34,
-  contentStyle: { backgroundColor: colors.card },
+  contentStyle: { backgroundColor: color.surface },
 };
 
 /** Frame 21: New challenge, a full-height native form sheet with its own Cancel / title row. */
@@ -84,7 +84,7 @@ const NEW_CHALLENGE_SHEET: NativeStackNavigationOptions = {
   sheetAllowedDetents: [1],
   sheetGrabberVisible: true,
   sheetCornerRadius: 34,
-  contentStyle: { backgroundColor: colors.card },
+  contentStyle: { backgroundColor: color.surface },
 };
 
 /** The league's (i): how the two boards work, a short native sheet. */
@@ -93,7 +93,7 @@ const LEAGUE_INFO_SHEET: NativeStackNavigationOptions = {
   sheetAllowedDetents: 'fitToContents',
   sheetGrabberVisible: true,
   sheetCornerRadius: 34,
-  contentStyle: { backgroundColor: colors.card },
+  contentStyle: { backgroundColor: color.surface },
 };
 
 const normalizeUrl = (url: string | null | undefined): string | null => {
@@ -133,7 +133,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 const theme = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg, text: colors.text, primary: colors.accent },
+  colors: { ...DarkTheme.colors, background: color.bg, card: color.bg, text: color.label, primary: color.label },
 };
 
 function openServerEnrollment(doc: ServerProgress | null): GoalSnapshot | null {
@@ -462,7 +462,7 @@ export function RootNavigator() {
   return (
     <AppStateContext.Provider value={value}>
       <NavigationContainer linking={linking} theme={theme}>
-        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}>
           <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="Welcome" component={WelcomeRoute} options={{ gestureEnabled: false, animation: 'none' }} />
           <Stack.Screen name="GoalPick" component={GoalPickRoute} />

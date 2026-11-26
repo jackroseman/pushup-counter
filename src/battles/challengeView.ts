@@ -337,3 +337,20 @@ export function rematchParams(b: Battle): { friendIds: string[]; offer: Challeng
   else offer = { kind: b.kind };
   return { friendIds, offer };
 }
+
+/**
+ * Can an ordinary set still add reps to this challenge? Most reps, team and streak count every set done
+ * inside their window, for anyone who has joined, whether or not the others have accepted yet (a challenge
+ * is "pending" until a second person accepts, e.g. while the opponent hasn't answered or is a bot).
+ * A best set is not here: it has its own Play attempt (`canPlay`).
+ */
+export function canAddReps(b: Battle, now: number): boolean {
+  if (b.kind === 'best_set' || !isOpen(b)) return false;
+  const mine = me(b);
+  if (!mine || mine.status !== 'accepted') return false;
+  const ends = time(b.endsAt);
+  if (Number.isFinite(ends) && ends <= now) return false;
+  const starts = time(b.startsAt);
+  if (Number.isFinite(starts) && starts > now) return false;
+  return true;
+}

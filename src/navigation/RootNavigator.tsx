@@ -49,6 +49,7 @@ import {
   workoutDate,
   workoutFromRecord,
 } from '../progress';
+import { header } from './headerOptions';
 import { AppStateContext, type RemoteProgress } from './appState';
 import { getStateFromPath, linkingConfig } from './linkingConfig';
 import { MainTabs } from './MainTabs';
@@ -64,16 +65,6 @@ import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, NewBattleRoute } f
 export type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-/** Native header for pushed screens: small centered title, chevron-only back, swipe-back (frames 15, 26–29). */
-const header = (title: string) => ({
-  headerShown: true,
-  title,
-  headerBackButtonDisplayMode: 'minimal' as const,
-  headerShadowVisible: false,
-  headerStyle: { backgroundColor: colors.bg },
-  headerTintColor: colors.text,
-});
 
 /** Web invite links (https://<domain>/b/<token>, once a domain exists) are mapped to the scheme form. */
 let webBaseUrl: string | null = null;

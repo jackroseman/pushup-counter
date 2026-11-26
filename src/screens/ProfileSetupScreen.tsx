@@ -15,14 +15,20 @@ import {
   suggestUsername,
   usernameError,
 } from '../backend/profile';
+import { profileDraftState, type Availability } from '../progress/draft';
 
-type Availability = 'unknown' | 'checking' | 'free' | 'taken';
 
-/** Pick a username (first time) or edit it later. Friends find you by username. */
-export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+
+export type ProfileForm = ReturnType<typeof useProfileForm>;
+
+/**
+ * State and save for the username screen. Editing an existing profile is a draft: `dirty` / `canSave`
+ * drive the header Save button (see ProfileSetupRoute). First-time setup keeps its Continue button.
+ */
+export function useProfileForm({ onDone }: { onDone: () => void }) {
   const { session } = useBackend();
   const { profile, setProfile } = useIdentity();
-  const editing = !!profile;
+  const [editing] = useState(() => !!profile); // stays put after the first save, while the screen pops
   const [username, setUsername] = useState(profile?.username ?? '');
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
   const [availability, setAvailability] = useState<Availability>('unknown');
@@ -58,6 +64,8 @@ export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; o
     return () => clearTimeout(t);
   }, [normalized, formatError, profile?.username]);
 
+  const draftState = profile ? profileDraftState(profile, { username, displayName }, availability) : { dirty: false, canSave: false };
+
   const save = async () => {
     if (!supabase || !session || formatError || nameError || !normalized || availability === 'taken') return;
     setSaving(true);
@@ -74,6 +82,12 @@ export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; o
     onDone();
   };
 
+  return { editing, username, setUsername, displayName, setDisplayName, availability, saving, message, formatError, nameError, save, ...draftState };
+}
+
+/** Pick a username (first time) or edit it later. Friends find you by username. */
+export function ProfileSetupScreen({ form, onCancel }: { form: ProfileForm; onCancel: () => void }) {
+  const { editing, username, setUsername, displayName, setDisplayName, availability, saving, message, formatError, nameError, save } = form;
   const hint =
     formatError ??
     (availability === 'checking' ? 'Checking…' : availability === 'taken' ? 'That username is taken.' : availability === 'free' ? 'Available ✓' : ' ');
@@ -81,9 +95,8 @@ export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; o
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{editing ? 'Edit profile' : 'Choose a username'}</Text>
-        <Text style={styles.subtitle}>Friends find and challenge you by your username.</Text>
-
+        {editing ? null : <Text style={styles.title}>Choose a username</Text>}
+        <Text style={[styles.subtitle, editing && styles.subtitleEdit]}>Friends find and challenge you by your username.</Text>
         <View style={styles.card}>
           <Text style={styles.label}>Username</Text>
           <View style={styles.inputRow}>
@@ -116,8 +129,12 @@ export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; o
         </View>
 
         {message ? <Text style={[styles.hint, styles.error]}>{message}</Text> : null}
-        {saving ? <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} /> : <Button title={editing ? 'Save' : 'Continue'} onPress={save} />}
-        <Button title={editing ? 'Cancel' : 'Later'} kind="secondary" onPress={onCancel} />
+        {editing ? null : (
+          <>
+            {saving ? <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} /> : <Button title="Continue" onPress={save} />}
+            <Button title="Later" kind="secondary" onPress={onCancel} />
+          </>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -126,6 +143,7 @@ export function ProfileSetupScreen({ onDone, onCancel }: { onDone: () => void; o
 const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 12 },
+  subtitleEdit: { marginTop: 16 },
   subtitle: { color: colors.muted, fontSize: 15, marginTop: 4, marginBottom: 16 },
   card: { backgroundColor: colors.card, borderRadius: 16, padding: 16, marginBottom: 12 },
   label: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 6 },

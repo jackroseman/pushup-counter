@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import { Button, Card, IconButton, ListGroup, ListRow, Text } from '../ui';
 import { color, gutter } from '../ui/tokens';
 import { DEFAULT_PROGRAM, goalSummary, openEnrollment } from '../ui/models/goal';
 import { CUSTOM_GOAL, type GoalChoice, type GoalEnrollment, type ProgramId } from '../progress';
+import { useDiscardGuard } from '../navigation/draft';
+import { goalDirty, goalEdited, type GoalDraft } from '../progress/draft';
 import { CustomGoal } from './goal/CustomGoal';
 import { GoalBars } from './goal/GoalBars';
 import { GoalPicker } from './goal/GoalPicker';
@@ -15,14 +18,12 @@ type Mode = 'summary' | 'pick' | 'custom';
 export function GoalSheet({
   enrollments,
   today,
-  saving,
   onSave,
   onClose,
 }: {
   enrollments: readonly GoalEnrollment[];
   today: string;
-  saving?: boolean;
-  onSave: (choice: GoalChoice) => void;
+  onSave: (choice: GoalChoice) => Promise<void>;
   onClose: () => void;
 }) {
   const summary = goalSummary(enrollments, today);
@@ -30,7 +31,22 @@ export function GoalSheet({
   const [mode, setMode] = useState<Mode>(summary ? 'summary' : 'pick');
   const [programId, setProgramId] = useState<ProgramId>(open?.programId ?? DEFAULT_PROGRAM);
   const [custom, setCustom] = useState(open?.customDailyReps ?? summary?.dailyTarget ?? CUSTOM_GOAL.suggested);
-  const back = summary && mode !== 'summary' ? () => setMode('summary') : mode === 'custom' ? () => setMode('pick') : null;
+  const [saving, setSaving] = useState(false);
+  const draft: GoalChoice = mode === 'custom' ? { customDailyReps: custom } : { programId };
+  // A draft only exists while picking; going back to the summary drops it.
+  const gd: GoalDraft = 'customDailyReps' in draft ? { kind: 'custom', customDailyReps: draft.customDailyReps } : { kind: 'program', programId: draft.programId };
+  const canSave = mode !== 'summary' && goalDirty(open, gd);
+  const leave = useDiscardGuard(useNavigation(), mode !== 'summary' && goalEdited(open, gd, DEFAULT_PROGRAM));
+  const save = () => {
+    setSaving(true);
+    void onSave(draft).finally(leave);
+  };
+  const toSummary = () => {
+    setProgramId(open?.programId ?? DEFAULT_PROGRAM);
+    setCustom(open?.customDailyReps ?? summary?.dailyTarget ?? CUSTOM_GOAL.suggested);
+    setMode('summary');
+  };
+  const back = summary && mode !== 'summary' ? toSummary : mode === 'custom' ? () => setMode('pick') : null;
   const title = mode === 'custom' ? 'Set my own number' : mode === 'pick' && summary ? 'Change program' : 'Daily goal';
 
   return (
@@ -78,11 +94,7 @@ export function GoalSheet({
       </ScrollView>
       {mode !== 'summary' ? (
         <View style={styles.footer}>
-          <Button
-            title="Save"
-            loading={saving}
-            onPress={() => onSave(mode === 'custom' ? { customDailyReps: custom } : { programId })}
-          />
+          <Button title="Save" loading={saving} disabled={!canSave} onPress={save} />
           <Text variant="caption" align="center" style={styles.note}>
             Changes start today.
           </Text>

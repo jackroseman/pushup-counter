@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect } from 'react';
+import React, { useCallback, useLayoutEffect, useRef } from 'react';
 import { ActionSheetIOS, Alert, Platform } from 'react-native';
 
 import { ChallengeScreen, type ChallengeMenuItem } from '../../screens/compete/ChallengeScreen';
@@ -9,15 +9,15 @@ import { IconButton } from '../../ui';
 import { NewChallengeSheet } from '../../screens/compete/NewChallengeSheet';
 import { shareInvite } from '../../battles/inviteFriends';
 import { useIdentity } from '../../backend/IdentityProvider';
-import { FriendsScreen } from '../../screens/battles/FriendsScreen';
-import { FriendScreen } from '../../screens/battles/FriendScreen';
+import { FriendsScreen, type FriendsScreenHandle } from '../../screens/compete/FriendsScreen';
+import { FriendScreen, type FriendMenuItem } from '../../screens/compete/FriendScreen';
 import { useBackend } from '../../backend/BackendProvider';
 import { useAppState } from '../appState';
 import { Frame } from '../frame';
 import { gate, openGoal } from './gate';
 import type { Props } from '../types';
 
-function showMenu(items: ChallengeMenuItem[]) {
+function showMenu(items: { label: string; destructive?: boolean; onPress: () => void }[]) {
   if (Platform.OS === 'ios') {
     const cancelButtonIndex = items.length;
     const destructiveButtonIndex = items.findIndex((i) => i.destructive);
@@ -111,25 +111,48 @@ export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
 }
 
 export function FriendsRoute({ navigation }: Props<'Friends'>) {
+  const { profile } = useIdentity();
+  const screen = useRef<FriendsScreenHandle>(null);
+  useLayoutEffect(
+    () =>
+      navigation.setOptions({
+        headerRight: () => <IconButton icon="plus" accessibilityLabel="Add a friend" onPress={() => screen.current?.focusSearch()} />,
+      }),
+    [navigation],
+  );
   return (
     <Frame kind="header">
-    <FriendsScreen
-      {...gate(navigation)}
-      onOpenFriend={(friend) => navigation.navigate('Friend', { friend })}
-    />
+      <CompeteGate onProfile={() => navigation.navigate('ProfileSetup')}>
+        <FriendsScreen
+          ref={screen}
+          onOpenFriend={(friend) => navigation.navigate('Friend', { friend })}
+          onInvite={() => profile && shareInvite(profile.username)}
+        />
+      </CompeteGate>
     </Frame>
   );
 }
 
 export function FriendRoute({ navigation, route }: Props<'Friend'>) {
+  const onHeader = useCallback(
+    (menu: FriendMenuItem[]) =>
+      navigation.setOptions({
+        title: '',
+        headerRight: () => <IconButton icon="ellipsis" accessibilityLabel="More" onPress={() => showMenu(menu)} />,
+      }),
+    [navigation],
+  );
   return (
     <Frame kind="header">
-    <FriendScreen
-      {...gate(navigation)}
-      friend={route.params.friend}
-      onChallenge={(f) => navigation.navigate('NewBattle', { friendIds: [f.userId] })}
-      onOpenBattle={(challengeId) => navigation.navigate('Battle', { challengeId })}
-    />
+      <CompeteGate onProfile={() => navigation.navigate('ProfileSetup')}>
+        <FriendScreen
+          friend={route.params.friend}
+          onHeader={onHeader}
+          onRemoved={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Friends'))}
+          onChallenge={(f) => navigation.navigate('NewBattle', { friendIds: [f.userId] })}
+          onOpenBattle={(challengeId) => navigation.navigate('Battle', { challengeId })}
+        />
+      </CompeteGate>
     </Frame>
   );
 }

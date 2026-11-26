@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { TodayScreen } from '../../screens/TodayScreen';
-import { HowToSheet } from '../../components/HowToSheet';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../../backend/leagueClient';
@@ -30,12 +29,13 @@ import {
 } from '../../progress';
 import { buildTodayView } from '../../ui/models/today';
 import { useAppState } from '../appState';
+import { useOnboardingGate } from './OnboardingRoutes';
 import { Frame } from '../frame';
 import type { TabProps } from '../types';
 
 export function TodayRoute({ navigation }: TabProps<'Today'>) {
-  const { enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
-  const focused = useIsFocused();
+  const { enrollments, remote, refreshRemote } = useAppState();
+  const gateReady = useOnboardingGate(navigation);
   const { session, appSettings } = useBackend();
   const { profile } = useIdentity();
   const userId = session?.user.id ?? null;
@@ -141,6 +141,8 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
     });
   };
 
+  // Blank (black) for the moment the first-run check takes, so Today doesn't flash before Welcome.
+  if (!gateReady) return <Frame kind="tab">{null}</Frame>;
   return (
     <Frame kind="tab">
       <TodayScreen
@@ -156,10 +158,8 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
         onPlay={play}
         onNewChallenge={() => navigation.navigate('NewBattle')}
         onInvite={() => (session ? navigation.navigate('Friends') : navigation.navigate('Compete', { segment: 'league' }))}
-        onHowItWorks={openHowTo}
+        onHowItWorks={() => navigation.navigate('HowItWorks')}
       />
-      {/* First-run how-to until the onboarding screens replace it (plan PR 6). */}
-      <HowToSheet visible={howToOpen && focused} onClose={closeHowTo} />
     </Frame>
   );
 }

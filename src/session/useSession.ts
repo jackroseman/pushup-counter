@@ -28,7 +28,7 @@ import { BattleRules, EndReason, battleClockText, battleEndReason } from '../bat
 
 const KEEP_AWAKE_TAG = 'pushup-session';
 /** Countdown after calibration locks in (the user can redo it during this time). */
-const COUNTDOWN_SECONDS = 3;
+export const COUNTDOWN_SECONDS = 3;
 /** Guidance UI refresh rate (the guide itself sees every sample). */
 const GUIDE_UI_MS = 100;
 /** Spoken hints: only once a hint has persisted this long, and not more often than SPEAK_GAP_MS. */
@@ -81,8 +81,18 @@ export interface LiveData {
 }
 
 
+/** Spoken feedback for the current set. The speaker button turns it off; each new set starts with it on. */
+let voiceOn = true;
+
 function say(text: string) {
+  if (!voiceOn) return;
   Speech.speak(text, { rate: 1.05, useApplicationAudioSession: true });
+}
+
+/** Turns spoken feedback on or off for the rest of this set (stops anything being said). */
+export function setVoiceOn(on: boolean) {
+  voiceOn = on;
+  if (!on) Speech.stop().catch(() => {});
 }
 
 export const historyStore = new HistoryStore(AsyncStorage);
@@ -250,8 +260,15 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     startCalibration();
   }, [startCalibration]);
 
+  /** "Start now" on the level screen: skip the flat hold and go straight to face centering. */
+  const startNow = useCallback(() => {
+    if (cancelled.current || phaseRef.current !== 'placing') return;
+    startCalibration();
+  }, [startCalibration]);
+
   useEffect(() => {
     cancelled.current = false;
+    voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
         if (!active.current) return;
@@ -469,5 +486,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate };
+  return { state, finish, live, recalibrate, startNow };
 }

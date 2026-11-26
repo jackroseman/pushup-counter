@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
+import { SetEndedScreen } from '../../screens/SetEndedScreen';
 import { SummaryScreen } from '../../screens/SummaryScreen';
 import { useBackend } from '../../backend/BackendProvider';
 import { historyStore } from '../../session/useSession';
@@ -47,6 +48,17 @@ export function SummaryRoute({ navigation, route }: Props<'Summary'>) {
       cancelled = true;
     };
   }, [record, enrollments, fromHistory, appSettings.formScoreWeights]);
+  if (route.params.from === 'session' && record.endReason === 'tilt') {
+    return (
+      <Frame kind="bare">
+        <SetEndedScreen
+          reps={record.reps.length}
+          onAgain={() => navigation.replace('Session')}
+          onDone={() => navigation.popToTop()}
+        />
+      </Frame>
+    );
+  }
   return (
     <Frame kind="bare">
     <SummaryScreen

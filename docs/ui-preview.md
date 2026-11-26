@@ -64,6 +64,7 @@ Run these from the repo root.
 | `npm --prefix tools/preview run capture -- set-flow --reduce-motion` | Same flow with iOS Reduce Motion on. |
 | `npm --prefix tools/preview run capture -- today compete --no-video` | Screenshots only (faster). |
 | `npm --prefix tools/preview run flows` | Lists the flows. |
+| `npm --prefix tools/preview run capture:web` | Screenshots the invite web page (`web/`) variants: iPhone landing with the three TestFlight steps, no name, invalid link, not an iPhone, App Store variant. Output: `out/captures/web-invite/`. |
 | `npm --prefix tools/preview run web` | Opens the app in a phone-sized window you can click through (needs a display). Builds first if needed. Add `-- --user new` for a fresh install, `-- --user empty` for a signed-in user with no data, or `-- --rebuild` to rebuild. |
 
 A failing step (a missing button, a wrong rep count) fails the command, prints the step that

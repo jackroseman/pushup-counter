@@ -7,7 +7,8 @@
     "build": "node build.js",
     "web": "node web.js",
     "capture": "node capture.js",
-    "flows": "node capture.js --list"
+    "flows": "node capture.js --list",
+    "capture:web": "node web-pages.js"
   },
   "dependencies": {
     "playwright-core": "^1.65.1",

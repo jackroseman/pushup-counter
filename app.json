@@ -22,9 +22,8 @@
     "android": {
       "package": "com.jackroseman.pushupcounter",
       "adaptiveIcon": {
-        "backgroundColor": "#0B0F1A",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
@@ -47,6 +46,12 @@
         "expo-notifications",
         {
           "color": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000"
         }
       ]
     ],

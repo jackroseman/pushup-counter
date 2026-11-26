@@ -5,7 +5,7 @@ import { supabase } from '../../backend/supabase';
 import { Button, Stat } from '../../components/ui';
 import { api } from '../../battles/api';
 import { battleTitle, Friend, FriendRecord, friendlyError, personName } from '../../battles/model';
-import { FRIEND_WEEK_SUBTITLE, friendWeekLine } from '../../progress';
+import { FRIEND_WEEK_SUBTITLE, formatShortDate, friendWeekLine } from '../../progress';
 import { AccountGate, Header, Row, s, SectionTitle } from './common';
 
 export function FriendScreen(props: {
@@ -57,7 +57,7 @@ export function FriendScreen(props: {
                   <Text style={s.bold}>
                     {battleTitle(r)} · {r.me.isWinner && !r.them.isWinner ? 'You won' : r.them.isWinner && !r.me.isWinner ? 'They won' : r.me.rank === r.them.rank ? 'Draw' : r.me.rank && r.them.rank && r.me.rank < r.them.rank ? 'You were ahead' : 'They were ahead'}
                   </Text>
-                  <Text style={s.muted}>{new Date(r.finishedAt).toLocaleDateString()}{r.players > 2 ? ` · ${r.players} players` : ''}</Text>
+                  <Text style={s.muted}>{formatShortDate(r.finishedAt)}{r.players > 2 ? ` · ${r.players} players` : ''}</Text>
                 </View>
                 <Text style={s.bold}>
                   {score(r.me)} – {score(r.them)}

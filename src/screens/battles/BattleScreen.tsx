@@ -28,6 +28,7 @@ import {
   streakStandingLine,
   timeLeft,
 } from '../../battles/model';
+import { formatDeadline } from '../../progress';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { loadBattleQueue } from '../../battles/uploadQueue';
 import { ChallengeNotifications } from '../../components/NotificationPrompt';
@@ -197,12 +198,6 @@ function BattleDetail({
   const mine = me(b);
   const creator = b.participants.find((p) => p.userId === b.createdBy);
   const isCreator = b.createdBy === profile?.id;
-  const rules =
-    b.kind === 'total' || b.kind === 'streak' || b.kind === 'team'
-      ? 'Every set you do before the end counts.'
-      : b.durationS
-        ? `${b.durationS} seconds, as many good reps as you can.`
-        : `As many good reps as you can in one set. It ends after ${appSettings.asyncBattleDefaults.maxRepsIdleEndS} s without a rep.`;
   const teamTotal = b.participants.find((p) => p.teamTotal != null)?.teamTotal ?? 0;
   const teamTarget = b.targetReps ?? b.participants.find((p) => p.teamTarget != null)?.teamTarget ?? 0;
   const cue = creatorAttemptCue({
@@ -220,16 +215,16 @@ function BattleDetail({
         {creator ? `Started by ${creator.isMe ? 'you' : personName(creator)} · ` : ''}
         {battleSubtitle(b)}
       </Text>
-      <View style={s.card}>
-        <Text style={s.text}>{rules}</Text>
-        <Text style={[s.muted, { marginTop: 6 }]}>
-          Only Good and Full reps count. Shallow reps don't.{' '}
-          {b.kind === 'best_set' ? (b.attemptsAllowed === 1 ? 'One attempt each.' : `${b.attemptsAllowed ?? 1} attempts each.`) : 'There is no separate challenge set.'}
-          {b.kind === 'streak' ? ' Miss a day after it closes and you are out. The daily bar is frozen when you join.' : ''}
-          {b.kind === 'team' ? ' You win together when the shared total hits the goal.' : ''}
-          {b.endsAt && isOpen(b) ? ` Deadline: ${new Date(b.endsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} (${timeLeft(b.endsAt)}).` : ''}
-        </Text>
-      </View>
+      {b.durationS || (b.endsAt && isOpen(b)) ? (
+        <View style={s.card}>
+          {b.durationS ? <Text style={s.text}>Time limit: {b.durationS} s</Text> : null}
+          {b.endsAt && isOpen(b) ? (
+            <Text style={s.muted}>
+              Ends {formatDeadline(b.endsAt)} · {timeLeft(b.endsAt)}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {cue.showPrompt ? (
         <Notice
@@ -297,7 +292,7 @@ function BattleDetail({
         <Button
           title="Start my set"
           onPress={() =>
-            Alert.alert('Ready?', `${rules}\n\nThe attempt counts once counting starts after calibration.`, [
+            Alert.alert('Ready?', 'Place your phone flat on the floor before you start.', [
               { text: 'Not yet', style: 'cancel' },
               { text: 'Go', onPress: () => onPlay(b) },
             ])

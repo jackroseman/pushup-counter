@@ -5,7 +5,7 @@ import { Button } from '../components/ui';
 import { isAppleSignInAvailable, signInWithApple } from '../backend/auth';
 import type { LeagueBoard, LeagueImprovementRow, LeagueTotalRow } from '../backend/leagueClient';
 import { personName } from '../battles/model';
-import { CROWN_CAPTION, LEAGUE_ABOUT, NO_FRIENDS, WEEK_LINE, formatCount, improvementDetail } from '../progress';
+import { CROWN_CAPTION, NO_FRIENDS, formatCount, improvementDetail } from '../progress';
 import { colors } from '../theme';
 
 type Tab = 'Total' | 'Improvement';
@@ -57,7 +57,7 @@ export function LeagueScreen({
       {!configured ? <Text style={styles.body}>Sign in with Apple is not available in this build.</Text> : null}
       {configured && !signedIn ? (
         <>
-          <Text style={styles.body}>{LEAGUE_ABOUT}</Text>
+          <Text style={styles.body}>A weekly league with people you know.</Text>
           {appleAvailable ? (
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
@@ -128,7 +128,6 @@ function Board({
           );
         })}
       </View>
-      <Text style={styles.week}>{WEEK_LINE}</Text>
       {crowned ? <Text style={styles.caption}>{CROWN_CAPTION}</Text> : null}
       {!board && !banner ? <Text style={styles.body}>Loading…</Text> : null}
       {rows.map((row) => (
@@ -172,7 +171,6 @@ const styles = StyleSheet.create({
   switchOn: { backgroundColor: colors.accent },
   switchLabel: { color: colors.muted, fontSize: 15, fontWeight: '700' },
   switchLabelOn: { color: '#111' },
-  week: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 14 },
   caption: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 4 },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 14, padding: 14, marginTop: 10 },
   name: { color: colors.text, fontSize: 17, fontWeight: '700' },

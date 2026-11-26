@@ -158,7 +158,7 @@ export function SessionScreen({
           {state.phase === 'active' && state.count === 0 ? (
             <Button title="Redo calibration" kind="secondary" onPress={recalibrate} />
           ) : null}
-          <Button title={battle ? 'Finish attempt' : 'End set'} kind="danger" onPress={end} />
+          <Button title={battle ? 'Finish attempt' : 'End set'} kind="secondary" onPress={end} />
         </>
       )}
     </View>

@@ -26,9 +26,6 @@ export function GoalSetupScreen({
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Your goal</Text>
       <Text style={styles.lead}>Follow a program, or set one number for every day.</Text>
-      {open ? (
-        <Text style={styles.note}>Starting today, this is your goal. Yesterday stays on the old one. Your streak uses the goal that was active that day.</Text>
-      ) : null}
 
       <Text style={styles.section}>Follow a program</Text>
       {PROGRAMS.map((program) => {

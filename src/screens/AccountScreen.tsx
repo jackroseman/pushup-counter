@@ -219,7 +219,6 @@ function CountingCard({ settings, onChangeSettings }: { settings: Settings; onCh
         value={settings.speakQuality}
         onChange={(v) => onChangeSettings({ ...settings, speakQuality: v })}
       />
-      <SettingRow label="Haptics" value={settings.haptics} onChange={(v) => onChangeSettings({ ...settings, haptics: v })} />
     </View>
   );
 }

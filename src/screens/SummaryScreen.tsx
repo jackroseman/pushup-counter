@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Stat } from '../components/ui';
 import { DistanceChart, RepChart } from '../components/charts';
 import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
-import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
+import { Celebration, SYNCED_LATE, celebrationText, formatFormScore, formatSetDateTime } from '../progress';
 import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 import { color } from '../ui/tokens';
@@ -84,7 +84,7 @@ export function SummaryScreen({
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
         <Text style={styles.title}>{summaryTitle(record, fromHistory)}</Text>
         {record.endReason === 'tilt' ? <Text style={styles.moved}>{PHONE_MOVED}</Text> : null}
-        <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{new Date(record.startedAt).toLocaleString()}</Text>
+        <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{formatSetDateTime(record.startedAt)}</Text>
         {syncedLate ? <Text style={styles.late}>{SYNCED_LATE}</Text> : null}
         {progress ? (
           <View style={styles.card}>
@@ -99,12 +99,15 @@ export function SummaryScreen({
             <Text style={styles.progressValue}>Form score {formatFormScore(progress.formScore)}</Text>
             {progress.tempoCaption ? <Text style={styles.caption}>{progress.tempoCaption}</Text> : null}
             <Text style={styles.contribution}>{progress.contribution}</Text>
-            {progress.celebration ? (
-              <View style={styles.celebrate}>
-                <Text style={styles.celebrateTitle}>{progress.celebration.title}</Text>
-                {progress.celebration.also ? <Text style={styles.celebrateAlso}>{progress.celebration.also}</Text> : null}
-              </View>
-            ) : null}
+            {progress.celebration ? (() => {
+              const celeb = celebrationText(progress.celebration);
+              return (
+                <View style={styles.celebrate}>
+                  <Text style={styles.celebrateTitle}>{celeb.title}</Text>
+                  {celeb.also ? <Text style={styles.celebrateAlso}>{celeb.also}</Text> : null}
+                </View>
+              );
+            })() : null}
           </View>
         ) : null}
         {onChallenge ? <Button title="Challenge a friend" kind="secondary" onPress={onChallenge} style={styles.challenge} /> : null}

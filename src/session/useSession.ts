@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -143,11 +142,6 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       const s = settingsRef.current;
       const label = qualityLabel(rep.quality);
       say(s.speakQuality && rep.quality !== 'full' ? `${rep.index}, ${label.toLowerCase()}` : String(rep.index));
-      if (s.haptics) {
-        Haptics.impactAsync(rep.quality === 'full' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(
-          () => {}
-        );
-      }
       live.current.reps.push({ t: rep.timestamp, quality: rep.quality, index: rep.index });
       lastRepAt.current = Date.now();
       patch({ count: rep.index, lastRep: rep });

@@ -9,6 +9,16 @@ private let backgroundColorDark = UIColor(red: 0.043, green: 0.059, blue: 0.102,
 private let okColor = UIColor(red: 0.17, green: 0.84, blue: 0.48, alpha: 1.0)
 private let badColor = UIColor(red: 1.0, green: 0.35, blue: 0.37, alpha: 1.0)
 private let mutedColor = UIColor(red: 0.54, green: 0.58, blue: 0.66, alpha: 1.0)
+/// `variant: "minimal"` (face-centering frame): white 35 % wireframe on pure black, no overlays.
+private let minimalMeshColor = UIColor(white: 1.0, alpha: 0.35)
+private let minimalBackground = UIColor.black
+
+/// Look of the face view. `full` is the original measurement view; `minimal` hides every label
+/// and the closest-point marker so JS can draw its own overlay on top.
+enum FaceMeshVariant: String {
+  case full
+  case minimal
+}
 
 /// What the overlay shows; produced on the SceneKit render thread, applied on main.
 struct FaceMeshSnapshot {
@@ -37,6 +47,10 @@ final class FaceMeshRenderer: NSObject, ARSCNViewDelegate {
   // Render-thread state from the latest anchor update.
   private var closestDistance: Float?
   private var closestWorld: simd_float3?
+  // Variant styling, read on the render thread.
+  private var meshTint: UIColor = meshColor
+  private var sceneBackground: UIColor = backgroundColorDark
+  private var faceNode: SCNNode?
 
   override init() {
     let sphere = SCNSphere(radius: 0.004)
@@ -50,6 +64,24 @@ final class FaceMeshRenderer: NSObject, ARSCNViewDelegate {
     super.init()
   }
 
+  /// Mesh colour, background and marker visibility for a variant. Safe from the main thread.
+  func setVariant(_ variant: FaceMeshVariant) {
+    lock.lock()
+    meshTint = variant == .minimal ? minimalMeshColor : meshColor
+    sceneBackground = variant == .minimal ? minimalBackground : backgroundColorDark
+    let node = faceNode
+    let tint = meshTint
+    lock.unlock()
+    marker.isHidden = variant == .minimal
+    (node?.geometry as? ARSCNFaceGeometry)?.firstMaterial?.diffuse.contents = tint
+  }
+
+  var background: UIColor {
+    lock.lock()
+    defer { lock.unlock() }
+    return sceneBackground
+  }
+
   func setUIRate(_ hz: Double) {
     lock.lock()
     uiInterval = 1.0 / max(1.0, hz)
@@ -61,15 +93,21 @@ final class FaceMeshRenderer: NSObject, ARSCNViewDelegate {
   func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
     guard anchor is ARFaceAnchor, let device = renderer.device,
           let geometry = ARSCNFaceGeometry(device: device) else { return nil }
+    lock.lock()
+    let tint = meshTint
+    lock.unlock()
     if let material = geometry.firstMaterial {
       material.fillMode = .lines
-      material.diffuse.contents = meshColor
+      material.diffuse.contents = tint
       material.lightingModel = .constant
       material.isDoubleSided = true
     }
     let node = SCNNode(geometry: geometry)
     marker.removeFromParentNode()
     node.addChildNode(marker)
+    lock.lock()
+    faceNode = node
+    lock.unlock()
     return node
   }
 
@@ -115,7 +153,7 @@ final class FaceMeshRenderer: NSObject, ARSCNViewDelegate {
     // ARSCNView normally paints the camera feed as the scene background; keep ours (dark, no
     // camera image) in case it gets replaced when the session (re)starts.
     if let background = renderer.scene?.background, !(background.contents is UIColor) {
-      background.contents = backgroundColorDark
+      background.contents = self.background
     }
     lock.lock()
     let interval = uiInterval
@@ -178,6 +216,7 @@ final class FaceMeshView: ExpoView {
   private let thermalLabel = UILabel()
   private var thermalObserver: NSObjectProtocol?
   private var showAngles = true
+  private var variant: FaceMeshVariant = .full
   private var lastSnapshot: FaceMeshSnapshot?
 
   required init(appContext: AppContext? = nil) {
@@ -231,6 +270,31 @@ final class FaceMeshView: ExpoView {
   deinit {
     if let observer = thermalObserver {
       NotificationCenter.default.removeObserver(observer)
+    }
+  }
+
+  func setVariant(_ value: String) {
+    let next = FaceMeshVariant(rawValue: value) ?? .full
+    guard next != variant else { return }
+    variant = next
+    let bg = next == .minimal ? minimalBackground : backgroundColorDark
+    backgroundColor = bg
+    sceneView?.backgroundColor = bg
+    sceneView?.scene.background.contents = bg
+    meshRenderer.setVariant(next)
+    if let s = lastSnapshot {
+      apply(s)
+    } else {
+      applyOverlayVisibility()
+    }
+  }
+
+  /// `minimal` shows no native text at all (distance, state pill, angles, closest point,
+  /// thermal, messages); the JS overlay owns every word on screen.
+  private func applyOverlayVisibility() {
+    guard variant == .minimal else { return }
+    for label in [distanceLabel, distanceCaption, stateLabel, thermalLabel, anglesLabel, closestLabel, messageLabel] as [UIView] {
+      label.isHidden = true
     }
   }
 
@@ -357,6 +421,7 @@ final class FaceMeshView: ExpoView {
         closestLabel.isHidden = true
       }
     }
+    applyOverlayVisibility()
   }
 
   private func applyThermalState() {
@@ -377,6 +442,7 @@ final class FaceMeshView: ExpoView {
       meshRenderer.setUIRate(15)
       thermalLabel.isHidden = true
     }
+    applyOverlayVisibility()
   }
 }
 

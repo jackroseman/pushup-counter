@@ -22,6 +22,20 @@ export function motionSupported(): boolean {
   }
 }
 
+/** This native build's FaceMeshView supports `variant="minimal"` (1.3.0+) and the device has a TrueDepth camera. Never throws. */
+export function faceMeshVariantSupported(): boolean {
+  try {
+    return (
+      Platform.OS === 'ios' &&
+      typeof PushupSensors.isFaceMeshVariantSupported === 'function' &&
+      PushupSensors.isFaceMeshVariantSupported() === true &&
+      PushupSensors.isFaceTrackingSupported() === true
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Starts gravity updates. Resolves false (never rejects) when the build or device can't. */
 export async function startGravity(hz: number): Promise<boolean> {
   if (!motionSupported() || typeof PushupSensors.startGravity !== 'function') return false;

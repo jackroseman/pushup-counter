@@ -1,0 +1,85 @@
+import { DEFAULT_APP_SETTINGS } from '../src/backend/appSettings';
+import {
+  KIND_TILES,
+  canSend,
+  hoursLabel,
+  initialForm,
+  lengthKey,
+  lengthOptions,
+  newChallengePayload,
+  timeLimitLabel,
+  withKind,
+  withLength,
+} from '../src/battles/newChallenge';
+
+const s = {
+  battle: DEFAULT_APP_SETTINGS.asyncBattleDefaults,
+  streak: DEFAULT_APP_SETTINGS.streakLengths,
+  team: DEFAULT_APP_SETTINGS.teamTargets,
+};
+
+describe('new challenge sheet (frame 21)', () => {
+  it('starts on a 60 s best set, with friends from a rematch', () => {
+    const f = initialForm(s, undefined, ['jack']);
+    expect(f).toMatchObject({ kind: 'best_set', durationS: 60, deadlineHours: 24, friendIds: ['jack'] });
+    expect(canSend(f)).toBe(true);
+    expect(canSend(initialForm(s))).toBe(false);
+  });
+
+  it('uses the finished set timer, so the set can count', () => {
+    expect(initialForm(s, undefined, [], null).durationS).toBeNull();
+    expect(initialForm(s, undefined, [], 120).durationS).toBe(120);
+  });
+
+  it('prefills a rematch', () => {
+    expect(initialForm(s, { kind: 'total', window: 'day' })).toMatchObject({ kind: 'total', window: 'day' });
+    expect(initialForm(s, { kind: 'best_set', durationS: null }).durationS).toBeNull();
+  });
+
+  it('has four kind tiles with plain lines', () => {
+    expect(KIND_TILES.map((t) => t.title)).toEqual(['Best set', 'Most reps', 'Streak', 'Team']);
+  });
+
+  it('offers a length per kind from app settings', () => {
+    expect(lengthOptions('best_set', s).map((o) => o.label)).toEqual(['6 hours', '1 day', '3 days']);
+    expect(lengthOptions('total', s).map((o) => o.label)).toEqual(['Today', 'This week', 'This month']);
+    expect(lengthOptions('streak', s).map((o) => o.label)).toEqual(['7 days', '14 days', '30 days']);
+    const f = withLength(initialForm(s), '72');
+    expect(f.deadlineHours).toBe(72);
+    expect(lengthKey(f)).toBe('72');
+    expect(hoursLabel(168)).toBe('1 week');
+    expect(timeLimitLabel(60)).toBe('60 s');
+    expect(timeLimitLabel(120)).toBe('2 min');
+    expect(timeLimitLabel(null)).toBe('No limit');
+  });
+});
+
+describe('create payload', () => {
+  it('never sends a metric or an invite link', () => {
+    const p = newChallengePayload({ ...initialForm(s), friendIds: ['jack'] });
+    expect(p).toEqual({
+      kind: 'best_set',
+      durationS: 60,
+      deadlineHours: 24,
+      window: undefined,
+      streakDays: undefined,
+      targetReps: undefined,
+      friendIds: ['jack'],
+      inviteLink: false,
+    });
+    expect('metric' in p).toBe(false);
+  });
+
+  it('sends only the fields each kind uses', () => {
+    const base = { ...initialForm(s), friendIds: ['jack', 'tara'] };
+    expect(newChallengePayload(withKind(base, 'total', s.team))).toMatchObject({
+      kind: 'total',
+      window: 'week',
+      durationS: undefined,
+      deadlineHours: undefined,
+    });
+    expect(newChallengePayload(withKind(base, 'streak', s.team))).toMatchObject({ kind: 'streak', streakDays: 7, window: undefined });
+    expect(newChallengePayload(withKind(base, 'team', s.team))).toMatchObject({ kind: 'team', window: 'week', targetReps: 500 });
+    expect(newChallengePayload({ ...base, durationS: null }).durationS).toBeUndefined();
+  });
+});

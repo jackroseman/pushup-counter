@@ -6,7 +6,9 @@ import { CompeteGate } from '../../screens/compete/Gate';
 import { LinkInviteScreen } from '../../screens/compete/LinkInviteScreen';
 import { rematchParams } from '../../battles/challengeView';
 import { IconButton } from '../../ui';
-import { NewBattleScreen } from '../../screens/battles/NewBattleScreen';
+import { NewChallengeSheet } from '../../screens/compete/NewChallengeSheet';
+import { shareInvite } from '../../battles/inviteFriends';
+import { useIdentity } from '../../backend/IdentityProvider';
 import { FriendsScreen } from '../../screens/battles/FriendsScreen';
 import { FriendScreen } from '../../screens/battles/FriendScreen';
 import { useBackend } from '../../backend/BackendProvider';
@@ -82,26 +84,28 @@ export function BattleRoute({ navigation, route }: Props<'Battle'>) {
 
 export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
   const { enrollments } = useAppState();
+  const { profile } = useIdentity();
   return (
     <Frame kind="header">
-    <NewBattleScreen
-      {...gate(navigation)}
-      friendIds={route.params?.friendIds}
-      fromSet={route.params?.fromSet}
-      offer={route.params?.offer}
-      hasGoal={openGoal(enrollments)}
-      onNeedGoal={() => navigation.navigate('GoalSetup')}
-      onFriends={() => navigation.navigate('Friends')}
-      onCreated={(challengeId, share, extras) =>
-        navigation.replace('Battle', {
-          challengeId,
-          share,
-          promptAttempt: extras?.promptAttempt,
-          justPlayed: extras?.justPlayed,
-          promptNotifications: true,
-        })
-      }
-    />
+      <CompeteGate onProfile={() => navigation.navigate('ProfileSetup')}>
+        <NewChallengeSheet
+          friendIds={route.params?.friendIds}
+          fromSet={route.params?.fromSet}
+          offer={route.params?.offer}
+          hasGoal={openGoal(enrollments)}
+          onNeedGoal={() => navigation.navigate('GoalSetup')}
+          onInvite={() => profile && shareInvite(profile.username)}
+          onCreated={(challengeId, share, extras) =>
+            navigation.replace('Battle', {
+              challengeId,
+              share,
+              promptAttempt: extras?.promptAttempt,
+              justPlayed: extras?.justPlayed,
+              promptNotifications: true,
+            })
+          }
+        />
+      </CompeteGate>
     </Frame>
   );
 }

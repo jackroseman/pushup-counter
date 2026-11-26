@@ -1,0 +1,13 @@
+{
+  "name": "rep-royale-web",
+  "private": true,
+  "description": "The invite web page (https://reproyale.vercel.app/i/<code>) and the apple-app-site-association file. Deployed by Vercel with Root Directory = web/. See web/README.md.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "check": "node scripts/check.js",
+    "render": "node scripts/render.js"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
+}

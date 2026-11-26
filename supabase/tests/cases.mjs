@@ -1264,3 +1264,83 @@ Object.assign(checks, {
     ok(tombs.tombs === 0, 'challenge tombstone ' + JSON.stringify(tombs));
   },
 });
+
+// -------------------------------------------------------------------------------------
+// Personal friend invite links (20261126170000_friend_invite_links.sql)
+// -------------------------------------------------------------------------------------
+const IA='1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a', IB='2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b2b', IC='3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c3c', ID='4d4d4d4d-4d4d-4d4d-8d4d-4d4d4d4d4d4d', IE='5e5e5e5e-5e5e-4e5e-8e5e-5e5e5e5e5e5e';
+const keep = `select set_config('t.code', coalesce((select code from friend_invite_links where user_id='${IA}' and revoked_at is null), ''), false);`;
+const icode = () => `current_setting('t.code')`;
+const ifriends = (a, b) => `(select status from friendships where user_low=least('${a}'::uuid,'${b}'::uuid) and user_high=greatest('${a}'::uuid,'${b}'::uuid))`;
+steps.push(
+  ['invite: setup people', `insert into auth.users values ('${IA}'),('${IB}'),('${IC}'),('${ID}'),('${IE}');
+    ${as(IA)} insert into profiles(id,username,display_name) values ('${IA}','inviter','Ivy'); reset role;
+    ${as(IB)} insert into profiles(id,username) values ('${IB}','joiner'); reset role;
+    ${as(IC)} insert into profiles(id,username) values ('${IC}','blocker'); reset role;
+    ${as(ID)} insert into profiles(id,username) values ('${ID}','pender'); reset role;`],
+  ['invite: anon cannot make a link (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role anon; select my_friend_invite(); reset role;`],
+  ['invite: no username yet (expect ERR)', `${as(IE)} select my_friend_invite(); reset role;`],
+  ['invite: my link is made once and kept', `${as(IA)} select my_friend_invite() a; select my_friend_invite() b; reset role; ${keep} select count(*)::int n from friend_invite_links where user_id='${IA}';`],
+  ['invite: people cannot read the links table (expect ERR)', `${as(IB)} select count(*) from friend_invite_links; reset role;`],
+  ['invite: anon preview shows who it is from', `select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(${icode(IA)}) p; reset role;`],
+  ['invite: preview is case and space tolerant', `${as(IB)} select friend_invite_preview(' ' || upper(${icode(IA)}) || ' ') p; reset role;`],
+  ['invite: preview of your own link', `${as(IA)} select friend_invite_preview(${icode(IA)}) p; reset role;`],
+  ['invite: unknown code is invalid', `select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview('zzzzzzzz') a, friend_invite_preview(null) b, friend_invite_preview('x') c; reset role;`],
+  ['invite: redeeming makes friends at once and tells the inviter', `${as(IB)} select redeem_friend_invite(${icode(IA)}) r; reset role; select ${ifriends(IA, IB)} s, ${outbox('friend_joined', IA)}::int joined, ${outbox('friend_accepted', IB)}::int acc, ${outbox('friend_request', IA)}::int req;`],
+  ['invite: redeeming again says already', `${as(IB)} select redeem_friend_invite(${icode(IA)}) r; select friend_invite_preview(${icode(IA)}) p; reset role; select ${outbox('friend_joined', IA)}::int joined;`],
+  ['invite: your own link', `${as(IA)} select redeem_friend_invite(${icode(IA)}) r; reset role;`],
+  ['invite: a pending request is replaced without an extra push', `${as(ID)} select send_friend_request('inviter'); reset role; ${as(ID)} select redeem_friend_invite(${icode(IA)}) r; reset role; select ${ifriends(IA, ID)} s, ${outbox('friend_accepted', ID)}::int acc_d, ${outbox('friend_accepted', IA)}::int acc_a, ${outbox('friend_joined', IA)}::int joined;`],
+  ['invite: a block reads as invalid both ways', `${as(IC)} select block_user('${IA}'); reset role; ${as(IC)} select friend_invite_preview(${icode(IA)}) p; reset role; ${as(IA)} select my_friend_invite(); reset role;`],
+  ['invite: blocked person cannot redeem (expect ERR)', `${as(IC)} select redeem_friend_invite(${icode(IA)}); reset role;`],
+  ['invite: reset turns the old code off', `select set_config('t.old', ${icode(IA)}, false); ${as(IA)} select reset_friend_invite() n; reset role; ${keep} select (select count(*)::int from friend_invite_links where user_id='${IA}' and revoked_at is null) live, ${icode(IA)} <> current_setting('t.old') changed; select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(current_setting('t.old')) old_p; reset role;`],
+  ['invite: an old code cannot be redeemed (expect ERR)', `${as(IE)} insert into profiles(id,username) values ('${IE}','late'); reset role; ${as(IE)} select redeem_friend_invite(current_setting('t.old')); reset role;`],
+  ['invite: friends stay friends after a reset', `select ${ifriends(IA, IB)} s;`],
+  ['invite: resets are limited per day (expect ERR)', `update app_settings set value='{"resets_per_day": 2, "adds_per_day": 1}' where key='friend_invites'; ${as(IA)} select reset_friend_invite(); reset role;`],
+  ['invite: adds are limited per day (expect ERR)', `insert into private.friend_invite_redemptions (code, inviter_id, user_id) values (${icode(IA)}, '${IA}', '${IE}'); ${as(IE)} select redeem_friend_invite(${icode(IA)}); reset role;`],
+  ['invite: deleting the inviter removes the link', `update app_settings set value='{"resets_per_day": 10, "adds_per_day": 30}' where key='friend_invites'; select set_config('t.cur', ${icode(IA)}, false); ${as(IA)} select delete_my_account(); reset role; select count(*)::int n from friend_invite_links where user_id='${IA}'; select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(current_setting('t.cur')) p; reset role;`],
+);
+Object.assign(checks, {
+  'invite: my link is made once and kept': (r) => {
+    ok(/^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/.test(r[0][0].a), 'code ' + JSON.stringify(r[0]));
+    ok(r[1][0].b === r[0][0].a, 'same code');
+    ok(r[2][0].n === 1, 'one row ' + JSON.stringify(r[2]));
+  },
+  'invite: anon preview shows who it is from': (r) => {
+    const p = r[0][0].p;
+    ok(p.status === 'ok' && p.inviter.username === 'inviter' && p.inviter.displayName === 'Ivy', 'preview ' + JSON.stringify(p));
+    ok(!('userId' in p.inviter), 'anon sees no user id ' + JSON.stringify(p));
+  },
+  'invite: preview is case and space tolerant': (r) => ok(r[0][0].p.status === 'ok' && r[0][0].p.inviter.userId === IA, 'preview ' + JSON.stringify(r)),
+  'invite: preview of your own link': (r) => ok(r[0][0].p.status === 'own', 'own ' + JSON.stringify(r)),
+  'invite: unknown code is invalid': (r) => {
+    const x = r[0][0];
+    ok(x.a.status === 'invalid' && x.b.status === 'invalid' && x.c.status === 'invalid' && !x.a.inviter, 'invalid ' + JSON.stringify(x));
+  },
+  'invite: redeeming makes friends at once and tells the inviter': (r) => {
+    ok(r[0][0].r === 'added', 'result ' + JSON.stringify(r[0]));
+    const x = r[1][0];
+    ok(x.s === 'accepted' && x.joined === 1 && x.acc === 0 && x.req === 0, 'state ' + JSON.stringify(x));
+  },
+  'invite: redeeming again says already': (r) => {
+    ok(r[0][0].r === 'already', 'again ' + JSON.stringify(r[0]));
+    ok(r[1][0].p.status === 'friends', 'preview ' + JSON.stringify(r[1]));
+    ok(r[2][0].joined === 1, 'one push ' + JSON.stringify(r[2]));
+  },
+  'invite: your own link': (r) => ok(r[0][0].r === 'own', 'own ' + JSON.stringify(r)),
+  'invite: a pending request is replaced without an extra push': (r) => {
+    ok(r[1][0].r === 'added', 'result ' + JSON.stringify(r));
+    const x = r[2][0];
+    ok(x.s === 'accepted' && x.acc_d === 0 && x.acc_a === 0 && x.joined === 2, 'state ' + JSON.stringify(x));
+  },
+  'invite: a block reads as invalid both ways': (r) => ok(r[1][0].p.status === 'invalid' && !r[1][0].p.inviter, 'blocked ' + JSON.stringify(r)),
+  'invite: reset turns the old code off': (r) => {
+    ok(/^[a-z2-9]{8}$/.test(r[0][0].n), 'new ' + JSON.stringify(r[0]));
+    ok(r[1][0].live === 1 && r[1][0].changed === true, 'live ' + JSON.stringify(r[1]));
+    ok(r[2][0].old_p.status === 'invalid', 'old ' + JSON.stringify(r[2]));
+  },
+  'invite: friends stay friends after a reset': (r) => ok(r[0][0].s === 'accepted', 'kept ' + JSON.stringify(r)),
+  'invite: deleting the inviter removes the link': (r) => {
+    ok(r[1][0].n === 0, 'rows ' + JSON.stringify(r[1]));
+    ok(r[2][0].p.status === 'invalid', 'preview ' + JSON.stringify(r[1]));
+  },
+});

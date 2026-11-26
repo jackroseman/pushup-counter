@@ -30,6 +30,8 @@ export const ICON_PATHS = {
   arrowUp: '<path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   team: '<circle cx="7" cy="9" r="3" fill="currentColor"/><circle cx="17" cy="9" r="3" fill="currentColor"/><circle cx="12" cy="7" r="3.4" fill="currentColor"/><path d="M2.5 19c.4-3 2.2-4.6 4.5-4.6M21.5 19c-.4-3-2.2-4.6-4.5-4.6M6.5 20c.5-3.6 2.7-5.6 5.5-5.6s5 2 5.5 5.6z" fill="currentColor"/>',
   search: '<circle cx="10.5" cy="10.5" r="7" stroke="currentColor" stroke-width="2.4" fill="none"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="3" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M16 5.5A2.5 2.5 0 0 0 13.5 3H6a3 3 0 0 0-3 3v7.5A2.5 2.5 0 0 0 5.5 16" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 14h3M14 21h3" stroke="currentColor" stroke-width="2" fill="none"/>',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

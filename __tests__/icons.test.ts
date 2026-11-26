@@ -47,6 +47,8 @@ describe('SF Symbol mapping', () => {
       arrowUp: 'arrow.up',
       team: 'person.3.fill',
       search: 'magnifyingglass',
+      copy: 'doc.on.doc',
+      qr: 'qrcode',
     });
   });
 });

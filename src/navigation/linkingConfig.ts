@@ -27,6 +27,7 @@ export const linkingConfig: Config = {
       alias: ['battle/:challengeId'],
     },
     Invite: 'invite/:token',
+    FriendInvite: 'i/:code',
   },
 };
 

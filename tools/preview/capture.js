@@ -13,11 +13,18 @@ const { flowContext } = require('./lib/flowContext');
 
 const FLOWS_DIR = path.join(__dirname, 'flows');
 
+// A flow file exports one flow, or { variants: [{ id, ... }] } for several small flows that share
+// a file (each becomes "<file>-<id>", e.g. invite-share).
 function loadFlows() {
   return fs
     .readdirSync(FLOWS_DIR)
     .filter((f) => f.endsWith('.js'))
-    .map((f) => ({ id: path.basename(f, '.js'), ...require(path.join(FLOWS_DIR, f)) }))
+    .flatMap((f) => {
+      const base = path.basename(f, '.js');
+      const mod = require(path.join(FLOWS_DIR, f));
+      if (!Array.isArray(mod.variants)) return [{ id: base, ...mod }];
+      return mod.variants.map((v, i) => ({ order: (mod.order ?? 99) + i / 100, ...v, id: `${base}-${v.id}` }));
+    })
     .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
 }
 
@@ -84,7 +91,7 @@ async function main() {
   const flows = loadFlows();
   if (flags.has('--list') || names.length === 0) {
     console.log('Flows (npm --prefix tools/preview run capture -- <flow ...|all> [--reduce-motion] [--no-video]):');
-    for (const f of flows) console.log(`  ${f.id.padEnd(14)} ${f.description || ''}`);
+    for (const f of flows) console.log(`  ${f.id.padEnd(22)} ${f.description || ''}`);
     return names.length === 0 && !flags.has('--list') ? 1 : 0;
   }
   const unknown = names.filter((n) => n !== 'all' && !flows.some((f) => f.id === n));

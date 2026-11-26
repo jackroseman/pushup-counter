@@ -81,6 +81,8 @@ failed and saves `zz-failed.png` beside that flow's other screenshots.
 | `you-settings` | You tab and Settings |
 | `onboarding` | Fresh install, signed out: Welcome → Pick a daily goal → How it works → Today |
 | `empty` | Today, Compete, Challenges and You with no data |
+| `invite-share` … `invite-first-run` | Friend invite links (`flows/invite.js`, 9 variants): share sheet, Copied, QR, Settings row, New friend on Friends, Add friend / added / already friends / own link / invalid link, signed out → Sign in with Apple → Pick a username, first run → Welcome with "invited you". Open with a path such as `i/k7m2qx9p` (no leading slash). |
+
 
 Any flow can be run with `--reduce-motion`. The app has one (dark) appearance, so there is no
 light/dark switch.

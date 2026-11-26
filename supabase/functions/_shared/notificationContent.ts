@@ -11,6 +11,7 @@ export const LEAGUE_URL = `${APP_SCHEME}://league`;
 export type NotificationKind =
   | 'friend_request'
   | 'friend_accepted'
+  | 'friend_joined'
   | 'challenge_invite'
   | 'invite_accepted'
   | 'invite_declined'
@@ -27,6 +28,7 @@ export type NotificationKind =
 const KNOWN_KINDS: readonly NotificationKind[] = [
   'friend_request',
   'friend_accepted',
+  'friend_joined',
   'challenge_invite',
   'invite_accepted',
   'invite_declined',
@@ -182,6 +184,8 @@ export function buildNotification(n: ClaimedNotification, now: Date = new Date()
       return { title: 'Friend request', body: `${name(f.actor)} wants to be friends`, data: { type: n.kind, url: FRIENDS_URL } };
     case 'friend_accepted':
       return { title: 'New friend', body: `${name(f.actor)} accepted your friend request. Challenge them!`, data: { type: n.kind, url: FRIENDS_URL } };
+    case 'friend_joined':
+      return { title: 'New friend', body: `${name(f.actor)} used your invite link. You're now friends.`, data: { type: n.kind, url: FRIENDS_URL } };
     case 'challenge_invite': {
       if (!c) return null;
       return { title: 'New challenge', body: `${name(f.actor)} challenged you: ${challengePhrase(c)}.`, data: data(n.kind) };

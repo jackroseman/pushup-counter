@@ -319,7 +319,7 @@ Sunny's answers to the held review questions, done as separate PRs into `dev` (J
 | #55 | Set flow | "Challenge a friend" back on the summary as a quiet row under Done. Delete set also deletes on the server (queued, works offline, RLS `sets_delete_solo`, no migration). Sets played in a challenge can't be deleted. League and challenge totals are live from `sets`, so they stay consistent. |
 | #56 | You / Settings / username | "Count out loud" is a real switch (off = no spoken rep numbers; replaces "Speak rep quality"). Pass ping and Sunday recap switches under Notifications (signed in). Turn-on-notifications sheet shows once. Pick a username screen (frame 17). Legacy `components/ui.tsx` removed. |
 
-Held / skipped: invites wait for the App Store page (no change). Activity feed, result sharing, personal invite link/QR and friend streak tile are skipped (no placeholders existed). No Clear history.
+Held / skipped: activity feed, result sharing and friend streak tile are skipped (no placeholders existed). Personal invite links were later approved and built (see Friend invite links below). No Clear history.
 
 Sunny later confirmed: keep the 1-day default, no recap time picker, Count out loud on by default. The New challenge header stays the mockup's Cancel + centered title.
 
@@ -331,3 +331,18 @@ Follow-up · SF Symbols `Icon.tsx` ([#58](https://github.com/jackroseman/pushup-
 - iOS `Icon` uses `SymbolView` with the mockup-matched SF Symbol map (medium weight). Web and Android keep the SVG paths in `iconPaths.ts` as `fallback`.
 - Native tab bar icons are unchanged (`flame` / `crown` / `person.crop.circle`).
 - No package or native changes; fingerprint stays `c3f1457f…`.
+
+## Friend invite links (2026-11-26)
+
+Approved design: the invite mockups Page (frames a1–a7, b1–b10, c1–c5). Each person has one
+random 8-character link `https://reproyale.vercel.app/i/<code>` (resettable). Add friend makes
+the two people friends right away. Three PRs into `dev`:
+
+| PR | Scope | Ships as |
+| --- | --- | --- |
+| Backend + app | Migration `20261126170000_friend_invite_links` (`my_friend_invite`, `reset_friend_invite`, `friend_invite_preview`, `redeem_friend_invite`, `friend_joined` notification), test:db `invite:` cases; Invite friends sheet, QR sheet, Settings row, Add friend sheet (all states), Welcome / Pick a username "invited you", New tag on Friends; `pushupcounter://i/<code>` links. Old share-text invite removed. Also: `lint` script back to `expo lint` (fingerprint `c3f1457f…`) and `eas-ship.sh` starts workflows with `--ref <sha>`. | OTA (staging migration on merge) |
+| Native | `associatedDomains` `applinks:reproyale.vercel.app` on dev and production; `expo-clipboard`, `expo-haptics`. | The one approved dev build |
+| Web | `web/` on Vercel: invite page (three numbered TestFlight steps on iPhone, Open Rep Royale, @username fallback, QR elsewhere), AASA for both app ids, CI web check; `should-ship` ignores `web/**`. | Vercel |
+
+Copy and the TestFlight caveat: the public TestFlight link serves 1.2.0 until 1.3.0 passes beta
+review, and 1.2.0 does not open invite links, so the page always keeps the @username fallback.

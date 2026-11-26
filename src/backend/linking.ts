@@ -1,12 +1,16 @@
 /**
  * Deep links. pushupcounter://challenge/<id> and the older pushupcounter://battle/<id>
  * both open the challenge. pushupcounter://invite/<token> joins from a link.
+ * pushupcounter://i/<code> and https://<invite web host>/i/<code> open a personal invite.
  */
+import { INVITE_WEB_ORIGIN, normalizeInviteCode } from '../invites/links';
+
 export const APP_SCHEME = 'pushupcounter';
 
 export type AppLink =
   | { type: 'challenge'; challengeId: string }
   | { type: 'invite'; token: string }
+  | { type: 'friendInvite'; code: string }
   | { type: 'history' }
   | { type: 'progress' }
   | { type: 'challenges' }
@@ -23,6 +27,10 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
   const schemePrefix = `${APP_SCHEME}://`;
   if (url.toLowerCase().startsWith(schemePrefix)) {
     path = url.slice(schemePrefix.length);
+  } else if (url.toLowerCase().startsWith(INVITE_WEB_ORIGIN + '/')) {
+    const m = /^i\/([^/?#]+)\/?(?:[?#].*)?$/.exec(url.slice(INVITE_WEB_ORIGIN.length + 1));
+    const code = m ? normalizeInviteCode(m[1]) : null;
+    return code ? { type: 'friendInvite', code } : null;
   } else if (webBaseUrl && url.startsWith(webBaseUrl + '/')) {
     path = url.slice(webBaseUrl.length + 1);
     const m = /^b\/([^/?#]+)/.exec(path);
@@ -36,6 +44,7 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
   if (head === 'today' && parts.length === 1) return { type: 'home' };
   if ((head === 'challenge' || head === 'battle') && arg && UUID.test(arg)) return { type: 'challenge', challengeId: arg.toLowerCase() };
   if (head === 'invite' && arg && TOKEN.test(arg)) return { type: 'invite', token: arg.toLowerCase() };
+  if (head === 'i' && arg && parts.length === 2 && normalizeInviteCode(arg)) return { type: 'friendInvite', code: normalizeInviteCode(arg)! };
   if (head === 'history' && parts.length === 1) return { type: 'history' };
   if (head === 'progress' && parts.length === 1) return { type: 'progress' };
   if ((head === 'challenges' || head === 'battles') && parts.length === 1) return { type: 'challenges' };

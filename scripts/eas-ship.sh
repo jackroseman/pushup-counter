@@ -46,7 +46,8 @@ fail() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error::$*"; else echo "er
 json() { sed -n '/^[[{]/,$p'; }  # eas prints notices before the JSON on stdout
 
 SHA="$(git rev-parse HEAD)"
-# The build workflow runs from GitHub at this branch (it must be pushed).
+# Shown in messages only. The build runs from GitHub at $SHA (it must be pushed): CI checks out a
+# detached commit, so there is no local branch for `eas workflow:run --ref <branch>` to resolve.
 REF="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}"
 [ -n "$MESSAGE" ] || MESSAGE="$(git log -1 --format=%s)"
 
@@ -94,5 +95,5 @@ if [ -n "$RUNNING" ]; then
 fi
 
 note "Native change (no $PROFILE build has fingerprint ${FINGERPRINT:0:10}): starting $BUILD_WORKFLOW on $REF (${SHA:0:7}). Uses 1 of the monthly builds."
-if [ "$DRY_RUN" = 1 ]; then echo "dry run: eas workflow:run .eas/workflows/$BUILD_WORKFLOW --ref $REF"; exit 0; fi
-"${EAS[@]}" workflow:run ".eas/workflows/$BUILD_WORKFLOW" --ref "$REF" --non-interactive
+if [ "$DRY_RUN" = 1 ]; then echo "dry run: eas workflow:run .eas/workflows/$BUILD_WORKFLOW --ref $SHA"; exit 0; fi
+"${EAS[@]}" workflow:run ".eas/workflows/$BUILD_WORKFLOW" --ref "$SHA" --non-interactive

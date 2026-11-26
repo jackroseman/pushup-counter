@@ -15,6 +15,8 @@ export interface SettingsAccount {
   /** `@sunny`, `Not set` while there is no username, or empty while it loads. */
   profileValue: string;
   onProfile: () => void;
+  /** Opens your invite link sheet; absent until there is a username. */
+  onInviteLink?: () => void;
   backupValue: string;
   onBackup: () => void;
   onSignOut: () => void;
@@ -107,6 +109,7 @@ export function SettingsScreen({
           <SectionHeader title="Account" />
           <ListGroup inset={ICON_ROW_INSET}>
             <ListRow icon="person" title="Profile" value={account.profileValue} chevron onPress={account.onProfile} />
+            {account.onInviteLink ? <ListRow icon="link" title="Invite link" chevron onPress={account.onInviteLink} /> : null}
             <ListRow icon="check" title="Sets backed up" value={account.backupValue} chevron onPress={account.onBackup} />
           </ListGroup>
           <ListGroup style={styles.actions}>

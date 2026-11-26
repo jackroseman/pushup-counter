@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { ActionSheetIOS, Alert, Platform } from 'react-native';
 
 import { ChallengeScreen, type ChallengeMenuItem } from '../../screens/compete/ChallengeScreen';
@@ -8,8 +8,6 @@ import { rematchParams } from '../../battles/challengeView';
 import { IconButton } from '../../ui';
 import { NewChallengeSheet } from '../../screens/compete/NewChallengeSheet';
 import { LeagueInfoSheet } from '../../screens/compete/LeagueInfoSheet';
-import { shareInvite } from '../../battles/inviteFriends';
-import { useIdentity } from '../../backend/IdentityProvider';
 import { FriendsScreen, type FriendsScreenHandle } from '../../screens/compete/FriendsScreen';
 import { FriendScreen, type FriendMenuItem } from '../../screens/compete/FriendScreen';
 import { useBackend } from '../../backend/BackendProvider';
@@ -85,7 +83,6 @@ export function BattleRoute({ navigation, route }: Props<'Battle'>) {
 
 export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
   const { enrollments } = useAppState();
-  const { profile } = useIdentity();
   return (
     <Frame kind="header">
       <CompeteGate onProfile={() => navigation.navigate('ProfileSetup')}>
@@ -95,7 +92,7 @@ export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
           offer={route.params?.offer}
           hasGoal={openGoal(enrollments)}
           onNeedGoal={() => navigation.navigate('GoalSetup')}
-          onInvite={() => profile && shareInvite(profile.username)}
+          onInvite={() => navigation.navigate('InviteLink')}
           onCancel={() => navigation.goBack()}
           onCreated={(challengeId, share, extras) =>
             navigation.replace('Battle', {
@@ -116,9 +113,14 @@ export function LeagueInfoRoute({ navigation }: Props<'LeagueInfo'>) {
   return <LeagueInfoSheet onClose={() => navigation.goBack()} />;
 }
 
-export function FriendsRoute({ navigation }: Props<'Friends'>) {
-  const { profile } = useIdentity();
+export function FriendsRoute({ navigation, route }: Props<'Friends'>) {
   const screen = useRef<FriendsScreenHandle>(null);
+  const search = !!route.params?.search;
+  useEffect(() => {
+    if (!search) return undefined;
+    const t = setTimeout(() => screen.current?.focusSearch(), 400);
+    return () => clearTimeout(t);
+  }, [search]);
   useLayoutEffect(
     () =>
       navigation.setOptions({
@@ -132,7 +134,7 @@ export function FriendsRoute({ navigation }: Props<'Friends'>) {
         <FriendsScreen
           ref={screen}
           onOpenFriend={(friend) => navigation.navigate('Friend', { friend })}
-          onInvite={() => profile && shareInvite(profile.username)}
+          onInvite={() => navigation.navigate('InviteLink')}
         />
       </CompeteGate>
     </Frame>

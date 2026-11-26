@@ -40,9 +40,14 @@ export type RootStackParamList = {
   NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
   /** The league's (i) sheet: how Total and Improvement work. */
   LeagueInfo: undefined;
-  Friends: undefined;
+  Friends: { search?: boolean } | undefined;
   Friend: { friend: Friend };
   Invite: { token: string };
+  /** Someone's personal invite link (pushupcounter://i/<code> or https://<web host>/i/<code>). */
+  FriendInvite: { code: string };
+  /** Your own invite link: Share, Copy, QR code, Reset. */
+  InviteLink: undefined;
+  InviteQr: { code: string };
 };
 
 export type Props<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

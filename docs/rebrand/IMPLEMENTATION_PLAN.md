@@ -340,9 +340,9 @@ the two people friends right away. Three PRs into `dev`:
 
 | PR | Scope | Ships as |
 | --- | --- | --- |
-| Backend + app | Migration `20261126170000_friend_invite_links` (`my_friend_invite`, `reset_friend_invite`, `friend_invite_preview`, `redeem_friend_invite`, `friend_joined` notification), test:db `invite:` cases; Invite friends sheet, QR sheet, Settings row, Add friend sheet (all states), Welcome / Pick a username "invited you", New tag on Friends; `pushupcounter://i/<code>` links. Old share-text invite removed. Also: `lint` script back to `expo lint` (fingerprint `c3f1457f…`) and `eas-ship.sh` starts workflows with `--ref <sha>`. | OTA (staging migration on merge) |
-| Native | `associatedDomains` `applinks:reproyale.vercel.app` on dev and production; `expo-clipboard`, `expo-haptics`. | The one approved dev build |
-| Web | `web/` on Vercel: invite page (three numbered TestFlight steps on iPhone, Open Rep Royale, @username fallback, QR elsewhere), AASA for both app ids, CI web check; `should-ship` ignores `web/**`. | Vercel |
+| [#64](https://github.com/jackroseman/pushup-counter/pull/64) Backend + app | Migration `20261126170000_friend_invite_links` (`my_friend_invite`, `reset_friend_invite`, `friend_invite_preview`, `redeem_friend_invite`, `friend_joined` notification), test:db `invite:` cases; Invite friends sheet, QR sheet, Settings row, Add friend sheet (all states), Welcome / Pick a username "invited you", New tag on Friends; `pushupcounter://i/<code>` links. Old share-text invite removed. Also: `lint` script back to `expo lint` (fingerprint `c3f1457f…`) and `eas-ship.sh` starts workflows with `--ref <sha>`. | OTA (staging migration on merge) |
+| [#66](https://github.com/jackroseman/pushup-counter/pull/66) Native | `associatedDomains` `applinks:reproyale.vercel.app` on dev and production; `expo-clipboard`, `expo-haptics`. | The one approved dev build |
+| [#65](https://github.com/jackroseman/pushup-counter/pull/65) Web | `web/` on Vercel: invite page (three numbered TestFlight steps on iPhone, Open Rep Royale, @username fallback, QR elsewhere), AASA for both app ids, CI web check; `should-ship` ignores `web/**`. | Vercel |
 
 Copy and the TestFlight caveat: the public TestFlight link serves 1.2.0 until 1.3.0 passes beta
 review, and 1.2.0 does not open invite links, so the page always keeps the @username fallback.

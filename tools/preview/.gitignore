@@ -1,0 +1,3 @@
+# Build output, screenshots and recordings (npm run preview:build / preview:capture).
+out/
+node_modules/

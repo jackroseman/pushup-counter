@@ -4,7 +4,7 @@
 # name stable (renaming it means updating the protection rules).
 #
 # Deploys of the app are gated here: after checks pass on a push to dev or main, and only
-# if the commit changed something other than docs, tests, supabase/ or .github/, the
+# if the commit changed something other than docs, tests, supabase/, .github/ or tools/, the
 # "ship" job starts eas-ship.yml for this exact SHA. That is what publishes an OTA or
 # starts a native build. eas-ship.yml is no longer triggered by push alone, so a red
 # checks run cannot reach a phone. supabase-deploy.yml stays a separate push workflow.
@@ -78,7 +78,8 @@ jobs:
 
   # Parallel with checks. Decides whether this push should start eas-ship.yml (same
   # ignore list as the old eas-ship paths-ignore, plus .github/ so a workflow-only
-  # merge cannot publish an OTA or start a build).
+  # merge cannot publish an OTA or start a build, plus tools/: developer tooling such as
+  # the web preview, which has its own package.json and is never bundled into the app).
   should-ship:
     name: should-ship
     if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
@@ -107,7 +108,8 @@ jobs:
             ':(exclude)docs/**' \
             ':(exclude)__tests__/**' \
             ':(exclude)supabase/**' \
-            ':(exclude).github/**')"
+            ':(exclude).github/**' \
+            ':(exclude)tools/**')"
           if [ -z "$changed" ]; then
             echo "No shippable paths changed; eas-ship will not run."
             echo "ship=false" >> "$GITHUB_OUTPUT"

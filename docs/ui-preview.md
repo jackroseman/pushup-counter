@@ -45,7 +45,7 @@ node tools/preview/node_modules/playwright-core/cli.js install chromium
 ```
 
 or set `PREVIEW_CHROME=/path/to/chrome`. Install `ffmpeg` (`brew install ffmpeg`,
-`apt install ffmpeg`) to get `.mp4` files. Without it you get `.webm`.
+`apt install ffmpeg`) to get `.mp4` files. Without it there is no video (screenshots still work).
 
 > Why its own `package.json`? The app's `package.json` scripts and dependencies are part of the
 > native fingerprint. Adding the preview there would change the dev runtime and force a new dev
@@ -101,7 +101,10 @@ tools/preview/out/
 ```
 
 Screenshots are 402 × 874 points (iPhone 16 Pro / 17) at 3x, or 2x when the flow is also
-recording a video. Videos are 804 × 1748. The browser clock starts at Wednesday 25 November
+recording a video. Videos are 804 × 1748 at 30 fps (`lib/recorder.js` takes 2x screenshots in a
+loop, about 15-20 a second, so the phone fills the frame; Playwright's own recorder drew it at 1x
+in a quarter of the frame). While recording, each screenshot is held for a moment and taps show a
+touch dot. `PREVIEW_KEEP_FRAMES=1` keeps the raw frames in `<flow>/.video/`. The browser clock starts at Wednesday 25 November
 2026, 4:30 PM Eastern, so every run renders the same dates and numbers.
 
 ## Attaching recordings to a PR

@@ -77,11 +77,28 @@ export const HERO_MAX = 150;
 
 /** Big numbers sit on a tight line box (0.92 of the size), as in the mockup frames. */
 export const HERO_LINE = 0.92;
+/** SF Pro's natural line height (ascender + descender) as a share of the font size. */
+export const SF_LINE = 1.19;
 
-/** A hero number style at `size` pt (clamped to 28–150). */
+/**
+ * How much to pull a big number in at the top and at the bottom so its box is HERO_LINE × size
+ * without clipping. A lineHeight below the font's own line height cuts off the top of the
+ * glyphs on iOS, so big numbers use the full line height and use negative margins instead
+ * (the same box and glyph position as CSS line-height 0.92 in the mockups).
+ */
+export function heroTrim(fontSize: number): number {
+  return Math.round((fontSize * (SF_LINE - HERO_LINE)) / 2);
+}
+
+/** The full (unclipped) line height for a big number at `fontSize`. */
+export function heroLineHeight(fontSize: number): number {
+  return Math.round(fontSize * SF_LINE);
+}
+
+/** A hero number style at `size` pt (clamped to 28–150). `Text` adds the `heroTrim` margins. */
 export function hero(size: number): TextStyle {
   const fontSize = Math.max(HERO_MIN, Math.min(HERO_MAX, size));
-  return { ...type.hero, fontSize, lineHeight: Math.round(fontSize * HERO_LINE) };
+  return { ...type.hero, fontSize, lineHeight: heroLineHeight(fontSize) };
 }
 
 export const space = { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 } as const;

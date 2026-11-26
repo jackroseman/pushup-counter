@@ -175,12 +175,6 @@ export function presentToday(input: {
   };
 }
 
-export function contributionLine(repsToday: number, target: number | null, rest: boolean): string {
-  if (rest) return `This set put you at ${repsToday}. Rest day.`;
-  if (target == null) return `This set put you at ${repsToday} today.`;
-  return `This set put you at ${repsToday} / ${target}.`;
-}
-
 function lifetime(workouts: readonly Workout[]): number {
   return workouts.reduce((sum, w) => sum + w.countedReps, 0);
 }
@@ -263,43 +257,4 @@ export function celebrate(
   if (!result) return null;
   if (goalNewlyMet && result.kind !== 'goal_met') return { ...result, goalMet: true };
   return result;
-}
-
-export function celebrationText(c: Celebration): { title: string; also?: string } {
-  let title: string;
-  switch (c.kind) {
-    case 'first_set':
-      title = 'First set';
-      break;
-    case 'milestone':
-      title = `You crossed ${(c.value ?? 0).toLocaleString('en-US')} push-ups.`;
-      break;
-    case 'longest_streak':
-      title = `New longest streak: ${c.value} day streak.`;
-      break;
-    case 'best_set':
-      title = `New best set: ${c.value}.`;
-      break;
-    case 'best_day':
-      title = `New best day: ${c.value}.`;
-      break;
-    case 'best_week':
-      title = `New best week: ${c.value}.`;
-      break;
-    case 'best_month':
-      title = `New best month: ${c.value}.`;
-      break;
-    case 'goal_met':
-      title = 'Goal met.';
-      break;
-    case 'set_marker':
-      title = `${c.value} in one set.`;
-      break;
-  }
-  return c.goalMet && c.kind !== 'goal_met' ? { title, also: 'Also: goal met.' } : { title };
-}
-
-export function contributionFor(workouts: readonly Workout[], enrollments: readonly GoalEnrollment[], today: string, zone: string): string {
-  const view = buildToday({ workouts, enrollments, today, timeZone: zone });
-  return contributionLine(view.reps, view.target, view.rest);
 }

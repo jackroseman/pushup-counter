@@ -20,7 +20,7 @@ export function WelcomeScreen({
   return (
     <View style={styles.root}>
       <View style={styles.hero}>
-        <BrandMark variant="icon" />
+        <BrandMark />
         <Text style={styles.name} accessibilityRole="header">
           Rep Royale
         </Text>

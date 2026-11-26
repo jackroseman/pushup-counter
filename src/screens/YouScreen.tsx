@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, ProgressBar, SectionHeader, StatTile, Text, color, gutter, radius } from '../ui';
+import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, ProgressBar, SectionHeader, StatTile, TabHeader, Text, color, gutter, radius } from '../ui';
 import { formatCount } from '../progress';
 import { formatSetDateTime } from '../progress/format';
 import type { YouModel, YouRecentRow } from '../progress/you';
@@ -45,12 +45,7 @@ export function YouScreen({
 }) {
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      <View style={styles.navbar}>
-        <IconButton icon="gear" accessibilityLabel="Settings" onPress={onSettings} />
-      </View>
-      <Text variant="largeTitle" accessibilityRole="header">
-        You
-      </Text>
+      <TabHeader title="You" right={<IconButton icon="gear" accessibilityLabel="Settings" onPress={onSettings} />} />
       {banner ? (
         <Text variant="footnote" style={styles.banner}>
           {banner}
@@ -205,7 +200,6 @@ function PromptCard({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
   content: { paddingHorizontal: gutter, paddingBottom: 32 },
-  navbar: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   banner: { marginTop: 6 },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   grow: { flex: 1, minWidth: 0 },

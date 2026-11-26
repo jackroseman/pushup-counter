@@ -1,9 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useBackend } from '../../backend/BackendProvider';
-import { IconButton, Segmented } from '../../ui';
-import { colors } from '../../theme';
+import { IconButton, Segmented, TabHeader, gutter } from '../../ui';
 import { Frame } from '../frame';
 import type { CompeteSegment, TabProps } from '../types';
 import { ChallengesBody, LeagueBody } from './CompeteBodies';
@@ -25,17 +24,17 @@ export function CompeteRoute({ navigation, route }: TabProps<'Compete'>) {
   return (
     <Frame kind="tab">
       <View style={styles.head}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title} accessibilityRole="header">
-            Compete
-          </Text>
-          {signedIn ? (
-            <View style={styles.actions}>
-              <IconButton icon="people" accessibilityLabel="Friends" onPress={() => navigation.navigate('Friends')} />
-              <IconButton icon="plus" accessibilityLabel="New challenge" onPress={() => navigation.navigate('NewBattle')} />
-            </View>
-          ) : null}
-        </View>
+        <TabHeader
+          title="Compete"
+          right={
+            signedIn ? (
+              <>
+                <IconButton icon="people" accessibilityLabel="Friends" onPress={() => navigation.navigate('Friends')} />
+                <IconButton icon="plus" accessibilityLabel="New challenge" onPress={() => navigation.navigate('NewBattle')} />
+              </>
+            ) : null
+          }
+        />
         {signedIn ? <Segmented options={SEGMENTS} value={segment} onChange={(key) => navigation.setParams({ segment: key })} /> : null}
       </View>
       {/* Both bodies stay mounted so switching segments keeps their scroll and loaded data. */}
@@ -52,10 +51,7 @@ export function CompeteRoute({ navigation, route }: TabProps<'Compete'>) {
 }
 
 const styles = StyleSheet.create({
-  head: { paddingHorizontal: 20, paddingTop: 12, gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { color: colors.text, fontSize: 34, fontWeight: '800' },
-  actions: { flexDirection: 'row', gap: 10 },
+  head: { paddingHorizontal: gutter, gap: 12 },
   body: { flex: 1 },
   hidden: { display: 'none' },
 });

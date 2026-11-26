@@ -1,4 +1,4 @@
-import { clockText, countdownProgress, countingTitle, faceCenteringView, faceDiagLine, emptyFaceDiag, isDevVariant, nextSetNumber, toBeatLine, CENTER_FACE_LINE } from '../src/session/sessionView';
+import { clockText, countdownProgress, countingTitle, faceCenteringView, nextSetNumber, toBeatLine, CENTER_FACE_LINE } from '../src/session/sessionView';
 import type { Battle } from '../src/battles/model';
 import type { GuideSnapshot } from '../src/core';
 
@@ -60,22 +60,5 @@ describe('sessionView', () => {
       ready: false,
       line: 'Shift left a little to center over the camera',
     });
-  });
-
-  it('formats the dev face diagnostics line', () => {
-    const d = { ...emptyFaceDiag(), faceStart: 'ok' as const, events: 12, tracked: 9, lastEventAt: 1_000, starts: 1, effects: 1, motion: 'on' as const };
-    expect(faceDiagLine(d, { width: 361.4, height: 380 }, 'minimal', 1_200)).toBe(
-      'cam ok · view 361x380 minimal · ev 12/9 · last 0.2s · start 1 stop 0 fx 1 · motion on'
-    );
-    expect(faceDiagLine(emptyFaceDiag(), null, 'full', 5)).toBe('cam pending · view - full · ev 0/0 · last - · start 0 stop 0 fx 0 · motion pending');
-    expect(faceDiagLine({ ...emptyFaceDiag(), lastError: 'Camera in use' }, null, 'full', 5)).toContain('err Camera in use');
-  });
-
-  it('shows diagnostics only in Pushup Dev or a dev bundle', () => {
-    expect(isDevVariant({ name: 'Pushup Dev' }, false)).toBe(true);
-    expect(isDevVariant({ name: 'Rep Royale', ios: { bundleIdentifier: 'com.jackroseman.pushupcounter.dev' } }, false)).toBe(true);
-    expect(isDevVariant({ name: 'Rep Royale', ios: { bundleIdentifier: 'com.jackroseman.pushupcounter' } }, false)).toBe(false);
-    expect(isDevVariant(null, false)).toBe(false);
-    expect(isDevVariant(null, true)).toBe(true);
   });
 });

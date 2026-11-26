@@ -20,6 +20,14 @@
 #                     change needs a new version). Otherwise start build-production.yml
 #                     (build + submit to TestFlight).
 #      A build workflow already running for this profile is not started twice.
+#      Either way it then publishes an OTA update for the new runtime too (no rollout
+#      percentage: no installed app has this runtime yet, so nothing can receive it before the
+#      build does). The build's Updates tab is never empty, so the commit it was built from can
+#      be republished or rolled back to like any other update. The build embeds the same JS,
+#      and this update is older than the build's embedded one, so expo-updates does not download it again.
+#      A failed publish fails the job; re-running it finds the queued build and publishes.
+#   Tests: scripts/tests/eas-ship-cases.mjs runs this script against a
+#   fake eas on PATH.
 set -euo pipefail
 
 PROFILE="${1:-}"; shift || true
@@ -65,13 +73,19 @@ MATCH="$("${EAS[@]}" build:list -p ios --build-profile "$PROFILE" --fingerprint-
       console.log(b?`${b.id} ${b.status} ${b.runtime?.version ?? ""}`:"");
     })')"
 
+# Publish this commit as an OTA update on the profile's channel. $1: rollout percentage ("" = 100).
+publish_ota() {
+  local args=(update --channel "$PROFILE" --environment "$PROFILE" --platform ios --message "$MESSAGE" --non-interactive)
+  [ -n "${1:-}" ] && args+=(--rollout-percentage "$1")
+  if [ "$DRY_RUN" = 1 ]; then echo "dry run: eas ${args[*]}"; return 0; fi
+  "${EAS[@]}" "${args[@]}"
+}
+
 if [ -n "$MATCH" ]; then
   read -r BUILD_ID BUILD_STATUS RUNTIME <<<"$MATCH"
   note "Compatible $PROFILE build ${BUILD_ID:0:8} ($BUILD_STATUS, runtime $RUNTIME): publishing an OTA update."
-  ARGS=(update --channel "$PROFILE" --environment "$PROFILE" --platform ios --message "$MESSAGE" --non-interactive)
-  [ -n "$ROLLOUT" ] && ARGS+=(--rollout-percentage "$ROLLOUT")
-  if [ "$DRY_RUN" = 1 ]; then echo "dry run: eas ${ARGS[*]}"; exit 0; fi
-  exec "${EAS[@]}" "${ARGS[@]}"
+  publish_ota "$ROLLOUT"
+  exit 0
 fi
 
 if [ "$PROFILE" = production ]; then
@@ -91,9 +105,15 @@ RUNS="$("${EAS[@]}" workflow:runs --workflow "$BUILD_WORKFLOW" --limit 10 --json
 RUNNING="$(printf '%s' "$RUNS" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s||"[]").filter(r=>["NEW","IN_PROGRESS","WAITING","ACTION_REQUIRED"].includes(r.status)).map(r=>r.id).join(" ")))')"
 if [ -n "$RUNNING" ]; then
   note "Native change, but $BUILD_WORKFLOW is already running ($RUNNING); not starting another build."
-  exit 0
+else
+  note "Native change (no $PROFILE build has fingerprint ${FINGERPRINT:0:10}): starting $BUILD_WORKFLOW on $REF (${SHA:0:7}). Uses 1 of the monthly builds."
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "dry run: eas workflow:run .eas/workflows/$BUILD_WORKFLOW --ref $SHA"
+  else
+    "${EAS[@]}" workflow:run ".eas/workflows/$BUILD_WORKFLOW" --ref "$SHA" --non-interactive
+  fi
 fi
 
-note "Native change (no $PROFILE build has fingerprint ${FINGERPRINT:0:10}): starting $BUILD_WORKFLOW on $REF (${SHA:0:7}). Uses 1 of the monthly builds."
-if [ "$DRY_RUN" = 1 ]; then echo "dry run: eas workflow:run .eas/workflows/$BUILD_WORKFLOW --ref $SHA"; exit 0; fi
-"${EAS[@]}" workflow:run ".eas/workflows/$BUILD_WORKFLOW" --ref "$SHA" --non-interactive
+# The matching update for the new runtime, so the build has it from the start (see the header).
+note "Publishing the OTA update for the new $PROFILE runtime (fingerprint ${FINGERPRINT:0:10})."
+publish_ota ""

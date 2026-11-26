@@ -31,6 +31,12 @@ When it does run, it calls `scripts/eas-ship.sh` on a GitHub runner (no EAS queu
      its native code. Bump the version (below) and merge again. If the version is new, it
      starts `.eas/workflows/build-production.yml` (1 build + upload to TestFlight).
    * A build workflow that is already running is not started twice.
+   * Then, in the same run, it publishes an OTA update of this commit for the new runtime
+     (no rollout percentage). No installed app has that runtime yet, so nobody receives it
+     early; the new build shows it in its Updates tab from the start, which keeps
+     `eas update:republish` and rollbacks working for that build. The build embeds the same
+     JS and is newer than this update, so installs do not download it again. If this publish
+     fails the job is red; re-run **EAS ship**: it finds the queued build and publishes.
 
 Markdown, `docs/`, `supabase/`, `__tests__/`, `.github/` and `tools/` changes do not
 start `eas-ship.yml` at all. A newer merge that will ship cancels a running ship (it ships
@@ -74,6 +80,7 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
 
 ```bash
 scripts/eas-ship.sh development --dry-run           # what a merge to dev would do
+node --test scripts/tests/eas-ship-cases.mjs         # eas-ship.sh decisions against a fake eas (CI runs it)
 scripts/eas-ship.sh production --rollout 10         # publish to 10% of production (from main)
 eas workflow:run .eas/workflows/build-dev.yml --ref dev           # new dev client (1 build)
 eas workflow:run .eas/workflows/build-production.yml --ref main   # new store build + upload (1 build)

@@ -106,8 +106,9 @@ release, merges to `main` use the same gate. The full recipe is in
 
 * **JS/asset-only change** → OTA update to the branch's channel, in minutes, no EAS build
   and no EAS queue.
-* **Native change** → one build. On `main` only if `version` was bumped; otherwise the ship
-  fails and tells you to bump it.
+* **Native change** → one build, plus an OTA update of the same commit for the new runtime
+  (so the build's Updates tab is never empty). On `main` only if `version` was bumped;
+  otherwise the ship fails, tells you to bump it, and publishes nothing.
 
 Watch ships under GitHub → Actions → EAS ship, builds at expo.dev → project → Workflows.
 Validate an EAS workflow: `eas workflow:validate .eas/workflows/build-dev.yml`.

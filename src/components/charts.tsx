@@ -39,9 +39,30 @@ function linePath(points: DistanceSample[], x: (t: number) => number, y: (d: num
   return p;
 }
 
+/** Lowest point between the previous rep and this one: where the rep's dot sits on the line. */
+export function repBottoms(samples: DistanceSample[], reps: RepMarker[], lookbackMs = 2500): { rep: RepMarker; t: number; d: number }[] {
+  const out: { rep: RepMarker; t: number; d: number }[] = [];
+  let prev = -Infinity;
+  for (const rep of reps) {
+    const from = Math.max(prev, rep.t - lookbackMs);
+    let best: DistanceSample | null = null;
+    for (const s of samples) {
+      if (s.t < from || s.t > rep.t || s.d === null) continue;
+      if (!best || s.d < (best.d as number)) best = s;
+    }
+    if (best) out.push({ rep, t: best.t, d: best.d as number });
+    prev = rep.t;
+  }
+  return out;
+}
+
+const DOT: Record<RepQuality, string> = { full: color.quality.full, good: color.quality.good, shallow: color.quality.shallow };
+
 /**
- * Face distance over time (higher = farther from the phone, so the line drops as you go down),
- * with the calibrated top, the Good/Full depth lines and markers where reps were counted.
+ * Depth chart (frames 9 and 12): face distance over time, so the line dips as you go down.
+ * Dashed Top / Good / Full lines from the calibration, a green band below Full, and a dot at
+ * the bottom of each rep (green Full, white Good, graphite Too shallow). No background: it sits
+ * inside a Card.
  */
 export function DistanceChart({
   samples,
@@ -49,8 +70,8 @@ export function DistanceChart({
   tEnd,
   top,
   reps,
-  height = 180,
-  showRepNumbers = false,
+  height = 122,
+  head = false,
 }: {
   samples: DistanceSample[];
   tStart: number;
@@ -58,62 +79,71 @@ export function DistanceChart({
   top: number | null;
   reps: RepMarker[];
   height?: number;
-  showRepNumbers?: boolean;
+  /** Mark the newest point (live chart). */
+  head?: boolean;
 }) {
   const [width, onLayout] = useWidth();
-  const padL = 4;
-  const padR = 40;
-  const padT = 14;
-  const padB = 6;
-  const floor = DEFAULT_CONFIG.floorDistance;
+  const padR = 34;
+  const topY = 20;
+  const bandH = 22;
+  const fullY = height - 8 - bandH;
+  const plotW = Math.max(10, width - padR);
 
   const vals = samples.map((s) => s.d).filter((d): d is number => d !== null);
-  let yMax = top !== null ? top + 0.05 : vals.length ? Math.max(...vals) + 0.03 : 0.6;
-  let yMin = top !== null ? floor : vals.length ? Math.min(...vals) - 0.03 : 0.1;
-  if (vals.length) {
-    yMax = Math.max(yMax, Math.max(...vals) + 0.01);
-    yMin = Math.min(yMin, Math.min(...vals) - 0.01);
+  let y: (d: number) => number;
+  let lines: { label: string; y: number; stroke: string; text: string; bold?: boolean }[] = [];
+  if (top !== null) {
+    const full = distanceForRatio(top, DEFAULT_CONFIG.fullRatio);
+    const good = distanceForRatio(top, DEFAULT_CONFIG.goodRatio);
+    const k = (fullY - topY) / Math.max(1e-6, top - full);
+    y = (d: number) => Math.max(2, Math.min(height - 2, topY + (top - d) * k));
+    lines = [
+      { label: 'Top', y: y(top), stroke: 'rgba(255,255,255,0.12)', text: 'rgba(235,235,245,0.4)' },
+      { label: 'Good', y: y(good), stroke: color.separator, text: 'rgba(235,235,245,0.4)' },
+      { label: 'Full', y: fullY, stroke: 'rgba(48,209,88,0.45)', text: color.signal, bold: true },
+    ];
+  } else {
+    let hi = vals.length ? Math.max(...vals) + 0.01 : 0.6;
+    const lo = vals.length ? Math.min(...vals) - 0.01 : 0.1;
+    if (hi - lo < 0.05) hi = lo + 0.05;
+    y = (d: number) => topY + ((hi - d) / (hi - lo)) * (height - 8 - topY);
   }
-  if (yMax - yMin < 0.05) yMax = yMin + 0.05;
   const span = Math.max(1, tEnd - tStart);
-  const x = (t: number) => padL + ((t - tStart) / span) * (width - padL - padR);
-  const y = (d: number) => padT + (1 - (d - yMin) / (yMax - yMin)) * (height - padT - padB);
-
-  const lines =
-    top !== null
-      ? [
-          { label: 'Top', d: top, color: colors.muted, dash: undefined },
-          { label: 'Good', d: distanceForRatio(top, DEFAULT_CONFIG.goodRatio), color: colors.quality.good, dash: '4,4' },
-          { label: 'Full', d: distanceForRatio(top, DEFAULT_CONFIG.fullRatio), color: colors.quality.full, dash: '4,4' },
-        ]
-      : [];
+  const x = (t: number) => ((t - tStart) / span) * plotW;
+  const dots = repBottoms(samples, reps).filter((b) => b.t >= tStart && b.t <= tEnd);
+  let last: DistanceSample | null = null;
+  for (let i = samples.length - 1; i >= 0; i--) {
+    if (samples[i].d !== null) {
+      last = samples[i];
+      break;
+    }
+  }
 
   return (
     <View onLayout={onLayout} style={{ width: '100%', height }}>
       <Svg width={width} height={height}>
-        <Rect x={0} y={0} width={width} height={height} fill={colors.card} rx={10} />
+        {top !== null ? <Rect x={0} y={fullY} width={plotW} height={bandH} rx={4} fill="rgba(48,209,88,0.10)" /> : null}
         {lines.map((l) => (
           <G key={l.label}>
-            <Line x1={padL} x2={width - padR} y1={y(l.d)} y2={y(l.d)} stroke={l.color} strokeWidth={1} strokeDasharray={l.dash} opacity={0.8} />
-            <SvgText x={width - padR + 4} y={y(l.d) + 4} fill={l.color} fontSize={11}>
+            <Line x1={0} x2={plotW} y1={l.y} y2={l.y} stroke={l.stroke} strokeWidth={1} strokeDasharray="3,3" />
+            <SvgText x={plotW + 6} y={l.y + 4} fill={l.text} fontSize={10} fontWeight={l.bold ? '600' : '400'}>
               {l.label}
             </SvgText>
           </G>
         ))}
-        {reps
-          .filter((r) => r.t >= tStart && r.t <= tEnd)
-          .map((r) => (
-            <G key={r.index}>
-              <Line x1={x(r.t)} x2={x(r.t)} y1={padT} y2={height - padB} stroke={colors.quality[r.quality]} strokeWidth={1} opacity={0.5} />
-              <Circle cx={x(r.t)} cy={padT - 2} r={4} fill={colors.quality[r.quality]} />
-              {showRepNumbers ? (
-                <SvgText x={x(r.t) + 5} y={padT + 10} fill={colors.muted} fontSize={10}>
-                  {r.index}
-                </SvgText>
-              ) : null}
-            </G>
-          ))}
-        <Path d={linePath(samples, x, y)} stroke={LINE} strokeWidth={2} fill="none" strokeLinejoin="round" />
+        <Path d={linePath(samples, x, y)} stroke={LINE} strokeWidth={2.4} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        {dots.map((b) => (
+          <Circle
+            key={b.rep.index}
+            cx={x(b.t)}
+            cy={y(b.d)}
+            r={3.5}
+            fill={DOT[b.rep.quality]}
+            stroke={b.rep.quality === 'shallow' ? color.tertiary : undefined}
+            strokeWidth={b.rep.quality === 'shallow' ? 1 : 0}
+          />
+        ))}
+        {head && last && last.d !== null ? <Circle cx={x(last.t)} cy={y(last.d)} r={4.5} fill={color.signal} /> : null}
       </Svg>
     </View>
   );
@@ -124,7 +154,7 @@ export function LiveDistanceChart({
   source,
   windowMs,
   fps = 12,
-  height = 170,
+  height = 122,
 }: {
   source: { current: { samples: DistanceSample[]; reps: RepMarker[]; top: number | null } };
   windowMs: number;
@@ -141,7 +171,7 @@ export function LiveDistanceChart({
   const tStart = now - windowMs;
   const samples = buf.samples.filter((s) => s.t >= tStart - 100);
   return (
-    <DistanceChart samples={samples} tStart={tStart} tEnd={now} top={buf.top} reps={buf.reps} height={height} />
+    <DistanceChart samples={samples} tStart={tStart} tEnd={now} top={buf.top} reps={buf.reps} height={height} head />
   );
 }
 

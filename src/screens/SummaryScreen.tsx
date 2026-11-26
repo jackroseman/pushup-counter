@@ -8,8 +8,7 @@ import { SessionRecord } from '../storage/history';
 import { colors } from '../theme';
 import { color } from '../ui/tokens';
 
-/** Plain line shown when the phone moved and ended the set. */
-export const PHONE_MOVED = 'Your phone moved.';
+import { PHONE_MOVED } from './SetEndedScreen';
 
 export function summaryTitle(record: Pick<SessionRecord, 'endReason'>, fromHistory?: boolean): string {
   if (fromHistory) return 'Set analysis';
@@ -193,7 +192,6 @@ export function SummaryScreen({
             top={record.calibratedTopDistance}
             reps={markers}
             height={200}
-            showRepNumbers={markers.length <= 30}
           />
         ) : (
           <Text style={styles.caption}>No distance trace was saved for this set (recorded with an older version).</Text>

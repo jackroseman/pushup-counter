@@ -1,43 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
-import {
-  NOTIFICATION_PROMPT_COPY,
-  notificationSurface,
-  readNotificationSnooze,
-  snoozeUntil,
-  writeNotificationSnooze,
-} from '../notifications/prompt';
-import { colors } from '../theme';
-import { Button } from './ui';
+import { NOTIFICATION_PROMPT_COPY, markNotificationPromptShown, notificationSurface, readNotificationPromptShown } from '../notifications/prompt';
+import { Button, Icon, Text, color, radius, space } from '../ui';
 
-function Bell({ size }: { size: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 3.2a5.2 5.2 0 0 0-5.2 5.2v2.2c0 .8-.3 1.6-.9 2.2L4.6 14.2V16h14.8v-1.8l-1.3-1.4c-.6-.6-.9-1.4-.9-2.2V8.4A5.2 5.2 0 0 0 12 3.2z"
-        fill={colors.accent}
-      />
-      <Path d="M9.6 16.6a2.4 2.4 0 0 0 4.8 0" fill={colors.accent} />
-    </Svg>
-  );
-}
-
-/** Banner under the challenge header, and the sheet after creating, accepting, or joining. */
+/** The sheet after the first create, accept, or join (frame 22), shown once. No banner anywhere. */
 export function ChallengeNotifications({ justActed, onConsumed }: { justActed: boolean; onConsumed: () => void }) {
   const { session } = useBackend();
   const { push } = useIdentity();
-  const [snoozedUntil, setSnoozedUntil] = useState<number | null>(null);
+  const insets = useSafeAreaInsets();
+  const [shown, setShown] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    readNotificationSnooze(AsyncStorage).then((until) => {
+    readNotificationPromptShown(AsyncStorage).then((seen) => {
       if (!alive) return;
-      setSnoozedUntil(until);
+      setShown(seen);
       setReady(true);
     });
     return () => {
@@ -46,98 +29,67 @@ export function ChallengeNotifications({ justActed, onConsumed }: { justActed: b
   }, []);
 
   if (!session || !ready || !push.checked) return null;
-  const surface = notificationSurface({
-    permission: push.permission,
-    justActed,
-    snoozedUntil,
-    now: Date.now(),
-  });
+  const surface = notificationSurface({ permission: push.permission, justActed, shown });
+  if (surface !== 'sheet') return null;
 
-  const turnOn = () => {
+  const answered = () => {
+    setShown(true);
     onConsumed();
+    markNotificationPromptShown(AsyncStorage).catch(() => {});
+  };
+  const turnOn = () => {
+    answered();
     void push.enable();
   };
-  const notNow = () => {
-    const until = snoozeUntil(Date.now());
-    setSnoozedUntil(until);
-    onConsumed();
-    writeNotificationSnooze(AsyncStorage, until).catch(() => {});
-  };
+  const notNow = answered;
 
   return (
-    <>
-      {surface === 'banner' ? (
-        <View style={styles.banner}>
-          <View style={styles.bannerIcon}>
-            <Bell size={18} />
+    <Modal visible animationType="slide" transparent onRequestClose={notNow}>
+      <Pressable style={styles.backdrop} onPress={notNow} accessibilityLabel={NOTIFICATION_PROMPT_COPY.notNow}>
+        <Pressable style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.md) }]} onPress={() => {}}>
+          <View style={styles.grabber} />
+          <View style={styles.tile}>
+            <Icon name="bell" size={30} color={color.label} />
           </View>
-          <Text style={styles.bannerText}>{NOTIFICATION_PROMPT_COPY.banner}</Text>
-          <Pressable accessibilityRole="button" onPress={turnOn} style={styles.pill}>
-            <Text style={styles.pillText}>{NOTIFICATION_PROMPT_COPY.bannerAction}</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      <Modal visible={surface === 'sheet'} animationType="slide" transparent onRequestClose={notNow}>
-        <Pressable style={styles.backdrop} onPress={notNow}>
-          <Pressable style={styles.sheet} onPress={() => {}}>
-            <View style={styles.iconCircle}>
-              <Bell size={32} />
-            </View>
-            <Text style={styles.title}>{NOTIFICATION_PROMPT_COPY.title}</Text>
-            <Text style={styles.line}>{NOTIFICATION_PROMPT_COPY.line}</Text>
+          <Text variant="title2" align="center" style={styles.title}>
+            {NOTIFICATION_PROMPT_COPY.title}
+          </Text>
+          <Text variant="body" tone="secondary" align="center" style={styles.line}>
+            {NOTIFICATION_PROMPT_COPY.line}
+          </Text>
+          <View style={styles.actions}>
             <Button title={NOTIFICATION_PROMPT_COPY.turnOn} onPress={turnOn} />
-            <Pressable accessibilityRole="button" onPress={notNow} style={styles.notNow}>
-              <Text style={styles.notNowText}>{NOTIFICATION_PROMPT_COPY.notNow}</Text>
-            </Pressable>
-          </Pressable>
+            <Button title={NOTIFICATION_PROMPT_COPY.notNow} kind="plain" onPress={notNow} style={styles.notNow} />
+          </View>
         </Pressable>
-      </Modal>
-    </>
+      </Pressable>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  backdrop: { flex: 1, backgroundColor: color.fill.scrim, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-    paddingBottom: 28,
+    backgroundColor: color.surface,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+    paddingHorizontal: space.xl,
   },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#3A3018',
+  grabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: color.fill.grabber, alignSelf: 'center', marginTop: 6 },
+  tile: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    backgroundColor: color.elevated,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
+    marginTop: 28,
   },
-  title: { color: colors.text, fontSize: 28, fontWeight: '800', textAlign: 'center', marginTop: 16 },
-  line: { color: colors.muted, fontSize: 16, lineHeight: 22, textAlign: 'center', marginTop: 8 },
-  notNow: { alignItems: 'center', paddingVertical: 14 },
-  notNowText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  bannerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#3A3018',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  bannerText: { color: colors.text, fontSize: 15, fontWeight: '700', flex: 1 },
-  pill: { backgroundColor: colors.accent, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 },
-  pillText: { color: '#111', fontSize: 14, fontWeight: '700' },
+  title: { marginTop: 18 },
+  line: { marginTop: space.xs, lineHeight: 23 },
+  actions: { marginTop: 26 },
+  notNow: { marginTop: 2 },
 });

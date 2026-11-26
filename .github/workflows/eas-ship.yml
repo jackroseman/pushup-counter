@@ -1,0 +1,185 @@
+# Ship the app after checks have passed for that exact commit.
+# Started by the "ship" job in ci.yml (push to dev -> "development" channel, push to
+# main -> "production"), or by hand with workflow_dispatch. No longer triggered by push
+# alone, so a red CI run cannot publish an OTA or start a build.
+#
+# Runs scripts/eas-ship.sh on a GitHub runner, so a JS-only merge publishes an OTA update
+# in a few minutes with no EAS build and no wait in the EAS free-plan queue. A native
+# change starts the manual-only EAS build workflow instead (.eas/workflows/build-*.yml).
+# Never runs on pull requests (PR code never gets EXPO_TOKEN). See docs/RELEASING.md.
+#
+# Secret: EXPO_TOKEN (repo secret; an Expo robot or personal access token for
+# jackroseman33s-team). Without it the job warns and does nothing.
+name: EAS ship
+
+on:
+  workflow_call:
+    inputs:
+      rollout:
+        description: 'OTA rollout percentage (1-100). Empty = 100.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Only print what would happen.'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      EXPO_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      rollout:
+        description: 'OTA rollout percentage (1-100). Empty = 100.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Only print what would happen.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+# One ship per branch at a time; a newer ship of the same branch replaces a queued or
+# running one (it ships the newer passing commit). A docs-only or failed-checks merge
+# does not start this workflow, so it cannot cancel a ship that is already running.
+concurrency:
+  group: eas-ship-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ship:
+    name: ship (${{ github.ref_name == 'main' && 'production' || 'development' }})
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      # Compare GITHUB_SHA (the commit whose checks passed, or the branch tip for a
+      # manual run) to the branch tip. A superseded run exits before checkout so it
+      # cannot publish stale code over a newer commit. The Ship step checks again
+      # immediately before publishing.
+      - name: Confirm this commit is still the branch tip
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="$GITHUB_SHA"
+          BRANCH="$GITHUB_REF_NAME"
+          TIP="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${BRANCH}" --jq '.sha')"
+          echo "commit=${SHA}"
+          echo "tip=${TIP}"
+          if [ "$TIP" != "$SHA" ]; then
+            echo "::notice::Skipping ship: ${BRANCH} has moved to ${TIP:0:7}; this run is for ${SHA:0:7}. The newer commit ships if its checks pass."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # workflow_call already waited for checks in ci.yml. A manual run must still see a
+      # green "checks" job for this SHA before anything is published.
+      - name: Require a passing checks job
+        id: ci
+        if: steps.tip.outputs.ready == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="$GITHUB_SHA"
+          runs_json="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100")"
+          state="$(printf '%s' "$runs_json" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          runs = [r for r in data.get("check_runs", []) if r.get("name") == "checks"]
+          if not runs:
+              print("missing")
+              raise SystemExit(0)
+          if any(r.get("conclusion") == "success" for r in runs):
+              print("success")
+              raise SystemExit(0)
+          if any(
+              r.get("status") in ("queued", "in_progress", "waiting", "pending")
+              and not r.get("conclusion")
+              for r in runs
+          ):
+              print("pending")
+              raise SystemExit(0)
+          conclusions = ",".join(sorted({r.get("conclusion") or "unknown" for r in runs}))
+          print("failed:" + conclusions)
+          ')"
+          case "$state" in
+            success)
+              echo "CI checks passed for ${SHA}."
+              ;;
+            pending)
+              echo "::error::CI checks are still running for ${SHA}. Re-run EAS ship when they are green."
+              exit 1
+              ;;
+            missing)
+              echo "::error::No CI checks job found for ${SHA}. Nothing was shipped."
+              exit 1
+              ;;
+            failed:*)
+              echo "::error::CI checks did not pass for ${SHA} (${state#failed:}). Nothing was shipped."
+              exit 1
+              ;;
+            *)
+              echo "::error::CI checks did not pass for ${SHA}. Nothing was shipped."
+              exit 1
+              ;;
+          esac
+
+      - name: Check secret
+        id: secret
+        if: steps.tip.outputs.ready == 'true' && (github.event_name != 'workflow_dispatch' || steps.ci.outcome == 'success')
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning::EXPO_TOKEN is not set; nothing was shipped. Add it as a repo secret."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.ready == 'true'
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        if: steps.secret.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.secret.outputs.ready == 'true'
+        # eas-cli is pinned (the fingerprint it computes was checked against EAS builds);
+        # keep it in step with eas.json cli.version.
+        run: |
+          npm ci
+          npm install -g eas-cli@27.11.0
+
+      - name: Ship
+        if: steps.secret.outputs.ready == 'true'
+        env:
+          PROFILE: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+          ROLLOUT: ${{ inputs.rollout }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TIP="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" --jq '.sha')"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::notice::Skipping ship: ${GITHUB_REF_NAME} has moved to ${TIP:0:7}; this run is for ${GITHUB_SHA:0:7}."
+            exit 0
+          fi
+          args=("$PROFILE")
+          [ -n "$ROLLOUT" ] && args+=(--rollout "$ROLLOUT")
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          scripts/eas-ship.sh "${args[@]}"

@@ -18,11 +18,8 @@ export const DEFAULT_LEAGUE_WEIGHTS: LeagueWeights = {
   baselineMinWeeks: 3,
 };
 
-export const WEEK_LINE = "Each person's week is Monday to Sunday where they are.";
 export const CROWN_CAPTION = 'Last week, among your current friends.';
 export const NO_FRIENDS = "Add a friend to start this week's board.";
-export const LEAGUE_ABOUT =
-  'A weekly board with the friends you accept. One tab is counted reps. The other is improvement: beating your usual week, hitting goal days, and a perfect week after Sunday.';
 export const FRIENDS_LEAGUE_COPY =
   "Friends are on your weekly league together. They can challenge each other and see battle results. They don't see each other's sets.";
 export const FRIEND_WEEK_SUBTITLE = "This week's league, and your battles together.";

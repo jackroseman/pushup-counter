@@ -1,5 +1,11 @@
 # Push-up Battles: architecture & delivery plan
 
+> **UI note (rebrand).** The product now lives under the **Today / Compete / You** tabs.
+> What these docs call "battles" is **Challenges** in the app (Compete tab). Start,
+> History and Account in the older screen list are Today, All sets and Settings. New
+> challenges count reps only. For the current UI, frames and plan, see
+> [docs/rebrand/](../rebrand/).
+>
 > Status: **draft for review**. Nothing here has been created or deployed yet: no Supabase
 > project, no secrets, no builds. See [SPEC.md](SPEC.md) for the product side and
 > [schema.sql](schema.sql) for the draft database migration.
@@ -245,13 +251,10 @@ battles.
 
 ### EAS (app)
 
-* Unchanged: `deploy-dev.yml` (push to `dev`) and `deploy.yml` (push to `main`).
-  * fingerprint → OTA if the native fingerprint matches, otherwise build.
-  * Phases 3–5 are JS-only and ship as OTA updates.
-* **TestFlight** (release 1.2.0): `deploy.yml` now targets the `production` profile
-  (store distribution) and channel instead of `preview`. A native change makes one store
-  build and a `submit` job (EAS Submit) uploads it; a JS-only change is an OTA on `production`.
-  So a release costs at most one build, and the ad hoc `preview` build is manual only.
+* Since 1.2.1: `.github/workflows/eas-ship.yml` ships every merge to `dev`/`main` (OTA when a
+  build has the native fingerprint, otherwise one build via `.eas/workflows/build-dev.yml` /
+  `build-production.yml`, which also uploads to TestFlight). See docs/RELEASING.md.
+  Earlier phases used push-triggered `deploy-dev.yml` / `deploy.yml` EAS workflows.
 * App Store Connect API key for submit: stored in EAS credentials (`eas credentials`), not
   in GitHub.
 

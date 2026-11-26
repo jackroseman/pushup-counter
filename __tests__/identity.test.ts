@@ -14,9 +14,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getInstallationId, INSTALLATION_ID_KEY, newInstallationId } from '../src/backend/installation';
 import {
   DETECTOR_ALGORITHM_VERSION,
+  EMPTY_SYNC_STATE,
+  isDeletedSetError,
   isPermanentError,
   loadSyncState,
+  queueSetDelete,
   sanitizeSyncState,
+  saveSyncState,
   skipReason,
   SyncBackend,
   syncSets,
@@ -25,6 +29,7 @@ import {
   toSetPayload,
   traceResolution,
 } from '../src/backend/sync';
+import { deleteSet } from '../src/backend/setDelete';
 import { notifyHistoryChanged, onHistoryChanged } from '../src/backend/syncEvents';
 
 class MemoryKV implements KeyValueStore {
@@ -174,6 +179,12 @@ describe('set payload', () => {
     expect(fallback).not.toBe('');
   });
 
+  it('sends why the set ended, only when known', () => {
+    expect(toSetPayload(record('s1', T0, 2, { endReason: 'tilt' }), ctx).endReason).toBe('tilt');
+    expect(toSetPayload(record('s1', T0, 2, { endReason: 'user' }), ctx).endReason).toBe('user');
+    expect('endReason' in toSetPayload(record('s1', T0), ctx)).toBe(false);
+  });
+
   it('sends legacy v1 records without detector config', () => {
     const p = toSetPayload(record('old', T0, 2, { version: undefined, trace: undefined }), ctx);
     expect(p.version).toBe(1);
@@ -224,11 +235,14 @@ describe('set payload', () => {
     expect(isPermanentError({ code: '22023' })).toBe(true);
     expect(isPermanentError({ code: 'PGRST301' })).toBe(false);
     expect(isPermanentError({})).toBe(false);
+    expect(isDeletedSetError({ code: '22023', message: 'set was deleted' })).toBe(true);
+    expect(isDeletedSetError({ code: '22023', message: 'invalid parameter' })).toBe(false);
   });
 });
 
 function fakeBackend(remote: string[] = []) {
   const calls: string[] = [];
+  const deletes: string[] = [];
   const failOn = new Map<string, { code?: string; message: string }>();
   let listCalls = 0;
   const backend: SyncBackend = {
@@ -236,12 +250,17 @@ function fakeBackend(remote: string[] = []) {
       calls.push(p.id as string);
       return { error: failOn.get(p.id as string) ?? null };
     },
+    deleteSet: async (_userId, id) => {
+      deletes.push(id);
+      return { error: failOn.get(`delete:${id}`) ?? null };
+    },
     listUploadedIds: async () => {
       listCalls++;
       return remote;
     },
+    listDeletedIds: async () => [],
   };
-  return { backend, calls, failOn, listCalls: () => listCalls };
+  return { backend, calls, deletes, failOn, listCalls: () => listCalls };
 }
 
 describe('syncSets', () => {
@@ -290,9 +309,11 @@ describe('syncSets', () => {
     const kv = new MemoryKV();
     const backend: SyncBackend = {
       submitSet: jest.fn(),
+      deleteSet: jest.fn(),
       listUploadedIds: async () => {
         throw new Error('offline');
       },
+      listDeletedIds: async () => [],
     };
     const r = await syncSets({ backend, kv, userId: 'u1', history, ctx });
     expect(r.error).toBe('offline');
@@ -309,7 +330,140 @@ describe('syncSets', () => {
       uploaded: ['a'],
       rejected: [],
       reconciled: false,
+      deleting: [],
     });
+  });
+
+  it('deletes queued sets before uploading, and keeps the queue when offline', async () => {
+    const kv = new MemoryKV();
+    const f = fakeBackend();
+    await syncSets({ backend: f.backend, kv, userId: 'u1', history, ctx });
+    // 'mid' deleted on the phone: gone from history, queued for the backup.
+    await queueSetDelete(kv, 'mid', 'u1');
+    const left = history.filter((r) => r.id !== 'mid');
+    f.failOn.set('delete:mid', { message: 'Network request failed' });
+    const offline = await syncSets({ backend: f.backend, kv, userId: 'u1', history: left, ctx });
+    expect(offline).toMatchObject({ deleted: 0, error: 'Network request failed' });
+    expect((await loadSyncState(kv)).deleting).toEqual(['mid']);
+
+    f.failOn.delete('delete:mid');
+    const online = await syncSets({ backend: f.backend, kv, userId: 'u1', history: left, ctx });
+    expect(online).toMatchObject({ deleted: 1, uploaded: 0, error: null });
+    expect(f.deletes).toEqual(['mid', 'mid']);
+    expect(online.state.deleting).toEqual([]);
+    expect(online.state.uploaded).not.toContain('mid');
+    expect(f.calls.filter((id) => id === 'mid')).toHaveLength(1);
+  });
+
+  it('drops tombstoned sets on this phone and never uploads them', async () => {
+    const kv = new MemoryKV();
+    const f = fakeBackend();
+    const dropped: string[] = [];
+    f.backend.listDeletedIds = async () => ['old'];
+    const r = await syncSets({
+      backend: f.backend,
+      kv,
+      userId: 'u1',
+      history,
+      ctx,
+      dropLocal: async (ids) => {
+        dropped.push(...ids);
+      },
+    });
+    expect(dropped).toEqual(['old']);
+    expect(r).toMatchObject({ dropped: 1, uploaded: 2, error: null });
+    expect(f.calls).toEqual(['mid', 'new']);
+    expect(r.state.uploaded).not.toContain('old');
+  });
+
+  it('does not upload when the tombstone list cannot be fetched', async () => {
+    const kv = new MemoryKV();
+    const backend: SyncBackend = {
+      submitSet: jest.fn(),
+      deleteSet: jest.fn(),
+      listUploadedIds: async () => [],
+      listDeletedIds: async () => {
+        throw new Error('offline');
+      },
+    };
+    const r = await syncSets({ backend, kv, userId: 'u1', history, ctx });
+    expect(r.error).toBe('offline');
+    expect(backend.submitSet).not.toHaveBeenCalled();
+  });
+
+  it('drops a set the server refuses as already deleted', async () => {
+    const kv = new MemoryKV();
+    const f = fakeBackend();
+    f.failOn.set('old', { code: '22023', message: 'set was deleted' });
+    const dropped: string[] = [];
+    const r = await syncSets({
+      backend: f.backend,
+      kv,
+      userId: 'u1',
+      history,
+      ctx,
+      dropLocal: async (ids) => {
+        dropped.push(...ids);
+      },
+    });
+    expect(dropped).toEqual(['old']);
+    expect(r).toMatchObject({ dropped: 1, uploaded: 2, rejected: 0, error: null });
+    expect(f.calls).toEqual(['old', 'mid', 'new']);
+    expect(r.state.rejected).not.toContain('old');
+    expect(r.state.uploaded).not.toContain('old');
+  });
+});
+
+describe('queueSetDelete', () => {
+  it('queues for the signed-in account, once', async () => {
+    const kv = new MemoryKV();
+    await queueSetDelete(kv, 'a', 'u1');
+    const s = await queueSetDelete(kv, 'a', 'u1');
+    expect(s).toMatchObject({ userId: 'u1', deleting: ['a'] });
+  });
+
+  it('signed out: queues only sets the last account backed up', async () => {
+    const kv = new MemoryKV();
+    expect((await queueSetDelete(kv, 'a', null)).deleting).toEqual([]);
+    await saveSyncState(kv, { ...EMPTY_SYNC_STATE, userId: 'u1', uploaded: ['a'] });
+    expect(await queueSetDelete(kv, 'b', null)).toMatchObject({ deleting: [] });
+    expect(await queueSetDelete(kv, 'a', null)).toMatchObject({ deleting: ['a'], uploaded: [] });
+  });
+});
+
+describe('deleteSet', () => {
+  const rec = (o = {}) => ({ ...record('s1', T0), ...o });
+  it('removes the set here and queues the backup copy', async () => {
+    const kv = new MemoryKV();
+    const removed: string[] = [];
+    const r = await deleteSet({ record: rec(), userId: 'u1', kv, removeLocal: async (id) => removed.push(id), inChallenge: async () => false });
+    expect(r).toEqual({ ok: true });
+    expect(removed).toEqual(['s1']);
+    expect((await loadSyncState(kv)).deleting).toEqual(['s1']);
+  });
+
+  it('keeps challenge sets, on the phone and on the server', async () => {
+    const kv = new MemoryKV();
+    const removeLocal = jest.fn(async () => {});
+    expect(await deleteSet({ record: rec({ challengeId: 'c1' }), userId: 'u1', kv, removeLocal, inChallenge: null })).toEqual({ ok: false, reason: 'challenge' });
+    expect(await deleteSet({ record: rec(), userId: 'u1', kv, removeLocal, inChallenge: async () => true })).toEqual({ ok: false, reason: 'challenge' });
+    expect(removeLocal).not.toHaveBeenCalled();
+    expect((await loadSyncState(kv)).deleting).toEqual([]);
+  });
+
+  it('offline: deletes here and leaves the server delete queued', async () => {
+    const kv = new MemoryKV();
+    const r = await deleteSet({
+      record: rec(),
+      userId: 'u1',
+      kv,
+      removeLocal: async () => {},
+      inChallenge: async () => {
+        throw new Error('offline');
+      },
+    });
+    expect(r).toEqual({ ok: true });
+    expect((await loadSyncState(kv)).deleting).toEqual(['s1']);
   });
 });
 

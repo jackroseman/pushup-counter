@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as Notifications from 'expo-notifications';
+import { registerPushToken, resetPushRegistrationCache } from '../src/backend/identity';
+
+// jest.mock calls are hoisted above these imports by babel-jest.
 
 jest.mock('expo-notifications', () => {
-  const listeners: Array<(token: { type: string; data: string }) => void> = [];
+  const listeners: ((token: { type: string; data: string }) => void)[] = [];
   return {
     getPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: false })),
     requestPermissionsAsync: jest.fn(),
@@ -33,12 +37,9 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   removeItem: jest.fn(),
 }));
 
-import * as Notifications from 'expo-notifications';
-import { registerPushToken, resetPushRegistrationCache } from '../src/backend/identity';
-
 const notifications = Notifications as typeof Notifications & {
   getExpoPushTokenAsync: jest.Mock;
-  __listeners: Array<(token: { type: string; data: string }) => void>;
+  __listeners: ((token: { type: string; data: string }) => void)[];
 };
 
 function clientWithRpc(rpc: jest.Mock) {

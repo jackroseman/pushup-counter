@@ -1,0 +1,39 @@
+# Build the store app (production profile) and upload it to App Store Connect / TestFlight.
+# Never runs on a push. It starts in one of two ways:
+#   * scripts/eas-ship.sh (from .github/workflows/eas-ship.yml) after a merge to main, when
+#     expo.version was bumped and no production build has the commit's native fingerprint, or
+#   * by hand: Expo dashboard -> Workflows -> Build production -> Run, or
+#     `npx eas workflow:run .eas/workflows/build-production.yml --ref main`.
+# JS-only changes never come here: eas-ship publishes an OTA update instead.
+# Each run uses 1 of the monthly EAS builds. See docs/RELEASING.md.
+#
+# The upload uses (one-time setup, done; see CONTRIBUTING.md):
+#   * the App Store Connect app record "Rep Royale: Push-up Battles", Apple ID 6829467517,
+#     as submit.production.ios.ascAppId in eas.json
+#   * the App Store Connect API key stored in EAS credentials for EAS Submit. No key is in the repo.
+# If the upload fails, the build is kept: `eas submit -p ios --id <build id>` retries without a new build.
+name: Build production
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-production
+  cancel_in_progress: false
+
+jobs:
+  build_ios:
+    name: Build iOS for the App Store
+    type: build
+    params:
+      platform: ios
+      profile: production
+
+  submit_ios:
+    # `type: submit` is `eas submit -p ios` (the `testflight` job type needs a paid plan).
+    name: Upload to App Store Connect / TestFlight
+    needs: [build_ios]
+    type: submit
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      profile: production

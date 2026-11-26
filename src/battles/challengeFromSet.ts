@@ -5,8 +5,6 @@
  * claim the set; it counts because it started inside the frozen window.
  * Streak and team never claim the set. Every set inside the window counts.
  */
-import { addCalendarDays, addMonths, localDate, monthStart, weekStart } from '../progress/calendar';
-
 export type ChallengeOffer =
   | { kind: 'best_set'; durationS: number | null }
   | { kind: 'total'; window: 'day' | 'week' | 'month' }
@@ -35,65 +33,15 @@ export function challengeOffers(
   return [...best, ...TOTALS, ...TOGETHER];
 }
 
-export type SummaryChallenge =
-  | { type: 'none' }
-  | { type: 'sign-in' }
-  | { type: 'create'; offer: ChallengeOffer };
-
 /**
- * The post-set screen has one challenge action. A signed-in person opens the
- * create screen with this set. A set that can be claimed starts on that best
- * set, so the timer matches and the set is the creator's attempt. Anything
- * else starts on most reps today, which counts the set without claiming it.
- * History has no action.
+ * "Challenge a friend" on the post-set summary opens New challenge with this set. A set
+ * that can be claimed starts on that best set, so the timer matches and the set is the
+ * creator's attempt. Anything else starts on most reps today, which counts the set
+ * without claiming it. Signed out, New challenge shows the sign-in pitch.
  */
-export function summaryChallengeAction(
-  fromSession: boolean,
-  signedIn: boolean,
+export function summaryChallengeOffer(
   set: { timerDurationS?: number | null; challengeId?: string | null; battleId?: string | null; endedAt?: number | null },
   opts: { timedDurationsS: readonly number[]; claimMaxAgeS: number; now?: number },
-): SummaryChallenge {
-  if (!fromSession) return { type: 'none' };
-  if (!signedIn) return { type: 'sign-in' };
-  const offers = challengeOffers(set, opts);
-  const best = offers.find((offer) => offer.kind === 'best_set');
-  return { type: 'create', offer: best ?? TOTALS[0] };
-}
-
-export function offerLabel(offer: ChallengeOffer): string {
-  if (offer.kind === 'best_set') return offer.durationS ? `Best single set · ${offer.durationS} s` : 'Best single set';
-  if (offer.kind === 'streak') return 'Streak face-off';
-  if (offer.kind === 'team') return 'Team goal';
-  if (offer.window === 'day') return 'Most reps today';
-  if (offer.window === 'week') return 'Most reps this week';
-  return 'Most reps this month';
-}
-
-/** Local instant when a calendar window ends, searched to the minute. */
-function windowEndMs(now: number, timeZone: string, window: 'day' | 'week' | 'month'): number {
-  const today = localDate(now, timeZone);
-  const boundary = window === 'day' ? addCalendarDays(today, 1) : window === 'week' ? addCalendarDays(weekStart(today), 7) : addMonths(monthStart(today), 1);
-  let lo = now;
-  let hi = now + 40 * 24 * 3600 * 1000;
-  while (hi - lo > 60_000) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (localDate(mid, timeZone) < boundary) lo = mid;
-    else hi = mid;
-  }
-  return hi;
-}
-
-/** Shown when a calendar window is almost over. Sets already inside it still count. */
-export function windowClosingNote(
-  window: 'day' | 'week' | 'month',
-  now: number,
-  timeZone: string,
-  withinHours = 3,
-): string | null {
-  const leftMs = windowEndMs(now, timeZone, window) - now;
-  if (leftMs <= 0 || leftMs > withinHours * 3600_000) return null;
-  const hours = Math.max(1, Math.round(leftMs / 3600_000));
-  const name = window === 'day' ? 'Today' : window === 'week' ? 'This week' : 'This month';
-  const already = window === 'day' ? 'today' : window === 'week' ? 'this week' : 'this month';
-  return `${name} ends in ${hours} hour${hours === 1 ? '' : 's'}. Sets you already did ${already} count.`;
+): ChallengeOffer {
+  return challengeOffers(set, opts).find((offer) => offer.kind === 'best_set') ?? TOTALS[0];
 }

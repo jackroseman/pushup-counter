@@ -6,9 +6,7 @@ import {
   PROGRAMS,
   addCalendarDays,
   celebrate,
-  contributionLine,
   currentTargetLabel,
-  formScoreForReps,
   goalForDate,
   loadGoal,
   phoneCountedReps,
@@ -148,7 +146,7 @@ describe('today', () => {
     expect(view.ringText).toBe('0');
     expect(view.ringCaption).toBe('Set a goal');
     expect(view.streakLine).toBe('Set a goal to start a streak');
-    expect(view.usualLine).toBeNull();
+    expect(view.toGoLine).toBeNull();
     expect(view.showSetGoal).toBe(true);
     expect(view.ringProgress).toBeNull();
   });
@@ -165,7 +163,7 @@ describe('today', () => {
     expect(view.ringProgress).toBeNull();
   });
 
-  it('fills the ring, counts a streak, and compares the usual weekday', () => {
+  it('fills the ring, counts a streak, and hides toGoLine once the goal is met', () => {
     const enrollments = [custom('e', 20, '2026-11-02')];
     const workouts = [
       workout('2026-10-12', 20),
@@ -178,7 +176,7 @@ describe('today', () => {
     expect(view.ringCaption).toBe('+12 past your goal');
     expect(view.ringProgress).toBe(1);
     expect(view.streakLine).toBe('1 day streak');
-    expect(view.usualLine).toBe('+12 vs your usual Monday');
+    expect(view.toGoLine).toBeNull();
     expect(view.showSetGoal).toBe(false);
 
     const exact = buildToday({
@@ -191,24 +189,24 @@ describe('today', () => {
     expect(exact.ringCaption).toBe('Goal met');
   });
 
-  it('uses a unicode minus and hides the line with fewer than three samples', () => {
-    const short = buildToday({
-      workouts: [workout('2026-10-26', 30), workout('2026-11-02', 17, 'today')],
-      enrollments: [custom('e', 20, '2026-10-26')],
+  it('shows N to go when reps are below the daily goal', () => {
+    const zero = buildToday({
+      workouts: [],
+      enrollments: [custom('e', 50, '2026-11-02')],
       today: '2026-11-02',
       timeZone: 'UTC',
     });
-    expect(short.usualLine).toBeNull();
+    expect(zero.toGoLine).toBe('50 to go');
 
-    const enough = buildToday({
-      workouts: [workout('2026-10-12', 20), workout('2026-10-19', 20), workout('2026-10-26', 20), workout('2026-11-02', 17, 'today')],
+    const partial = buildToday({
+      workouts: [workout('2026-11-02', 17, 'today')],
       enrollments: [custom('e', 30, '2026-11-02')],
       today: '2026-11-02',
       timeZone: 'UTC',
     });
-    expect(enough.usualLine).toBe('−3 vs your usual Monday');
-    expect(enough.ringText).toBe('17 / 30');
-    expect(enough.ringCaption).toBe('');
+    expect(partial.toGoLine).toBe('13 to go');
+    expect(partial.ringText).toBe('17 / 30');
+    expect(partial.ringCaption).toBe('');
   });
 
   it('does not move a rest day and does not count it in the streak', () => {
@@ -257,20 +255,15 @@ describe('today', () => {
     expect(view.streakLine).toBe('2 day streak');
   });
 
-  it('says an even usual day and notes a workout recorded in another zone', () => {
+  it('notes a workout recorded in another zone', () => {
     const enrollments = [enroll('e', 'fifty_a_day', '2026-10-12')];
     const view = buildToday({
-      workouts: [
-        workout('2026-10-12', 10),
-        workout('2026-10-19', 10),
-        workout('2026-10-26', 10),
-        { ...workout('2026-11-02', 10, 'trip'), timeZone: 'America/New_York' },
-      ],
+      workouts: [{ ...workout('2026-11-02', 10, 'trip'), timeZone: 'America/New_York' }],
       enrollments,
       today: '2026-11-02',
       timeZone: 'UTC',
     });
-    expect(view.usualLine).toBe('Even with your usual Monday');
+    expect(view.toGoLine).toBe('40 to go');
     expect(view.travelLine).toBe("Yesterday's workout stays on yesterday at home.");
   });
 });
@@ -297,33 +290,94 @@ describe('after a set', () => {
     },
   ];
 
-  it('says what this set did for today', () => {
-    expect(contributionLine(32, 50, false)).toBe('This set put you at 32 / 50.');
-    expect(contributionLine(12, null, false)).toBe('This set put you at 12 today.');
-    expect(contributionLine(4, 0, true)).toBe('This set put you at 4. Rest day.');
+  it('returns first_set when the merged history has a single set', () => {
+    expect(celebrate([workout('2026-11-02', 12, 'only')], customGoal, '2026-11-02', 'UTC', 'only')).toEqual({
+      kind: 'first_set',
+    });
+    expect(celebrate([workout('2026-11-02', 50, 'only')], customGoal, '2026-11-02', 'UTC', 'only')).toEqual({
+      kind: 'first_set',
+      goalMet: true,
+    });
+    expect(celebrate([workout('2026-11-02', 0, 'zero')], customGoal, '2026-11-02', 'UTC', 'zero')).toBeNull();
   });
 
-  it('celebrates the highest change and adds goal met underneath', () => {
+  it('celebrates the highest change and sets goalMet when the goal is newly hit', () => {
     const history = [workout('2026-10-01', 50), workout('2026-10-02', 50), workout('2026-10-03', 50), workout('2026-10-04', 50), workout('2026-10-05', 50)];
     const card = celebrate([...history, workout('2026-11-02', 10, 'earlier'), workout('2026-11-02', 60, 'this')], customGoal, '2026-11-02', 'UTC', 'this');
-    expect(card).toEqual({ title: 'New best set: 60.', also: 'Also: goal met.' });
+    expect(card).toEqual({ kind: 'best_set', value: 60, goalMet: true });
   });
 
-  it('celebrates only the highest lifetime milestone', () => {
+  it('returns structured kinds for milestone, longest_streak, best_day, best_week, best_month, goal_met, and set_marker', () => {
     const sets = Array.from({ length: 9 }, (_, i) => workout('2026-10-01', 100, `old-${i}`));
-    const card = celebrate([...sets, workout('2026-11-02', 100, 'this')], first20, '2026-11-02', 'UTC', 'this');
-    expect(card?.title).toBe('You crossed 1,000 push-ups.');
-  });
+    expect(celebrate([...sets, workout('2026-11-02', 100, 'this')], first20, '2026-11-02', 'UTC', 'this')).toEqual({
+      kind: 'milestone',
+      value: 1000,
+      goalMet: true,
+    });
 
-  it('uses the one-set marker only when nothing else changed', () => {
-    const card = celebrate(
+    const streakCard = celebrate(
+      [workout('2026-11-02', 10, 'a'), workout('2026-11-03', 10, 'this')],
+      first20,
+      '2026-11-03',
+      'UTC',
+      'this',
+    );
+    expect(streakCard).toEqual({ kind: 'longest_streak', value: 2, goalMet: true });
+
+    const dayCard = celebrate(
+      [workout('2026-10-01', 30, 'a'), workout('2026-11-02', 20, 'b'), workout('2026-11-02', 20, 'this')],
+      customGoal,
+      '2026-11-02',
+      'UTC',
+      'this',
+    );
+    expect(dayCard).toEqual({ kind: 'best_day', value: 40 });
+
+    const weekCard = celebrate(
+      [
+        workout('2026-10-01', 40, 'a'),
+        workout('2026-11-02', 30, 'b'),
+        workout('2026-11-03', 20, 'this'),
+      ],
+      customGoal,
+      '2026-11-03',
+      'UTC',
+      'this',
+    );
+    expect(weekCard).toEqual({ kind: 'best_week', value: 50 });
+
+    const monthCard = celebrate(
+      [
+        workout('2026-10-05', 40, 'a'),
+        workout('2026-10-12', 40, 'b'),
+        workout('2026-11-02', 30, 'c'),
+        workout('2026-11-09', 30, 'd'),
+        workout('2026-11-16', 30, 'this'),
+      ],
+      customGoal,
+      '2026-11-16',
+      'UTC',
+      'this',
+    );
+    expect(monthCard).toEqual({ kind: 'best_month', value: 90 });
+
+    const goalCard = celebrate(
+      [workout('2026-10-01', 50, 'a'), workout('2026-11-02', 40, 'b'), workout('2026-11-02', 10, 'this')],
+      customGoal,
+      '2026-11-02',
+      'UTC',
+      'this',
+    );
+    expect(goalCard).toEqual({ kind: 'goal_met', value: 50 });
+
+    const markerCard = celebrate(
       [workout('2026-10-06', 30, 'old'), workout('2026-11-02', 10, 'earlier'), workout('2026-11-02', 5, 'this')],
       first20,
       '2026-11-02',
       'UTC',
       'this',
     );
-    expect(card).toEqual({ title: '5 in one set.' });
+    expect(markerCard).toEqual({ kind: 'set_marker', value: 5 });
   });
 
   it('does not treat a tie as a new record', () => {
@@ -387,18 +441,6 @@ describe('counted reps and form score', () => {
     await awaitHistory(new MemoryKV(), record);
   });
 
-  it('scores tempo as consistency and says when three counted reps are missing', () => {
-    const steady = [rep(1, 'full', 0, 0.7), rep(2, 'good', 1000, 0.7), rep(3, 'full', 2000, 0.7)];
-    const scored = formScoreForReps(steady, { depth: 0.5, consistency: 0.3, tempo: 0.2 }, { startedAt: 0 });
-    expect(scored.tempo).toBe(100);
-    expect(scored.score).toBe(85);
-    expect(scored.tempoCaption).toBeNull();
-
-    const two = formScoreForReps(steady.slice(0, 2), { depth: 0.5, consistency: 0.3, tempo: 0.2 }, { startedAt: 0 });
-    expect(two.tempo).toBeNull();
-    expect(two.tempoCaption).toBe('Tempo needs 3 counted reps');
-    expect(two.score).toBe(65);
-  });
 });
 
 async function awaitHistory(kv: MemoryKV, record: SessionRecord) {

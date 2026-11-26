@@ -1,0 +1,18 @@
+{
+  "name": "rep-royale-ui-preview",
+  "private": true,
+  "description": "Web preview and UI capture tooling for Rep Royale. Not part of the app. Run from the repo root with npm --prefix tools/preview run <script>. See docs/ui-preview.md.",
+  "scripts": {
+    "setup": "npm ci && node node_modules/playwright-core/cli.js install ffmpeg",
+    "build": "node build.js",
+    "web": "node web.js",
+    "capture": "node capture.js",
+    "flows": "node capture.js --list",
+    "capture:web": "node web-pages.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.65.1",
+    "react-dom": "19.3.0",
+    "react-native-web": "~0.21.4"
+  }
+}

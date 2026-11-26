@@ -1,0 +1,29 @@
+# Build the dev client ("Pushup Dev", development profile, internal distribution).
+# Never runs on a push. It starts in one of two ways:
+#   * scripts/eas-ship.sh (from .github/workflows/eas-ship.yml) after a merge to dev, when no
+#     development build has the commit's native fingerprint (a native change), or
+#   * by hand: Expo dashboard -> Workflows -> Build development -> Run, or
+#     `npx eas workflow:run .eas/workflows/build-dev.yml --ref dev`
+#     (for example to replace an expired 14-day internal build).
+# JS-only changes never come here: eas-ship publishes an OTA update instead.
+# Each run uses 1 of the monthly EAS builds. See docs/RELEASING.md.
+name: Build development
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-development
+  cancel_in_progress: false
+
+jobs:
+  build_ios:
+    name: Build iOS dev client
+    type: build
+    params:
+      platform: ios
+      profile: development
+      # Regenerate the ad hoc profile from the App ID before building (uses the App Store
+      # Connect API key stored in EAS credentials). Picks up newly registered devices and
+      # capabilities enabled in the Apple portal (Associated Domains for invite links).
+      refresh_ad_hoc_provisioning_profile: true

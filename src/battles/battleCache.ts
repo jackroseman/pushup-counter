@@ -11,6 +11,3 @@ export function rememberedBattle(id: string): Battle | undefined {
   return byId.get(id);
 }
 
-export function clearRememberedBattles(): void {
-  byId.clear();
-}

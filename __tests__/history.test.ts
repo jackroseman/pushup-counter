@@ -76,16 +76,17 @@ describe('settings', () => {
   it('defaults and saves', async () => {
     const kv = new MemoryKV();
     expect(await loadSettings(kv)).toEqual(DEFAULT_SETTINGS);
-    await saveSettings(kv, { ...DEFAULT_SETTINGS, haptics: false });
-    expect((await loadSettings(kv)).haptics).toBe(false);
+    await saveSettings(kv, { countOutLoud: false });
+    expect((await loadSettings(kv)).countOutLoud).toBe(false);
   });
 
-  it('migrates old settings: drops the removed depthOnlyCounting toggle, keeps the rest', async () => {
+  it('migrates old settings: drops removed depthOnlyCounting, haptics and speakQuality toggles, keeps the rest', async () => {
     const kv = new MemoryKV();
-    kv.data.set('pushupcounter.settings.v1', JSON.stringify({ depthOnlyCounting: true, speakQuality: false, haptics: 'yes' }));
+    kv.data.set('pushupcounter.settings.v1', JSON.stringify({ depthOnlyCounting: true, speakQuality: false, haptics: false, countOutLoud: false }));
     const s = await loadSettings(kv);
-    expect(s).toEqual({ speakQuality: false, haptics: true });
+    expect(s).toEqual({ countOutLoud: false });
     expect('depthOnlyCounting' in s).toBe(false);
+    expect('haptics' in s).toBe(false);
   });
 
   it('survives corrupt settings', async () => {

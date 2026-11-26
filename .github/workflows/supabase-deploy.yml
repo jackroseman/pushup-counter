@@ -53,19 +53,20 @@ jobs:
       - uses: supabase/setup-cli@v1
         if: steps.secrets.outputs.ready == 'true'
         with:
-          version: latest
+          # Pinned: `latest` asks the GitHub API for the newest release on every run (rate
+          # limited, and it silently changes flags under us). Bump on purpose, after reading
+          # the CLI changelog and checking `supabase db push --help` still matches below.
+          version: 3.4.0
 
-      - name: Link project
-        if: steps.secrets.outputs.ready == 'true'
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
-
+      # Every command names its project with --remote=<ref>, so there is no `supabase link`
+      # step and no deprecated --linked / --project-ref flags.
       - name: Pending migrations (dry run)
         if: steps.secrets.outputs.ready == 'true'
-        run: supabase db push --linked --dry-run
+        run: supabase db push --remote="$SUPABASE_PROJECT_REF" --dry-run
 
       - name: Apply migrations
         if: steps.secrets.outputs.ready == 'true'
-        run: supabase db push --linked --yes
+        run: supabase db push --remote="$SUPABASE_PROJECT_REF" --yes
 
       # Order is safe either way. This job applies the migration first, then the functions.
       # claim_notifications is what the already-deployed notify calls, and it does not
@@ -77,11 +78,11 @@ jobs:
 
       # Edge Functions authorize requests themselves (see each index.ts), so the platform JWT
       # check is off. --use-api bundles on Supabase's side (no Docker needed).
-      # `version: latest` is CLI v3, which will not deploy in CI unless --yes is passed:
-      # there is no terminal to confirm, and the default answer is no (nothing is uploaded).
+      # CLI v3 will not deploy in CI unless --yes is passed: there is no terminal to
+      # confirm, and the default answer is no (nothing is uploaded).
       - name: Deploy Edge Functions
         if: steps.secrets.outputs.ready == 'true'
-        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api --yes
+        run: supabase functions deploy --remote="$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api --yes
 
       # Wake `notify` once so it registers its URL with the database (public.register_notify_url).
       # Until that happens the pg_cron safety net ('notify-drain') has no URL and does nothing.

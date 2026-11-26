@@ -1,28 +1,48 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { FaceMeshView } from '../../modules/pushup-sensors';
-import { Button } from '../components/ui';
+import { Alert, StyleSheet, View } from 'react-native';
 import { LiveDistanceChart } from '../components/charts';
-import { CalibrationPanel } from '../components/calibration';
-import { qualityLabel } from '../core';
-import { BattleSessionOptions, LIVE_WINDOW_MS, useSession } from '../session/useSession';
+import { LevelView } from '../components/level';
+import { FaceCentering } from '../session/FaceCentering';
+import { countdownProgress, countingTitle, toBeatLine } from '../session/sessionView';
+import { BattleSessionOptions, COUNTDOWN_SECONDS, LIVE_WINDOW_MS, setVoiceOn, useSession } from '../session/useSession';
+import { rememberedBattle } from '../battles/battleCache';
 import { SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
-import { colors } from '../theme';
+import { Button, Card, Countdown, IconButton, QualityPill, RollingNumber, Text, color, gutter, heroLineHeight, heroTrim, type } from '../ui';
+
+/** Top bar of the set screens: close on the left, a small title, an optional action on the right. */
+function SetBar({ title, onClose, right }: { title: string; onClose: () => void; right?: React.ReactNode }) {
+  return (
+    <View style={styles.bar}>
+      <IconButton icon="xmark" onPress={onClose} accessibilityLabel="Close" />
+      <Text variant="footnote" weight="500" style={styles.barTitle} numberOfLines={1} accessibilityRole="header">
+        {title}
+      </Text>
+      {right ?? <View style={styles.barSpacer} />}
+    </View>
+  );
+}
 
 export function SessionScreen({
   settings,
   onFinished,
   onCancel,
   battle,
+  setNumber = null,
+  onHowItWorks,
 }: {
   settings: Settings;
   battle?: BattleSessionOptions;
+  /** Which set of the day this is ("Set 4"); null while unknown. */
+  setNumber?: number | null;
   onFinished: (record: SessionRecord) => void;
   onCancel: () => void;
+  /** The (i) on "Get set": opens How it works (frame 3). No (i) when not given. */
+  onHowItWorks?: () => void;
 }) {
-  const { state, finish, live, recalibrate } = useSession(settings, battle);
-  const [liveView, setLiveView] = useState<'chart' | 'face'>('chart');
+  const { state, finish, live, recalibrate, faceViewShown } = useSession(settings, battle);
+  const [voice, setVoice] = useState(true);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const last = state.lastRep;
   const done = useRef(false);
   const end = async () => {
@@ -31,162 +51,167 @@ export function SessionScreen({
     done.current = true;
     onFinished(record);
   };
+  // Ends by itself: a challenge timer / pause, or the phone stopped lying flat (same path as End set).
   useEffect(() => {
-    if (state.autoEnd) end();
-  }, [state.autoEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (state.autoEnd || state.endedByTilt) end();
+  }, [state.autoEnd, state.endedByTilt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Set clock for the title ("Set 4 · 0:41"), from "Go".
+  const active = state.phase === 'active';
+  useEffect(() => {
+    if (!active) return;
+    const t0 = Date.now();
+    const id = setInterval(() => setElapsedMs(Date.now() - t0), 250);
+    return () => clearInterval(id);
+  }, [active]);
+
+  const infoButton = onHowItWorks ? <IconButton icon="info" onPress={onHowItWorks} accessibilityLabel="How it works" /> : undefined;
+
+  const toggleVoice = () => {
+    setVoiceOn(!voice);
+    setVoice(!voice);
+  };
+
+  /** Closing mid-set throws the set away, so ask once there are reps. */
+  const close = () => {
+    if (state.count === 0) return onCancel();
+    Alert.alert('Discard this set?', "These reps won't be saved.", [
+      { text: 'Keep going', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onCancel },
+    ]);
+  };
 
   if (state.phase === 'unavailable') {
     return (
       <View style={styles.container}>
+        <SetBar title="Get set" onClose={onCancel} />
         <View style={styles.center}>
-          <Text style={styles.unavailableTitle}>Can't count reps</Text>
-          <Text style={styles.unavailableText}>{state.status}</Text>
+          <Text variant="title2" align="center">
+            Can't count reps
+          </Text>
+          <Text variant="subhead" align="center" style={styles.sub}>
+            {state.status}
+          </Text>
         </View>
-        <Button title="Back" kind="secondary" onPress={onCancel} />
+        <Button title="Close" kind="gray" onPress={onCancel} />
       </View>
     );
   }
 
-  if (state.phase === 'calibrating' || state.phase === 'locked') {
-    const locked = state.phase === 'locked' && state.calibratedTop !== null;
+  if (state.phase === 'starting' || state.phase === 'placing') {
     return (
       <View style={styles.container}>
-        <Text style={styles.status}>{state.status}</Text>
-        <View style={styles.faceBox}>
-          <FaceMeshView style={StyleSheet.absoluteFill} showAngles />
-          {locked ? (
-            <View style={styles.lockedOverlay} pointerEvents="none">
-              <Text style={styles.lockedLabel}>TOP LOCKED</Text>
-              <Text style={styles.lockedValue}>{Math.round(state.calibratedTop! * 100)} cm</Text>
-              <Text style={styles.lockedSub}>Starting in {state.countdown ?? 0}…</Text>
-            </View>
-          ) : null}
-        </View>
-        {locked ? null : <CalibrationPanel guide={state.guide} />}
-        {locked ? <Button title="Redo calibration" kind="secondary" onPress={recalibrate} /> : null}
-        <Button title="Cancel" kind="secondary" onPress={onCancel} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.status}>{state.status}</Text>
-      {battle ? (
-        <Text style={styles.battleClock} accessibilityLiveRegion="polite">
-          {battle.format === 'timed' ? state.battleClock || '' : state.battleClock || 'Max reps · ends after a pause'}
-        </Text>
-      ) : null}
-
-      <View style={styles.center}>
-        <Text style={styles.count} accessibilityLabel={`${state.count} pushups`}>
-          {state.count}
-        </Text>
-        <Text style={styles.countLabel}>pushups</Text>
-
-        {last ? (
-          <View style={[styles.badge, { backgroundColor: colors.quality[last.quality] }]}>
-            <Text style={styles.badgeText}>
-              Rep {last.index}: {qualityLabel(last.quality)}
-              {last.depthRatio !== null ? ` · ${Math.round(last.depthRatio * 100)}%` : ''}
-            </Text>
-            <Text style={styles.badgeSub}>
-              {last.descentMs != null && last.ascentMs != null
-                ? `down ${(last.descentMs / 1000).toFixed(1)}s · up ${(last.ascentMs / 1000).toFixed(1)}s`
-                : ''}
-              {last.intervalMs != null ? ` · ${(last.intervalMs / 1000).toFixed(1)}s since last` : ''}
-            </Text>
+        <SetBar title="Get set" onClose={onCancel} right={infoButton} />
+        {state.phase === 'placing' ? (
+          <View style={styles.levelWrap}>
+            <LevelView level={state.level} />
           </View>
         ) : null}
       </View>
+    );
+  }
 
-      <View style={styles.liveHeader}>
-        <Text style={styles.chartTitle}>
-          {liveView === 'chart' ? `Face distance (last ${Math.round(LIVE_WINDOW_MS / 1000)} s)` : 'Face (TrueDepth)'}
-        </Text>
-        <View style={styles.segment}>
-          {(['chart', 'face'] as const).map((v) => (
-            <Pressable
-              key={v}
-              onPress={() => setLiveView(v)}
-              style={[styles.segmentItem, liveView === v && styles.segmentItemOn]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: liveView === v }}
-            >
-              <Text style={[styles.segmentText, liveView === v && styles.segmentTextOn]}>
-                {v === 'chart' ? 'Chart' : 'Face'}
-              </Text>
-            </Pressable>
-          ))}
+  if (state.phase === 'calibrating') {
+    return (
+      <View style={styles.container}>
+        <SetBar title="Get set" onClose={onCancel} right={infoButton} />
+        <View style={styles.faceWrap}>
+          <FaceCentering guide={state.guide} flatCheck={state.flatCheck} onFaceViewShown={faceViewShown} />
         </View>
       </View>
-      {liveView === 'chart' ? (
-        <LiveDistanceChart source={live} windowMs={LIVE_WINDOW_MS} fps={12} height={170} />
-      ) : (
-        <FaceMeshView style={styles.faceSmall} showAngles={false} />
-      )}
+    );
+  }
 
-      <View style={styles.indicators}>
-        <Indicator label="Face" ok={state.faceVisible} />
-        <Indicator label="Calibrated" ok={state.calibratedTop !== null} />
+  if (state.phase === 'locked') {
+    const n = state.countdown ?? COUNTDOWN_SECONDS;
+    return (
+      <View style={styles.container}>
+        <SetBar title="Get set" onClose={onCancel} />
+        <View style={styles.readyWrap}>
+          <Countdown value={n} progress={countdownProgress(n, COUNTDOWN_SECONDS)} total={COUNTDOWN_SECONDS} />
+          <Text variant="title2" align="center" style={styles.readyTitle}>
+            Ready
+          </Text>
+          <Text variant="subhead" align="center" style={styles.sub}>
+            Keep looking down at your phone.
+          </Text>
+        </View>
+        <Button title="Start over" kind="plain" onPress={recalibrate} />
       </View>
+    );
+  }
 
-      {state.phase === 'starting' ? (
-        <Button title="Cancel" kind="secondary" onPress={onCancel} />
-      ) : (
-        <>
-          {state.phase === 'active' && state.count === 0 ? (
-            <Button title="Redo calibration" kind="secondary" onPress={recalibrate} />
-          ) : null}
-          <Button title={battle ? 'Finish attempt' : 'End set'} kind="danger" onPress={end} />
-        </>
-      )}
-    </View>
-  );
-}
-
-function Indicator({ label, ok }: { label: string; ok: boolean }) {
+  // Counting (frame 9).
+  const toBeat = battle ? toBeatLine(rememberedBattle(battle.battleId), state.count) : null;
+  const title = countingTitle({
+    setNumber,
+    elapsedMs,
+    battleClock: state.battleClock,
+    isBattle: !!battle,
+  });
   return (
-    <View style={styles.indicator}>
-      <View style={[styles.dot, { backgroundColor: ok ? colors.quality.full : colors.muted }]} />
-      <Text style={styles.indicatorText}>{label}</Text>
+    <View style={styles.container}>
+      <SetBar
+        title={title}
+        onClose={close}
+        right={<IconButton icon="speaker" onPress={toggleVoice} accessibilityLabel={voice ? 'Mute voice' : 'Unmute voice'} style={!voice && styles.muted} />}
+      />
+      <View style={styles.center}>
+        <View accessible accessibilityLabel={`${state.count} reps`} accessibilityLiveRegion="polite">
+          <RollingNumber
+            value={state.count}
+            distance={Math.round(type.counter.fontSize * 0.13)}
+            render={(n) => <Text style={styles.count}>{n}</Text>}
+          />
+        </View>
+        <View style={styles.meta}>
+          <Text variant="subhead" tone="secondary" weight="500">
+            reps
+          </Text>
+          {last ? <QualityPill quality={last.quality} /> : null}
+          {toBeat ? <Text variant="footnote">· {toBeat}</Text> : null}
+        </View>
+        <Card style={styles.chartCard}>
+          <View style={styles.chartHead}>
+            <Text variant="footnote" weight="500">
+              Live depth
+            </Text>
+            <Text variant="caption" tone={state.faceVisible ? 'signal' : 'secondary'}>
+              {state.faceVisible ? 'Face centered' : "Can't see your face"}
+            </Text>
+          </View>
+          <View style={styles.chart}>
+            <LiveDistanceChart source={live} windowMs={LIVE_WINDOW_MS} fps={12} />
+          </View>
+        </Card>
+      </View>
+      {state.phase === 'active' && state.count === 0 ? <Button title="Start over" kind="plain" onPress={recalibrate} /> : null}
+      <Button title={battle ? 'Finish attempt' : 'End set'} kind="gray" onPress={end} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingBottom: 32 },
-  status: { color: colors.muted, fontSize: 16, textAlign: 'center', marginTop: 12, minHeight: 44 },
-  battleClock: { color: colors.accent, fontSize: 28, fontWeight: '900', textAlign: 'center', fontVariant: ['tabular-nums'] },
+  container: { flex: 1, paddingHorizontal: gutter, paddingBottom: 20, backgroundColor: color.bg },
+  bar: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  barTitle: { position: 'absolute', left: 56, right: 56, textAlign: 'center' },
+  barSpacer: { width: 36 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  count: { color: colors.text, fontSize: 130, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  countLabel: { color: colors.muted, fontSize: 18, marginTop: -10, textTransform: 'uppercase', letterSpacing: 2 },
-  badge: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 999, alignItems: 'center' },
-  badgeText: { color: '#111', fontSize: 20, fontWeight: '800' },
-  badgeSub: { color: '#111', fontSize: 13, marginTop: 2 },
-  chartTitle: { color: colors.muted, fontSize: 13 },
-  liveHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  segment: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 10, padding: 2 },
-  segmentItem: { paddingVertical: 5, paddingHorizontal: 14, borderRadius: 8 },
-  segmentItemOn: { backgroundColor: colors.accent },
-  segmentText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
-  segmentTextOn: { color: '#111' },
-  faceSmall: { height: 170, borderRadius: 16, overflow: 'hidden' },
-  faceBox: { flex: 1, borderRadius: 20, overflow: 'hidden', backgroundColor: '#05070D', minHeight: 260 },
-  lockedOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 24,
-    alignItems: 'center',
+  sub: { marginTop: 8, fontSize: 17, lineHeight: 24, maxWidth: 300 },
+  levelWrap: { flex: 1, paddingTop: 90 },
+  faceWrap: { flex: 1, paddingTop: 18 },
+  readyWrap: { flex: 1, alignItems: 'center', paddingTop: 120 },
+  readyTitle: { marginTop: 44 },
+  // Full line height (a smaller lineHeight clips the top of the digits on iOS), tight box via margins.
+  count: {
+    ...type.counter,
+    color: color.label,
+    lineHeight: heroLineHeight(type.counter.fontSize),
+    marginVertical: -heroTrim(type.counter.fontSize),
   },
-  lockedLabel: { color: colors.quality.full, fontSize: 14, fontWeight: '800', letterSpacing: 2 },
-  lockedValue: { color: colors.text, fontSize: 56, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  lockedSub: { color: colors.muted, fontSize: 16 },
-  indicators: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
-  indicator: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  indicatorText: { color: colors.muted, fontSize: 14 },
-  unavailableTitle: { color: colors.text, fontSize: 26, fontWeight: '800', marginBottom: 12, textAlign: 'center' },
-  unavailableText: { color: colors.muted, fontSize: 16, lineHeight: 23, textAlign: 'center' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  chartCard: { alignSelf: 'stretch', marginTop: 26, paddingTop: 14, paddingBottom: 14 },
+  chartHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chart: { marginTop: 8 },
+  muted: { opacity: 0.4 },
 });

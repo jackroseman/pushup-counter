@@ -6,7 +6,6 @@ import {
   addCalendarDays,
   addMonths,
   buildProgress,
-  chartCeiling,
   formatCount,
   lockedBadgeText,
   monthStart,
@@ -183,12 +182,6 @@ describe('milestone badges', () => {
     expect(view.badges.every((b) => b.earnedOn === null && b.remaining === b.milestone)).toBe(true);
   });
 
-  it('keeps the next milestone on the chart scale', () => {
-    expect(chartCeiling(50, [1000, 10_000, 100_000])).toBe(1000);
-    expect(chartCeiling(5000, [1000, 10_000, 100_000])).toBe(10_000);
-    expect(chartCeiling(100_001, [1000, 10_000, 100_000])).toBe(100_001);
-    expect(chartCeiling(0, [])).toBe(1);
-  });
 });
 
 describe('programs and the history note', () => {

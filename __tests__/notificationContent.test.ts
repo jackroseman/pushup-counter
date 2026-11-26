@@ -1,4 +1,4 @@
-import { buildNotification, ClaimedNotification, deadlineText, ordinal, scoreText } from '../supabase/functions/_shared/notificationContent';
+import { buildNotification, ClaimedNotification, deadlineText, isKnownNotificationKind, ordinal, scoreText } from '../supabase/functions/_shared/notificationContent';
 
 const B = '11111111-1111-4111-8111-111111111111';
 const row = (kind: string, facts: ClaimedNotification['facts'], challenge: string | null = B): ClaimedNotification => ({
@@ -17,6 +17,16 @@ describe('notification text', () => {
     expect(n.body).toBe('@bob wants to be friends');
     expect(n.data).toEqual({ type: 'friend_request', url: 'pushupcounter://friends' });
     expect(buildNotification(row('friend_accepted', { actor: { username: 'bob', displayName: 'Bob' } }, null))!.body).toMatch(/^Bob accepted/);
+  });
+
+  it('someone used your invite link', () => {
+    const n = buildNotification(row('friend_joined', { actor: { username: 'maya', displayName: 'Maya' } }, null))!;
+    expect(n).toEqual({
+      title: 'New friend',
+      body: "Maya used your invite link. You're now friends.",
+      data: { type: 'friend_joined', url: 'pushupcounter://friends' },
+    });
+    expect(isKnownNotificationKind('friend_joined')).toBe(true);
   });
 
   it('invite names the challenge', () => {

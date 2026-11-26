@@ -1,5 +1,14 @@
 export { addCalendarDays, addMonths, calendarDaysBetween, isoWeekday, localDate, monthStart, weekStart, weekdayName } from './calendar';
-export { formatFormScore, formScoreForReps } from './form';
+export {
+  formatClockTime,
+  formatDeadline,
+  formatFriendlyDay,
+  formatRelativeAgo,
+  formatSetDateTime,
+  formatShortDate,
+  formatSinceMonth,
+  formatTodaySubtitle,
+} from './format';
 export { GOAL_KEY, goalForDate, loadGoal, programComplete, saveEnrollment, saveGoal } from './goals';
 export type { DayGoal, GoalChoice, GoalEnrollment, SaveResult } from './goals';
 export { CUSTOM_GOAL, PROGRAMS, currentTargetLabel, programById, scheduledReps, segmentForDay, segmentsCoverRamp } from './programs';
@@ -10,7 +19,6 @@ export {
   MILESTONES,
   STREAK_NOW,
   buildProgress,
-  chartCeiling,
   formatCount,
   lockedBadgeText,
 } from './progress';
@@ -20,9 +28,7 @@ export {
   DEFAULT_LEAGUE_WEIGHTS,
   FRIEND_WEEK_SUBTITLE,
   FRIENDS_LEAGUE_COPY,
-  LEAGUE_ABOUT,
   NO_FRIENDS,
-  WEEK_LINE,
   formatLeagueNumber,
   friendWeekLine,
   improvementDetail,
@@ -52,8 +58,8 @@ export {
   weekCardLine,
 } from './nudges';
 export type { NudgePrefs, NudgeSyncAction, NudgeSyncState, WeekCardModel, WeekRanks } from './nudges';
-export { buildToday, celebrate, contributionFor, contributionLine, formatUsual, presentToday, streaks, travelLine } from './today';
-export type { Celebration, TodayModel } from './today';
+export { buildToday, celebrate, presentToday, streaks, travelLine } from './today';
+export type { Celebration, CelebrationKind, TodayModel } from './today';
 export { countedRepList, countsForStreak, PERSONAL_BACKFILL_MS, phoneCountedReps, workoutDate, workoutFromRecord } from './workouts';
 export type { Workout } from './workouts';
 export {

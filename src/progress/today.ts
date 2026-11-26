@@ -1,10 +1,7 @@
-import { median } from '../core';
-import { addCalendarDays, calendarDaysBetween, monthStart, weekStart, weekdayName } from './calendar';
+import { addCalendarDays, calendarDaysBetween, monthStart, weekStart } from './calendar';
 import { DayGoal, GoalEnrollment, goalForDate } from './goals';
 import { Workout, countsForStreak, workoutDate } from './workouts';
 
-const USUAL_WEEKS = 8;
-const USUAL_MIN = 3;
 const MILESTONES = [1000, 10_000, 100_000] as const;
 
 export interface TodayModel {
@@ -15,14 +12,26 @@ export interface TodayModel {
   ringCaption: string;
   ringProgress: number | null;
   streakLine: string;
-  usualLine: string | null;
+  toGoLine: string | null;
   travelLine: string | null;
   showSetGoal: boolean;
 }
 
+export type CelebrationKind =
+  | 'first_set'
+  | 'milestone'
+  | 'longest_streak'
+  | 'best_set'
+  | 'best_day'
+  | 'best_week'
+  | 'best_month'
+  | 'goal_met'
+  | 'set_marker';
+
 export interface Celebration {
-  title: string;
-  also?: string;
+  kind: CelebrationKind;
+  value?: number;
+  goalMet?: boolean;
 }
 
 function repsOn(workouts: readonly Workout[], date: string, zone: string, streakOnly: boolean): number {
@@ -89,26 +98,6 @@ export function streaks(
   return { current, longest };
 }
 
-function usualLineFor(workouts: readonly Workout[], enrollments: readonly GoalEnrollment[], today: string, zone: string): string | null {
-  const firstSet = earliest(workouts.map((w) => workoutDate(w, zone)));
-  const anchor = earliest([firstSet, goalStart(enrollments)]);
-  if (!anchor) return null;
-  const samples: number[] = [];
-  for (let i = 1; i <= USUAL_WEEKS; i++) {
-    const date = addCalendarDays(today, -7 * i);
-    if (date < anchor) continue;
-    samples.push(repsOn(workouts, date, zone, false));
-  }
-  if (samples.length < USUAL_MIN) return null;
-  return formatUsual(repsOn(workouts, today, zone, false) - median(samples), weekdayName(today));
-}
-
-export function formatUsual(delta: number, weekday: string): string {
-  if (delta === 0) return `Even with your usual ${weekday}`;
-  const abs = Number.isInteger(delta) ? String(Math.abs(delta)) : String(Math.round(Math.abs(delta) * 10) / 10);
-  return delta > 0 ? `+${abs} vs your usual ${weekday}` : `−${abs} vs your usual ${weekday}`;
-}
-
 export function travelLine(workouts: readonly Workout[], zone: string): string | null {
   const newest = [...workouts].sort((a, b) => b.startedAt - a.startedAt)[0];
   if (!newest?.timeZone || newest.timeZone === zone) return null;
@@ -130,7 +119,6 @@ export function buildToday(input: {
     target: goal ? goal.target : null,
     rest: goal?.rest ?? false,
     currentStreak: current,
-    usualLine: usualLineFor(workouts, enrollments, today, timeZone),
     travelLine: travelLine(workouts, timeZone),
   });
 }
@@ -141,10 +129,9 @@ export function presentToday(input: {
   target: number | null;
   rest: boolean;
   currentStreak: number;
-  usualLine: string | null;
   travelLine: string | null;
 }): TodayModel {
-  const { reps, target, rest, currentStreak, usualLine, travelLine } = input;
+  const { reps, target, rest, currentStreak, travelLine } = input;
   if (target == null) {
     return {
       reps,
@@ -154,7 +141,7 @@ export function presentToday(input: {
       ringCaption: 'Set a goal',
       ringProgress: null,
       streakLine: 'Set a goal to start a streak',
-      usualLine,
+      toGoLine: null,
       travelLine,
       showSetGoal: true,
     };
@@ -168,7 +155,7 @@ export function presentToday(input: {
       ringCaption: 'Rest day',
       ringProgress: null,
       streakLine: `${currentStreak} day streak`,
-      usualLine,
+      toGoLine: null,
       travelLine,
       showSetGoal: false,
     };
@@ -182,16 +169,10 @@ export function presentToday(input: {
     ringCaption: past > 0 ? `+${past} past your goal` : past === 0 ? 'Goal met' : '',
     ringProgress: Math.max(0, Math.min(1, target === 0 ? 1 : reps / target)),
     streakLine: `${currentStreak} day streak`,
-    usualLine,
+    toGoLine: past < 0 ? `${target - reps} to go` : null,
     travelLine,
     showSetGoal: false,
   };
-}
-
-export function contributionLine(repsToday: number, target: number | null, rest: boolean): string {
-  if (rest) return `This set put you at ${repsToday}. Rest day.`;
-  if (target == null) return `This set put you at ${repsToday} today.`;
-  return `This set put you at ${repsToday} / ${target}.`;
 }
 
 function lifetime(workouts: readonly Workout[]): number {
@@ -219,10 +200,6 @@ function bestSetReps(workouts: readonly Workout[]): number {
   return workouts.reduce((max, w) => Math.max(max, w.countedReps), 0);
 }
 
-function milestoneTitle(n: number): string {
-  return `You crossed ${n.toLocaleString('en-US')} push-ups.`;
-}
-
 export function celebrate(
   workouts: readonly Workout[],
   enrollments: readonly GoalEnrollment[],
@@ -237,28 +214,47 @@ export function celebrate(
   const repsBefore = before.reduce((sum, w) => (workoutDate(w, zone) === today ? sum + w.countedReps : sum), 0);
   const repsAfter = repsBefore + (workoutDate(set, zone) === today ? set.countedReps : 0);
   const goalNewlyMet = !!goal && goal.target > 0 && repsBefore < goal.target && repsAfter >= goal.target;
+
+  if (before.length === 0) {
+    if (set.countedReps <= 0) return null;
+    return goalNewlyMet ? { kind: 'first_set', goalMet: true } : { kind: 'first_set' };
+  }
+
   const longestBefore = streaks(before, enrollments, today, zone).longest;
   const longestAfter = streaks(workouts, enrollments, today, zone).longest;
   const lifeBefore = lifetime(before);
   const lifeAfter = lifetime(workouts);
   const milestone = crossedMilestone(lifeBefore, lifeAfter);
 
-  let title: string | null = null;
-  if (milestone) title = milestoneTitle(milestone);
-  else if (longestAfter > longestBefore) title = `New longest streak: ${longestAfter} day streak.`;
-  else if (set.countedReps > bestSetReps(before)) title = `New best set: ${set.countedReps}.`;
-  else if (bucketMax(workouts, zone, (d) => d) > bucketMax(before, zone, (d) => d)) title = `New best day: ${bucketMax(workouts, zone, (d) => d)}.`;
-  else if (bucketMax(workouts, zone, weekStart) > bucketMax(before, zone, weekStart)) title = `New best week: ${bucketMax(workouts, zone, weekStart)}.`;
-  else if (bucketMax(workouts, zone, monthStart) > bucketMax(before, zone, monthStart)) title = `New best month: ${bucketMax(workouts, zone, monthStart)}.`;
-  else if (goalNewlyMet) title = 'Goal met.';
-  else if (goal?.setMarker != null && set.countedReps >= goal.setMarker) title = `${goal.setMarker} in one set.`;
+  let result: Celebration | null = null;
+  if (milestone) {
+    result = { kind: 'milestone', value: milestone };
+  } else if (longestAfter > longestBefore) {
+    result = { kind: 'longest_streak', value: longestAfter };
+  } else if (set.countedReps > bestSetReps(before)) {
+    result = { kind: 'best_set', value: set.countedReps };
+  } else {
+    const dayAfter = bucketMax(workouts, zone, (d) => d);
+    if (dayAfter > bucketMax(before, zone, (d) => d)) {
+      result = { kind: 'best_day', value: dayAfter };
+    } else {
+      const weekAfter = bucketMax(workouts, zone, weekStart);
+      if (weekAfter > bucketMax(before, zone, weekStart)) {
+        result = { kind: 'best_week', value: weekAfter };
+      } else {
+        const monthAfter = bucketMax(workouts, zone, monthStart);
+        if (monthAfter > bucketMax(before, zone, monthStart)) {
+          result = { kind: 'best_month', value: monthAfter };
+        } else if (goalNewlyMet) {
+          result = { kind: 'goal_met', value: goal!.target };
+        } else if (goal?.setMarker != null && set.countedReps >= goal.setMarker) {
+          result = { kind: 'set_marker', value: goal.setMarker };
+        }
+      }
+    }
+  }
 
-  if (!title) return null;
-  if (goalNewlyMet && title !== 'Goal met.') return { title, also: 'Also: goal met.' };
-  return { title };
-}
-
-export function contributionFor(workouts: readonly Workout[], enrollments: readonly GoalEnrollment[], today: string, zone: string): string {
-  const view = buildToday({ workouts, enrollments, today, timeZone: zone });
-  return contributionLine(view.reps, view.target, view.rest);
+  if (!result) return null;
+  if (goalNewlyMet && result.kind !== 'goal_met') return { ...result, goalMet: true };
+  return result;
 }

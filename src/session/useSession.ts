@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import * as Haptics from 'expo-haptics';
+import { repCallout } from './repCallout';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -13,20 +13,22 @@ import {
   Rep,
   RepDetector,
   RepQuality,
+  GRAVITY_HZ,
+  TiltMonitor,
+  TiltSnapshot,
   TraceRecorder,
-  qualityLabel,
   summarize,
 } from '../core';
-import { HistoryStore, SessionRecord } from '../storage/history';
+import { HistoryStore, SessionEndReason, SessionRecord } from '../storage/history';
 import { Settings } from '../storage/settings';
-import { PushupSensors, faceTrackingSupported } from '../sensors';
+import { PushupSensors, faceTrackingSupported, restartFaceTracking, startGravity, stopGravity } from '../sensors';
 import { notifyHistoryChanged } from '../backend/syncEvents';
 import { deviceTimeZone } from '../backend/profile';
 import { BattleRules, EndReason, battleClockText, battleEndReason } from '../battles/battleClock';
 
 const KEEP_AWAKE_TAG = 'pushup-session';
 /** Countdown after calibration locks in (the user can redo it during this time). */
-const COUNTDOWN_SECONDS = 3;
+export const COUNTDOWN_SECONDS = 3;
 /** Guidance UI refresh rate (the guide itself sees every sample). */
 const GUIDE_UI_MS = 100;
 /** Spoken hints: only once a hint has persisted this long, and not more often than SPEAK_GAP_MS. */
@@ -36,8 +38,10 @@ const FACE_HZ = 30;
 /** How much history the live chart keeps. */
 export const LIVE_WINDOW_MS = 12_000;
 const FACE_LOST_WARNING_MS = 2500;
+/** Shown and spoken while the phone isn't flat yet. */
+export const PLACE_FLAT_MESSAGE = 'Place your phone flat, screen up';
 
-export type SessionPhase = 'starting' | 'calibrating' | 'locked' | 'active' | 'finished' | 'unavailable';
+export type SessionPhase = 'starting' | 'placing' | 'calibrating' | 'locked' | 'active' | 'finished' | 'unavailable';
 
 export interface SessionState {
   phase: SessionPhase;
@@ -55,6 +59,12 @@ export interface SessionState {
   /** Battle sets: timer text, and why the set ended by itself (the screen then finishes it). */
   battleClock: string;
   autoEnd: EndReason | null;
+  /** The phone is checked for lying flat (false when this build or device can't, then the check is skipped). */
+  flatCheck: boolean;
+  /** Live level while placing the phone; null otherwise. */
+  level: TiltSnapshot | null;
+  /** The phone stopped lying flat during the set: the screen finishes it like End set. */
+  endedByTilt: boolean;
 }
 
 /** Present when the set is a battle attempt. */
@@ -71,8 +81,18 @@ export interface LiveData {
 }
 
 
+/** Spoken feedback for the current set. The speaker button turns it off; each new set starts with it on. */
+let voiceOn = true;
+
 function say(text: string) {
+  if (!voiceOn) return;
   Speech.speak(text, { rate: 1.05, useApplicationAudioSession: true });
+}
+
+/** Turns spoken feedback on or off for the rest of this set (stops anything being said). */
+export function setVoiceOn(on: boolean) {
+  voiceOn = on;
+  if (!on) Speech.stop().catch(() => {});
 }
 
 export const historyStore = new HistoryStore(AsyncStorage);
@@ -101,6 +121,13 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
   /** Reps are only counted once calibration is done and the session is live. */
   const active = useRef(false);
   const live = useRef<LiveData>({ samples: [], reps: [], top: null });
+  /** Flat-phone check (src/core/tilt.ts). Only runs when the build has Core Motion. */
+  const tilt = useRef(new TiltMonitor());
+  const motionOn = useRef(false);
+  const lastLevelPush = useRef(0);
+  /** Mirrors state.phase for the sensor listeners. */
+  const phaseRef = useRef<SessionPhase>('starting');
+  const endReason = useRef<SessionEndReason>('user');
 
   const [state, setState] = useState<SessionState>({
     phase: 'starting',
@@ -114,19 +141,17 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     countdown: null,
     battleClock: '',
     autoEnd: null,
+    flatCheck: false,
+    level: null,
+    endedByTilt: false,
   });
   const patch = useCallback((p: Partial<SessionState>) => setState((s) => ({ ...s, ...p })), []);
 
   const onRep = useCallback(
     (rep: Rep) => {
       const s = settingsRef.current;
-      const label = qualityLabel(rep.quality);
-      say(s.speakQuality && rep.quality !== 'full' ? `${rep.index}, ${label.toLowerCase()}` : String(rep.index));
-      if (s.haptics) {
-        Haptics.impactAsync(rep.quality === 'full' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(
-          () => {}
-        );
-      }
+      const callout = repCallout(rep, s.countOutLoud);
+      if (callout) say(callout);
       live.current.reps.push({ t: rep.timestamp, quality: rep.quality, index: rep.index });
       lastRepAt.current = Date.now();
       patch({ count: rep.index, lastRep: rep });
@@ -146,6 +171,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     trace.current = new TraceRecorder(startedAt.current);
     lastRepAt.current = null;
     active.current = true;
+    phaseRef.current = 'active';
     patch({ phase: 'active', countdown: null, guide: null, status: 'Go!' });
     say('Go');
   }, [patch]);
@@ -156,6 +182,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       calibratedTop.current = calibration.topDistance;
       detector.current.setCalibration(calibration);
       live.current.top = calibration.topDistance;
+      phaseRef.current = 'locked';
       const cm = Math.round(calibration.topDistance * 100);
       patch({
         phase: 'locked',
@@ -176,8 +203,8 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     [goActive, patch]
   );
 
-  /** (Re)starts guided calibration: pose checks gate a 2 s hold-still, then the median locks in. */
-  const startCalibration = useCallback(() => {
+  /** Clears everything a set builds up before counting starts. */
+  const resetSetup = () => {
     clearCountdown();
     active.current = false;
     detector.current = new RepDetector();
@@ -186,18 +213,54 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     live.current.top = null;
     live.current.reps = [];
     hintState.current = { hint: null, since: 0, spokenHint: null, lastSpoke: 0 };
+    // Fresh holds: placing needs a new 500 ms flat, and a trip from before doesn't carry over.
+    tilt.current.reset();
+  };
+
+  /** Shows the level until the phone lies flat, screen up; then calibration starts by itself. */
+  const startPlacing = useCallback(() => {
+    resetSetup();
+    guide.current = null;
+    phaseRef.current = 'placing';
+    patch({
+      phase: 'placing',
+      count: 0,
+      lastRep: null,
+      calibratedTop: null,
+      countdown: null,
+      guide: null,
+      level: tilt.current.snapshot,
+      status: PLACE_FLAT_MESSAGE,
+    });
+    say(PLACE_FLAT_MESSAGE);
+  }, [patch]);
+
+  /** (Re)starts guided calibration: pose checks gate a 2 s hold-still, then the median locks in. */
+  const startCalibration = useCallback(() => {
+    resetSetup();
     guide.current = new CalibrationGuide();
+    phaseRef.current = 'calibrating';
     patch({
       phase: 'calibrating',
       count: 0,
       lastRep: null,
       calibratedTop: null,
       countdown: null,
+      level: null,
       guide: guide.current.add({ t: Date.now(), tracked: false, distance: 0 }),
       status: 'Get into the top position, face over the phone',
     });
     say('Get into the top position, face over the phone');
   }, [patch]);
+
+  /**
+   * The face view on "Center your face" is on screen. Tracking started before it appeared (during
+   * Lay flat), so start tracking over once so the view can draw the face mesh.
+   */
+  const faceViewShown = useCallback(() => {
+    if (cancelled.current || phaseRef.current !== 'calibrating') return;
+    restartFaceTracking(FACE_HZ);
+  }, []);
 
   /** Redo calibration: allowed while locked, or once counting started but before any rep. */
   const recalibrate = useCallback(() => {
@@ -208,6 +271,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
 
   useEffect(() => {
     cancelled.current = false;
+    voiceOn = true;
     const subs = [
       PushupSensors.addListener('onProximityChange', (e) => {
         if (!active.current) return;
@@ -276,6 +340,32 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       PushupSensors.addListener('onFaceTrackingError', (e) => {
         patch({ status: `Depth tracking problem: ${e.message}` });
       }),
+      PushupSensors.addListener('onGravity', (e) => {
+        if (cancelled.current || !motionOn.current) return;
+        const snap = tilt.current.add({ t: e.timestamp, x: e.x, y: e.y, z: e.z });
+        const phase = phaseRef.current;
+        if (phase === 'placing') {
+          if (snap.ready) {
+            startCalibration();
+            return;
+          }
+          if (e.timestamp - lastLevelPush.current >= GUIDE_UI_MS) {
+            lastLevelPush.current = e.timestamp;
+            setState((s) => (s.phase === 'placing' ? { ...s, level: snap } : s));
+          }
+          return;
+        }
+        if (!snap.tripped) return;
+        if (phase === 'calibrating' || phase === 'locked') {
+          // Nothing has been counted yet: just place the phone again.
+          startPlacing();
+        } else if (phase === 'active' && active.current) {
+          // Same as End set. The screen sees endedByTilt and calls finish().
+          active.current = false;
+          endReason.current = 'tilt';
+          patch({ endedByTilt: true });
+        }
+      }),
     ];
 
     (async () => {
@@ -304,8 +394,17 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       if (cancelled.current) return;
       patch({ proximityAvailable: proximityOk });
 
-      // Guided calibration (see CalibrationGuide); locking in starts a short countdown, then counting.
-      startCalibration();
+      // Flat-phone check. Builds before 1.2.1 (no Core Motion) and devices without device motion
+      // skip it and go straight to calibration, exactly as before.
+      const motionOk = await startGravity(GRAVITY_HZ);
+      if (cancelled.current) return;
+      motionOn.current = motionOk;
+      patch({ flatCheck: motionOk });
+
+      // Place the phone flat, then guided calibration (see CalibrationGuide); locking in starts a
+      // short countdown, then counting.
+      if (motionOk) startPlacing();
+      else startCalibration();
     })();
 
     // Warn when the face has been out of view for a while during the set.
@@ -341,9 +440,11 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       subs.forEach((s) => s.remove());
       PushupSensors.stopProximity().catch(() => {});
       PushupSensors.stopFaceDistance().catch(() => {});
+      motionOn.current = false;
+      stopGravity();
       deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
-  }, [onRep, onLocked, startCalibration, patch]);
+  }, [onRep, onLocked, startCalibration, startPlacing, patch]);
 
   /** Ends the session, persists it (if it has reps) and returns the record. */
   const finish = useCallback((): Promise<SessionRecord> => {
@@ -359,6 +460,9 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     clearCountdown();
     await PushupSensors.stopProximity().catch(() => {});
     await PushupSensors.stopFaceDistance().catch(() => {});
+    motionOn.current = false;
+    await stopGravity();
+    phaseRef.current = 'finished';
     const endedAt = Date.now();
     const reps = [...detector.current.reps];
     const record: SessionRecord = {
@@ -372,6 +476,7 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
       version: 2,
       trace: trace.current?.finish() ?? [],
       timeZone: deviceTimeZone(),
+      endReason: endReason.current,
       ...(battleRef.current ? { challengeId: battleRef.current.battleId } : {}),
       ...(battleRef.current?.format === 'timed' && battleRef.current.durationS
         ? { timerDurationS: battleRef.current.durationS }
@@ -384,5 +489,5 @@ export function useSession(settings: Settings, battle?: BattleSessionOptions) {
     return record;
   };
 
-  return { state, finish, live, recalibrate };
+  return { state, finish, live, recalibrate, faceViewShown };
 }

@@ -151,6 +151,11 @@ export function supabaseSyncBackend(client: SupabaseClient): SyncBackend {
       const { error } = await client.rpc('submit_set', { p: payload });
       return { error: error ? { code: error.code, message: error.message } : null };
     },
+    deleteSet: async (_userId, clientSetId) => {
+      // Writes a tombstone and deletes the solo set (no-op for a challenge set or a missing row).
+      const { error } = await client.rpc('delete_set', { p_client_set_id: clientSetId });
+      return { error: error ? { code: error.code, message: error.message } : null };
+    },
     listUploadedIds: async (userId) => {
       const ids: string[] = [];
       for (let from = 0; ; from += 1000) {
@@ -165,7 +170,32 @@ export function supabaseSyncBackend(client: SupabaseClient): SyncBackend {
         if (!data || data.length < 1000) return ids;
       }
     },
+    listDeletedIds: async (userId) => {
+      const ids: string[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await client
+          .from('deleted_sets')
+          .select('client_set_id')
+          .eq('user_id', userId)
+          .range(from, from + 999);
+        if (error) throw new Error(error.message);
+        ids.push(...(data ?? []).map((r) => r.client_set_id as string));
+        if (!data || data.length < 1000) return ids;
+      }
+    },
   };
+}
+
+/** Whether the user's backed-up set with this SessionRecord id is in a challenge. */
+export async function setInChallenge(client: SupabaseClient, userId: string, clientSetId: string): Promise<boolean> {
+  const { data, error } = await client
+    .from('sets')
+    .select('challenge_id')
+    .eq('user_id', userId)
+    .eq('client_set_id', clientSetId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return !!data?.challenge_id;
 }
 
 export function payloadContext(deviceId: string | null): PayloadContext {

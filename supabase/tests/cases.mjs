@@ -188,6 +188,9 @@ steps.push(
   ['p3: F plays first while pending', `${battleSet('p3-f', 20, 'b1', F)} select ${outbox('set_submitted', G, 'b1')} n;`],
   ['p3: users cannot claim notifications (expect ERR)', `${as(F)} select * from claim_notifications(10); reset role;`],
   ['p3: users cannot read the outbox (expect ERR)', `${as(F)} select count(*) from private.notification_outbox; reset role;`],
+  // claim_notifications skips quiet hours (default 21:00-08:00 local). Turn them off for
+  // everyone here so these claims do not depend on the time of day the suite runs.
+  ['p3: quiet hours off for claim tests', `insert into notification_prefs (user_id, quiet_start, quiet_end) select id, '00:00', '00:00' from profiles on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;`],
   ['p3: claim_notifications returns facts once', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) order by id; select count(*) from claim_notifications(100); reset role;`],
   ['p3: G accepts -> active; creator notified', `${as(G)} update challenge_participants set status='accepted' where challenge_id=${ctx('b1')}::uuid and user_id='${G}'; reset role; select status from challenges where id=${ctx('b1')}::uuid; select ${outbox('invite_accepted', F, 'b1')} n;`],
   ['p3: G plays; battle stays open while the link is usable', `${battleSet('p3-g', 15, 'b1', G)} select finalize_challenges(); select status from challenges where id=${ctx('b1')}::uuid;`],
@@ -195,6 +198,9 @@ steps.push(
   ['p3: F revokes the link', `${as(F)} select revoke_invite_link(${ctx('t1')}); reset role; set role anon; select invite_preview(${ctx('t1')})->>'status' s; reset role;`],
   ['p3: C cannot redeem a revoked link (expect ERR)', `${as(C)} select redeem_invite(${ctx('t1')}); reset role;`],
   ['p3: H plays -> everyone done -> completed and locked', `${battleSet('p3-h', 25, 'b1', H)} select finalize_challenges(); select status from challenges where id=${ctx('b1')}::uuid; select user_id::text u, rank, is_winner, valid_reps from challenge_results where challenge_id=${ctx('b1')}::uuid order by rank; select ${outbox('challenge_result', F, 'b1')} + ${outbox('challenge_result', G, 'b1')} + ${outbox('challenge_result', H, 'b1')} n;`],
+  // claim_notifications skips quiet hours (default 21:00-08:00 local). Turn them off for
+  // everyone here so these claims do not depend on the time of day the suite runs.
+  ['p3: quiet hours off for result claims', `insert into notification_prefs (user_id, quiet_start, quiet_end) select id, '00:00', '00:00' from profiles on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;`],
   ['p3: result facts', `set role service_role; select kind, user_id::text, facts from claim_notifications(100) where kind='challenge_result' order by user_id; reset role;`],
   ['p3: my_challenges detail for G', `${as(G)} select my_challenges(${ctx('b1')}::uuid) b; select jsonb_array_length(my_challenges()) n; reset role;`],
   ['p3: C does not see the battle', `${as(C)} select my_challenges(${ctx('b1')}::uuid) b; reset role;`],
@@ -304,7 +310,7 @@ const solo = (id, n, user, opts = {}) =>
   `${as(user)} select public.submit_set(${q(rec(id, n, opts.period ?? 1500, opts.bottoms ?? [0.15], opts))}) is not null; reset role;`;
 
 steps.push(
-  ['claim: defaults include the recency window and multi-day options', `select value->>'claim_set_max_age_s' age, value->>'multi_day_window_days' w, value->>'deadline_hours' h from app_settings where key='async_battle_defaults';`],
+  ['claim: defaults include the recency window and multi-day options', `select value->>'claim_set_max_age_s' age, value->>'multi_day_window_days' w, value->>'deadline_hours' h, value->'deadline_options_hours' opts from app_settings where key='async_battle_defaults';`],
   ['claim: A uploads the set he just finished', solo('claim-solo', 10, A)],
   ['claim: A opens a max-reps battle', `${as(A)} ${create('cmax', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;`],
   ['claim: resubmitting without linkFinishedSet does not attach it (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(${q(rec('claim-solo', 10, 1500, [0.15]))} || jsonb_build_object('challengeId', ${ctx('cmax')}, 'userId', '${A}')); reset role;`],
@@ -342,7 +348,7 @@ steps.push(
   ['claim: restore the default window', `update app_settings set value = jsonb_set(value, '{claim_set_max_age_s}', '1800') where key='async_battle_defaults'; select value->>'claim_set_max_age_s' age from app_settings where key='async_battle_defaults';`],
 );
 Object.assign(checks, {
-  'claim: defaults include the recency window and multi-day options': (r) => ok(r[0][0].age === '1800' && r[0][0].w === '7' && r[0][0].h === '24', 'defaults ' + JSON.stringify(r[0])),
+  'claim: defaults include the recency window and multi-day options': (r) => ok(r[0][0].age === '1800' && r[0][0].w === '7' && r[0][0].h === '24' && JSON.stringify(r[0][0].opts) === '[24,72,168]', 'defaults ' + JSON.stringify(r[0])),
   'claim: the set is still solo': (r) => ok(r[0][0].solo === true, 'linked without the flag'),
   'claim: linking it counts as A attempt and tells B': (r) => {
     const linked = r.find((x) => x[0] && 'linked' in x[0])[0];
@@ -398,7 +404,7 @@ steps.push(
   ['progress: a client cannot write an enrollment (expect ERR)', `${as(D)} insert into goal_enrollments (user_id, custom_daily_reps, started_on, recorded_time_zone) values ('${D}', 30, current_date, 'UTC'); reset role;`],
   ['progress: switching today rewrites the open row', `${as(D)} select enroll_goal('{"customDailyReps":30}')->>'customDailyReps' as custom; select enroll_goal('{"programId":"first_20"}')->>'programId' as program; select count(*)::int as n from goal_enrollments where user_id='${D}'; reset role;`],
   ['progress: a custom goal outside the settings is rejected (expect ERR)', `${as(D)} select enroll_goal('{"customDailyReps":4}'); reset role;`],
-  ['progress: switching on a later day closes yesterday', `update goal_enrollments set started_on = (now() at time zone 'America/New_York')::date - 1 where user_id='${D}' and ended_on is null; ${as(D)} select enroll_goal('{"programId":"fifty_a_day"}')->>'programId' as program; select count(*)::int as n, (select ended_on from goal_enrollments where user_id='${D}' and program_id='first_20') as closed from goal_enrollments where user_id='${D}'; reset role;`],
+  ['progress: switching on a later day closes yesterday', `update goal_enrollments set started_on = (now() at time zone (select time_zone from profiles where id='${D}'))::date - 1 where user_id='${D}' and ended_on is null; ${as(D)} select enroll_goal('{"programId":"fifty_a_day"}')->>'programId' as program; select count(*)::int as n, (select ended_on from goal_enrollments where user_id='${D}' and program_id='first_20') as closed, (now() at time zone (select time_zone from profiles where id='${D}'))::date as today from goal_enrollments where user_id='${D}'; reset role;`],
   ['progress: someone else cannot read the goal', `${as(B)} select count(*)::int as n from goal_enrollments; reset role;`],
   ['progress: anon cannot call my_progress (expect ERR)', `set role anon; select my_progress(); reset role;`],
   ['progress: setup P', `insert into auth.users values ('${P}'); ${as(P)} insert into profiles(id, username, time_zone) values ('${P}', 'pat', 'UTC'); select enroll_goal('{"customDailyReps":10}')->>'customDailyReps' as custom; reset role; update goal_enrollments set started_on = (now() at time zone 'UTC')::date - 80 where user_id='${P}' and ended_on is null;`],
@@ -445,8 +451,10 @@ Object.assign(checks, {
   },
   'progress: switching on a later day closes yesterday': (r) => {
     const row = r[r.length - 1][0];
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    ok(r[0][0].program === 'fifty_a_day' && Number(row.n) === 2 && isoDate(row.closed) === today, 'close ' + JSON.stringify(r));
+    // ended_on is today in the profile zone (D was set to Europe/Paris earlier in the suite).
+    // Compare against the same SQL expression, not JS America/New_York: after late afternoon
+    // ET those calendar dates differ, and isoDate() is UTC, which made this case flake.
+    ok(r[0][0].program === 'fifty_a_day' && Number(row.n) === 2 && isoDate(row.closed) === isoDate(row.today), 'close ' + JSON.stringify(r));
   },
   'progress: someone else cannot read the goal': (r) => ok(Number(r[0][0].n) === 0, 'goal leak'),
   'progress: a late set counts in the total and not the streak': (r) => {
@@ -1117,5 +1125,222 @@ Object.assign(checks, {
     ok(Number(row.a_reps) === Number(row.a_metrics) && Number(row.b_reps) === Number(row.b_metrics), 'players ' + JSON.stringify(row));
     ok(Number(row.team_total) === Number(row.a_reps) + Number(row.b_reps), 'team ' + JSON.stringify(row));
     ok(Number(api.b_api) === Number(row.b_reps), 'api ' + JSON.stringify(api));
+  },
+});
+
+// Hidden end reason (app 1.2.1+). Older builds omit it and get 'user'.
+steps.push(
+  ['end reason: an omitted reason is user', `${as(D)} select submit_set(${q(rec('end-default', 3, 1500, [0.15]))}) is not null; reset role; select end_reason from sets where client_set_id='end-default';`],
+  ['end reason: tilt is stored', `${as(D)} select submit_set(${q({ ...rec('end-tilt', 3, 1500, [0.15]), endReason: 'tilt' })}) is not null; reset role; select end_reason from sets where client_set_id='end-tilt';`],
+  ['end reason: an unknown reason is rejected (expect ERR)', `${as(D)} select submit_set(${q({ ...rec('end-bad', 3, 1500, [0.15]), endReason: 'shake' })}); reset role;`],
+);
+
+Object.assign(checks, {
+  'end reason: an omitted reason is user': (r) => ok(r[r.length - 1][0].end_reason === 'user', JSON.stringify(r)),
+  'end reason: tilt is stored': (r) => ok(r[r.length - 1][0].end_reason === 'tilt', JSON.stringify(r)),
+});
+
+// pg_cron wakes notify only when a drain has something to send or to expire.
+const WK = '70000000-0000-4000-8000-00000000c0de';
+const wakeRow = (key, col, val) => col
+  ? `insert into private.notification_outbox (kind, user_id, dedupe_key, ${col}) values ('friend_request', '${WK}', '${key}', ${val});`
+  : `insert into private.notification_outbox (kind, user_id, dedupe_key) values ('friend_request', '${WK}', '${key}');`;
+steps.push(
+  ['wake: setup a recipient with an empty outbox', `
+    delete from private.notification_outbox;
+    insert into auth.users values ('${WK}');
+    ${as(WK)} insert into profiles(id, username, display_name, time_zone) values ('${WK}', 'wanda', 'Wanda', 'UTC'); reset role;
+    insert into notification_prefs (user_id, quiet_start, quiet_end) values ('${WK}', '00:00', '00:00')
+      on conflict (user_id) do update set quiet_start = excluded.quiet_start, quiet_end = excluded.quiet_end;
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: a sendable row wakes, a sent one does not', `
+    ${wakeRow('w-send')}
+    select private.has_unsent_notifications() as wake;
+    update private.notification_outbox set sent_at = now() where dedupe_key = 'w-send';
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: failed, leased, not-yet-due and quiet-hour rows do not wake', `
+    ${wakeRow('w-failed', 'failed_at', 'now()')}
+    ${wakeRow('w-leased', 'leased_until', "now() + interval '5 minutes'")}
+    ${wakeRow('w-later', 'not_before', "now() + interval '1 hour'")}
+    select private.has_unsent_notifications() as wake;
+    update notification_prefs set
+      quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
+      quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
+     where user_id = '${WK}';
+    ${wakeRow('w-quiet')}
+    select private.has_unsent_notifications() as wake;
+  `],
+  ['wake: an expired lease wakes again', `
+    update private.notification_outbox set leased_until = now() - interval '1 minute' where dedupe_key = 'w-leased';
+    update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${WK}';
+    select private.has_unsent_notifications() as wake;
+    delete from private.notification_outbox where dedupe_key in ('w-leased', 'w-quiet');
+  `],
+  ['wake: a stale row wakes once, then expiry stops the wakes', `
+    update notification_prefs set
+      quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
+      quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
+     where user_id = '${WK}';
+    ${wakeRow('w-stale', 'created_at', "now() - interval '2 days'")}
+    select private.has_unsent_notifications() as wake;
+    select private.expire_notifications();
+    select failed_at is not null as expired from private.notification_outbox where dedupe_key = 'w-stale';
+    select private.has_unsent_notifications() as wake;
+  `],
+);
+
+const wakes = (r) => r.filter((set) => set[0] && 'wake' in set[0]).map((set) => set[0].wake);
+Object.assign(checks, {
+  'wake: setup a recipient with an empty outbox': (r) => ok(JSON.stringify(wakes(r)) === '[false]', JSON.stringify(r)),
+  'wake: a sendable row wakes, a sent one does not': (r) => ok(JSON.stringify(wakes(r)) === '[true,false]', JSON.stringify(wakes(r))),
+  'wake: failed, leased, not-yet-due and quiet-hour rows do not wake': (r) => ok(JSON.stringify(wakes(r)) === '[false,false]', JSON.stringify(wakes(r))),
+  'wake: an expired lease wakes again': (r) => ok(JSON.stringify(wakes(r)) === '[true]', JSON.stringify(wakes(r))),
+  'wake: a stale row wakes once, then expiry stops the wakes': (r) => {
+    ok(JSON.stringify(wakes(r)) === '[true,false]', JSON.stringify(wakes(r)));
+    ok(r.find((set) => set[0] && 'expired' in set[0])[0].expired === true, 'not expired ' + JSON.stringify(r));
+  },
+});
+
+// Delete set (Set details): the app deletes the user's own solo set by SessionRecord id.
+// RLS allows only your own sets outside challenges; reps and traces cascade; totals follow.
+const DA = 'dddddddd-0001-4ddd-8ddd-dddddddddddd', DB = 'dddddddd-0002-4ddd-8ddd-dddddddddddd';
+const delSet = (user, id) =>
+  `${as(user)} with d as (delete from sets where user_id = '${user}' and client_set_id = '${id}' and challenge_id is null returning 1) select count(*)::int as deleted from d; reset role;`;
+const totals = `${as(DA)} select (public.my_progress()->>'lifetimeReps')::int as lifetime,
+  (select (r->>'reps')::int from jsonb_array_elements(public.my_league()->'total') r where r->>'userId' = '${DA}') as league; reset role;`;
+steps.push(
+  ['delete: setup two friends with sets', `insert into auth.users values ('${DA}'),('${DB}');
+    ${as(DA)} insert into profiles(id,username) values ('${DA}','delta'); reset role;
+    ${as(DB)} insert into profiles(id,username) values ('${DB}','echo'); reset role;
+    ${as(DA)} select send_friend_request('echo'); reset role; ${as(DB)} select respond_friend_request('${DA}', true); reset role;
+    ${solo('del-1', 10, DA)} ${solo('del-2', 5, DA)} ${solo('del-b', 4, DB)}
+    ${totals}`],
+  ['delete: a friend cannot delete your set', delSet(DB, 'del-1')],
+  ['delete: you delete your own solo set', `${delSet(DA, 'del-1')}
+    select count(*)::int as sets from sets where client_set_id = 'del-1';
+    select count(*)::int as orphans from reps r where not exists (select 1 from sets s where s.id = r.set_id);
+    ${totals}`],
+  ['delete: deleting again is a no-op', delSet(DA, 'del-1')],
+  ['delete: a tombstone is kept after the row is gone', `${as(DA)} select count(*)::int as tombs from deleted_sets where user_id = '${DA}' and client_set_id = 'del-1'; reset role;`],
+  ['delete: re-uploading a tombstoned set is rejected (expect ERR)', `${as(DA)} select submit_set(${q(rec('del-1', 10, 1500, [0.15]))}); reset role;`],
+  ['delete: the rejected upload did not come back', `select count(*)::int as sets from sets where client_set_id = 'del-1'; ${totals}`],
+  ['delete: a friend cannot write your tombstone (expect ERR)', `${as(DB)} insert into deleted_sets(user_id, client_set_id) values ('${DA}', 'del-2'); reset role;`],
+  ['delete: delete_set on a never-uploaded id writes a tombstone', `${as(DA)} select public.delete_set('del-never'); select count(*)::int as tombs from deleted_sets where user_id = '${DA}' and client_set_id = 'del-never'; reset role;`],
+  ['delete: uploading that never-uploaded id is rejected (expect ERR)', `${as(DA)} select public.submit_set(${q(rec('del-never', 3, 1500, [0.15]))}); reset role;`],
+  ['delete: a challenge set cannot be tombstoned or deleted', `
+    ${as(DA)} ${create('c-del', { kind: 'best_set', deadlineHours: 24 }, [DB])} reset role;
+    ${solo('del-ch', 6, DA)} ${link('del-ch', 6, 'c-del', DA)}
+    ${as(DA)} select public.delete_set('del-ch');
+    select (challenge_id is not null) as kept from sets where client_set_id = 'del-ch';
+    select count(*)::int as tombs from deleted_sets where client_set_id = 'del-ch'; reset role;`],
+  ['delete: a direct insert of a challenge tombstone is rejected (expect ERR)', `${as(DA)} insert into deleted_sets(user_id, client_set_id) values ('${DA}', 'del-ch'); reset role;`],
+);
+Object.assign(checks, {
+  'delete: setup two friends with sets': (r) => {
+    const t = r[r.length - 1][0];
+    ok(t.lifetime === 15 && t.league === 15, 'totals before ' + JSON.stringify(t));
+  },
+  'delete: a friend cannot delete your set': (r) => ok(r[0][0].deleted === 0, 'friend deleted ' + JSON.stringify(r)),
+  'delete: you delete your own solo set': (r) => {
+    ok(r[0][0].deleted === 1, 'deleted ' + JSON.stringify(r[0]));
+    ok(r[1][0].sets === 0 && r[2][0].orphans === 0, 'cascade ' + JSON.stringify(r.slice(1, 3)));
+    const t = r[3][0];
+    ok(t.lifetime === 5 && t.league === 5, 'totals after ' + JSON.stringify(t));
+  },
+  'delete: deleting again is a no-op': (r) => ok(r[0][0].deleted === 0, 'again ' + JSON.stringify(r)),
+  'delete: a tombstone is kept after the row is gone': (r) => ok(r[0][0].tombs === 1, 'tombstone ' + JSON.stringify(r)),
+  'delete: the rejected upload did not come back': (r) => {
+    ok(r[0][0].sets === 0, 'resurrected ' + JSON.stringify(r[0]));
+    const t = r[1][0];
+    ok(t.lifetime === 5 && t.league === 5, 'totals after reject ' + JSON.stringify(t));
+  },
+  'delete: delete_set on a never-uploaded id writes a tombstone': (r) => ok(r[1][0].tombs === 1, 'tombstone ' + JSON.stringify(r)),
+  'delete: a challenge set cannot be tombstoned or deleted': (r) => {
+    const kept = r.find((set) => set[0] && 'kept' in set[0])[0];
+    const tombs = r.find((set) => set[0] && 'tombs' in set[0])[0];
+    ok(kept.kept === true, 'challenge set deleted ' + JSON.stringify(kept));
+    ok(tombs.tombs === 0, 'challenge tombstone ' + JSON.stringify(tombs));
+  },
+});
+
+// -------------------------------------------------------------------------------------
+// Personal friend invite links (20261126170000_friend_invite_links.sql)
+// -------------------------------------------------------------------------------------
+const IA='1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a', IB='2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b2b', IC='3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c3c', ID='4d4d4d4d-4d4d-4d4d-8d4d-4d4d4d4d4d4d', IE='5e5e5e5e-5e5e-4e5e-8e5e-5e5e5e5e5e5e';
+const keep = `select set_config('t.code', coalesce((select code from friend_invite_links where user_id='${IA}' and revoked_at is null), ''), false);`;
+const icode = () => `current_setting('t.code')`;
+const ifriends = (a, b) => `(select status from friendships where user_low=least('${a}'::uuid,'${b}'::uuid) and user_high=greatest('${a}'::uuid,'${b}'::uuid))`;
+steps.push(
+  ['invite: setup people', `insert into auth.users values ('${IA}'),('${IB}'),('${IC}'),('${ID}'),('${IE}');
+    ${as(IA)} insert into profiles(id,username,display_name) values ('${IA}','inviter','Ivy'); reset role;
+    ${as(IB)} insert into profiles(id,username) values ('${IB}','joiner'); reset role;
+    ${as(IC)} insert into profiles(id,username) values ('${IC}','blocker'); reset role;
+    ${as(ID)} insert into profiles(id,username) values ('${ID}','pender'); reset role;`],
+  ['invite: anon cannot make a link (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role anon; select my_friend_invite(); reset role;`],
+  ['invite: no username yet (expect ERR)', `${as(IE)} select my_friend_invite(); reset role;`],
+  ['invite: my link is made once and kept', `${as(IA)} select my_friend_invite() a; select my_friend_invite() b; reset role; ${keep} select count(*)::int n from friend_invite_links where user_id='${IA}';`],
+  ['invite: people cannot read the links table (expect ERR)', `${as(IB)} select count(*) from friend_invite_links; reset role;`],
+  ['invite: anon preview shows who it is from', `select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(${icode(IA)}) p; reset role;`],
+  ['invite: preview is case and space tolerant', `${as(IB)} select friend_invite_preview(' ' || upper(${icode(IA)}) || ' ') p; reset role;`],
+  ['invite: preview of your own link', `${as(IA)} select friend_invite_preview(${icode(IA)}) p; reset role;`],
+  ['invite: unknown code is invalid', `select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview('zzzzzzzz') a, friend_invite_preview(null) b, friend_invite_preview('x') c; reset role;`],
+  ['invite: redeeming makes friends at once and tells the inviter', `${as(IB)} select redeem_friend_invite(${icode(IA)}) r; reset role; select ${ifriends(IA, IB)} s, ${outbox('friend_joined', IA)}::int joined, ${outbox('friend_accepted', IB)}::int acc, ${outbox('friend_request', IA)}::int req;`],
+  ['invite: redeeming again says already', `${as(IB)} select redeem_friend_invite(${icode(IA)}) r; select friend_invite_preview(${icode(IA)}) p; reset role; select ${outbox('friend_joined', IA)}::int joined;`],
+  ['invite: your own link', `${as(IA)} select redeem_friend_invite(${icode(IA)}) r; reset role;`],
+  ['invite: a pending request is replaced without an extra push', `${as(ID)} select send_friend_request('inviter'); reset role; ${as(ID)} select redeem_friend_invite(${icode(IA)}) r; reset role; select ${ifriends(IA, ID)} s, ${outbox('friend_accepted', ID)}::int acc_d, ${outbox('friend_accepted', IA)}::int acc_a, ${outbox('friend_joined', IA)}::int joined;`],
+  ['invite: a block reads as invalid both ways', `${as(IC)} select block_user('${IA}'); reset role; ${as(IC)} select friend_invite_preview(${icode(IA)}) p; reset role; ${as(IA)} select my_friend_invite(); reset role;`],
+  ['invite: blocked person cannot redeem (expect ERR)', `${as(IC)} select redeem_friend_invite(${icode(IA)}); reset role;`],
+  ['invite: reset turns the old code off', `select set_config('t.old', ${icode(IA)}, false); ${as(IA)} select reset_friend_invite() n; reset role; ${keep} select (select count(*)::int from friend_invite_links where user_id='${IA}' and revoked_at is null) live, ${icode(IA)} <> current_setting('t.old') changed; select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(current_setting('t.old')) old_p; reset role;`],
+  ['invite: an old code cannot be redeemed (expect ERR)', `${as(IE)} insert into profiles(id,username) values ('${IE}','late'); reset role; ${as(IE)} select redeem_friend_invite(current_setting('t.old')); reset role;`],
+  ['invite: friends stay friends after a reset', `select ${ifriends(IA, IB)} s;`],
+  ['invite: resets are limited per day (expect ERR)', `update app_settings set value='{"resets_per_day": 2, "adds_per_day": 1}' where key='friend_invites'; ${as(IA)} select reset_friend_invite(); reset role;`],
+  ['invite: adds are limited per day (expect ERR)', `insert into private.friend_invite_redemptions (code, inviter_id, user_id) values (${icode(IA)}, '${IA}', '${IE}'); ${as(IE)} select redeem_friend_invite(${icode(IA)}); reset role;`],
+  ['invite: deleting the inviter removes the link', `update app_settings set value='{"resets_per_day": 10, "adds_per_day": 30}' where key='friend_invites'; select set_config('t.cur', ${icode(IA)}, false); ${as(IA)} select delete_my_account(); reset role; select count(*)::int n from friend_invite_links where user_id='${IA}'; select set_config('request.jwt.claim.sub','',false); set role anon; select friend_invite_preview(current_setting('t.cur')) p; reset role;`],
+);
+Object.assign(checks, {
+  'invite: my link is made once and kept': (r) => {
+    ok(/^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/.test(r[0][0].a), 'code ' + JSON.stringify(r[0]));
+    ok(r[1][0].b === r[0][0].a, 'same code');
+    ok(r[2][0].n === 1, 'one row ' + JSON.stringify(r[2]));
+  },
+  'invite: anon preview shows who it is from': (r) => {
+    const p = r[0][0].p;
+    ok(p.status === 'ok' && p.inviter.username === 'inviter' && p.inviter.displayName === 'Ivy', 'preview ' + JSON.stringify(p));
+    ok(!('userId' in p.inviter), 'anon sees no user id ' + JSON.stringify(p));
+  },
+  'invite: preview is case and space tolerant': (r) => ok(r[0][0].p.status === 'ok' && r[0][0].p.inviter.userId === IA, 'preview ' + JSON.stringify(r)),
+  'invite: preview of your own link': (r) => ok(r[0][0].p.status === 'own', 'own ' + JSON.stringify(r)),
+  'invite: unknown code is invalid': (r) => {
+    const x = r[0][0];
+    ok(x.a.status === 'invalid' && x.b.status === 'invalid' && x.c.status === 'invalid' && !x.a.inviter, 'invalid ' + JSON.stringify(x));
+  },
+  'invite: redeeming makes friends at once and tells the inviter': (r) => {
+    ok(r[0][0].r === 'added', 'result ' + JSON.stringify(r[0]));
+    const x = r[1][0];
+    ok(x.s === 'accepted' && x.joined === 1 && x.acc === 0 && x.req === 0, 'state ' + JSON.stringify(x));
+  },
+  'invite: redeeming again says already': (r) => {
+    ok(r[0][0].r === 'already', 'again ' + JSON.stringify(r[0]));
+    ok(r[1][0].p.status === 'friends', 'preview ' + JSON.stringify(r[1]));
+    ok(r[2][0].joined === 1, 'one push ' + JSON.stringify(r[2]));
+  },
+  'invite: your own link': (r) => ok(r[0][0].r === 'own', 'own ' + JSON.stringify(r)),
+  'invite: a pending request is replaced without an extra push': (r) => {
+    ok(r[1][0].r === 'added', 'result ' + JSON.stringify(r));
+    const x = r[2][0];
+    ok(x.s === 'accepted' && x.acc_d === 0 && x.acc_a === 0 && x.joined === 2, 'state ' + JSON.stringify(x));
+  },
+  'invite: a block reads as invalid both ways': (r) => ok(r[1][0].p.status === 'invalid' && !r[1][0].p.inviter, 'blocked ' + JSON.stringify(r)),
+  'invite: reset turns the old code off': (r) => {
+    ok(/^[a-z2-9]{8}$/.test(r[0][0].n), 'new ' + JSON.stringify(r[0]));
+    ok(r[1][0].live === 1 && r[1][0].changed === true, 'live ' + JSON.stringify(r[1]));
+    ok(r[2][0].old_p.status === 'invalid', 'old ' + JSON.stringify(r[2]));
+  },
+  'invite: friends stay friends after a reset': (r) => ok(r[0][0].s === 'accepted', 'kept ' + JSON.stringify(r)),
+  'invite: deleting the inviter removes the link': (r) => {
+    ok(r[1][0].n === 0, 'rows ' + JSON.stringify(r[1]));
+    ok(r[2][0].p.status === 'invalid', 'preview ' + JSON.stringify(r[1]));
   },
 });

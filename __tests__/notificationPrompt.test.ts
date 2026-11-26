@@ -1,31 +1,35 @@
 import {
   NOTIFICATION_PROMPT_COPY,
-  NOTIFICATION_SNOOZE_MS,
+  markNotificationPromptShown,
   notificationSurface,
   notificationTurnOn,
-  snoozeUntil,
+  readNotificationPromptShown,
 } from '../src/notifications/prompt';
-
-const now = 1_700_000_000_000;
 
 describe('notificationSurface', () => {
   it('stays hidden once permission is granted', () => {
-    expect(notificationSurface({ permission: 'granted', justActed: true, snoozedUntil: null, now })).toBe('none');
+    expect(notificationSurface({ permission: 'granted', justActed: true, shown: false })).toBe('none');
   });
 
   it('shows the sheet after creating, accepting, or joining while permission is still off', () => {
-    expect(notificationSurface({ permission: 'undetermined', justActed: true, snoozedUntil: null, now })).toBe('sheet');
-    expect(notificationSurface({ permission: 'denied', justActed: true, snoozedUntil: null, now })).toBe('sheet');
+    expect(notificationSurface({ permission: 'undetermined', justActed: true, shown: false })).toBe('sheet');
+    expect(notificationSurface({ permission: 'denied', justActed: true, shown: false })).toBe('sheet');
   });
 
-  it('shows the banner on an ordinary visit, and after Not now', () => {
-    expect(notificationSurface({ permission: 'undetermined', justActed: false, snoozedUntil: null, now })).toBe('banner');
-    expect(notificationSurface({ permission: 'denied', justActed: false, snoozedUntil: null, now })).toBe('banner');
-    const until = snoozeUntil(now);
-    expect(until - now).toBe(NOTIFICATION_SNOOZE_MS);
-    expect(until - now).toBe(3 * 24 * 60 * 60 * 1000);
-    expect(notificationSurface({ permission: 'denied', justActed: true, snoozedUntil: until, now: until - 1 })).toBe('banner');
-    expect(notificationSurface({ permission: 'undetermined', justActed: true, snoozedUntil: until, now: until })).toBe('sheet');
+  it('shows nothing on an ordinary visit (no banner)', () => {
+    expect(notificationSurface({ permission: 'undetermined', justActed: false, shown: false })).toBe('none');
+    expect(notificationSurface({ permission: 'denied', justActed: false, shown: false })).toBe('none');
+  });
+
+  it('is shown once: after an answer it never comes back', async () => {
+    const data = new Map<string, string>();
+    const kv = { getItem: async (k: string) => data.get(k) ?? null, setItem: async (k: string, v: string) => void data.set(k, v) };
+    expect(await readNotificationPromptShown(kv)).toBe(false);
+    await markNotificationPromptShown(kv);
+    const shown = await readNotificationPromptShown(kv);
+    expect(shown).toBe(true);
+    expect(notificationSurface({ permission: 'undetermined', justActed: true, shown })).toBe('none');
+    expect(notificationSurface({ permission: 'denied', justActed: true, shown })).toBe('none');
   });
 });
 
@@ -41,11 +45,9 @@ describe('notification prompt copy', () => {
   it('stays generic', () => {
     expect(NOTIFICATION_PROMPT_COPY).toEqual({
       title: 'Turn on notifications',
-      line: 'Stay in the loop on your challenges.',
+      line: 'Stay in the loop with your friends and challenges.',
       turnOn: 'Turn on notifications',
       notNow: 'Not now',
-      banner: 'Notifications are off',
-      bannerAction: 'Turn on',
     });
   });
 });

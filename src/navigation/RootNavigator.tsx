@@ -1,45 +1,22 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState as AppLifecycle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CompositeScreenProps, DarkTheme, LinkingOptions, NavigationContainer, NavigatorScreenParams, useIsFocused } from '@react-navigation/native';
-import { createBottomTabNavigator, BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DarkTheme, LinkingOptions, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator, type NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 
-import { TodayScreen } from '../screens/TodayScreen';
-import { ProgressScreen } from '../screens/ProgressScreen';
-import { LeagueScreen } from '../screens/LeagueScreen';
-import { GoalSetupScreen } from '../screens/GoalSetupScreen';
-import { SessionScreen } from '../screens/SessionScreen';
-import { SummaryScreen } from '../screens/SummaryScreen';
-import { HistoryScreen } from '../screens/HistoryScreen';
-import { AccountScreen } from '../screens/AccountScreen';
-import { ProfileSetupScreen } from '../screens/ProfileSetupScreen';
 import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
-import { SessionRecord } from '../storage/history';
 import { DEFAULT_SETTINGS, Settings, loadSettings, saveSettings } from '../storage/settings';
 import { historyStore } from '../session/useSession';
-import { faceTrackingSupported } from '../sensors';
-import { colors } from '../theme';
+import { color } from '../ui/tokens';
 import { APP_SCHEME, notificationLink, parseAppLink } from '../backend/linking';
-import { BattlesScreen } from '../screens/battles/BattlesScreen';
-import { BattleScreen } from '../screens/battles/BattleScreen';
-import { NewBattleScreen } from '../screens/battles/NewBattleScreen';
-import { FriendsScreen } from '../screens/battles/FriendsScreen';
-import { FriendScreen } from '../screens/battles/FriendScreen';
-import { InviteScreen } from '../screens/battles/InviteScreen';
-import type { BattleSessionOptions } from '../session/useSession';
-import type { Battle, Friend } from '../battles/model';
-import { summaryChallengeAction, type ChallengeOffer } from '../battles/challengeFromSet';
-import { countedReps } from '../battles/counting';
-import { submitBattleAttempt } from '../battles/uploader';
+import { personName } from '../battles/model';
 import { deviceTimeZone } from '../backend/profile';
 import { enrollGoal, fetchMyProgress } from '../backend/progressClient';
-import { fetchMyLeague, loadLeagueCache, saveLeagueCache, type LeagueBoard } from '../backend/leagueClient';
-import { fetchNotificationPrefs, fetchRecapRanks, saveNotificationPrefs } from '../backend/nudgeClient';
-import { onHistoryChanged } from '../backend/syncEvents';
+import { fetchNotificationPrefs, saveNotificationPrefs } from '../backend/nudgeClient';
+import { onHistoryChanged, onServerSetsChanged } from '../backend/syncEvents';
 import { supabase } from '../backend/supabase';
 import {
   DAILY_NUDGE_ID,
@@ -51,17 +28,10 @@ import {
   NUDGE_SYNC_KEY,
   NudgePrefs,
   NudgeSyncState,
-  REFRESH_FAILED,
-  WeekRanks,
   ServerProgress,
-  buildProgress,
-  buildToday,
-  celebrate,
-  contributionFor,
   decideGoalSync,
   decideNudgeSync,
   enrollmentsFromServer,
-  formScoreForReps,
   goalSnapshot,
   goalSyncSettled,
   lateSetIds,
@@ -70,93 +40,93 @@ import {
   loadNudges,
   localDate,
   nextLocalReminder,
-  phoneCountedReps,
   queueGoalEdit,
   sanitizeGoalSync,
   sanitizeNudgeSync,
   saveEnrollment,
   saveGoal,
   saveNudges,
-  weekCard,
   workoutDate,
-  signedInViews,
   workoutFromRecord,
 } from '../progress';
-import { HOWTO_KEY } from '../progress/howto';
+import { header } from './headerOptions';
+import { AppStateContext, type RemoteProgress } from './appState';
+import { getStateFromPath, linkingConfig } from './linkingConfig';
+import { MainTabs } from './MainTabs';
+import type { RootStackParamList } from './types';
+import { SessionRoute } from './routes/SessionRoute';
+import { SummaryRoute } from './routes/SummaryRoute';
+import { AllSetsRoute } from './routes/AllSetsRoute';
+import { DailyReminderRoute, QuietHoursRoute, SettingsRoute } from './routes/SettingsRoute';
+import { GoalRoute, ProfileSetupRoute } from './routes/GoalRoutes';
+import { GoalPickRoute, HowItWorksRoute, WelcomeRoute } from './routes/OnboardingRoutes';
+import { BattleRoute, FriendRoute, FriendsRoute, InviteRoute, LeagueInfoRoute, NewBattleRoute } from './routes/ChallengeRoutes';
+import { FriendInviteRoute, InviteLinkRoute, InviteQrRoute } from './routes/InviteRoutes';
+import { pendingInvite } from '../invites/pending';
 
-export type TabParamList = {
-  Today: undefined;
-  Progress: undefined;
-  League: undefined;
-  Challenges: undefined;
-};
-
-export type RootStackParamList = {
-  Main: NavigatorScreenParams<TabParamList> | undefined;
-  GoalSetup: undefined;
-  Session: { battle?: BattleSessionOptions } | undefined;
-  Summary: { record: SessionRecord; from: 'session' | 'history' };
-  History: undefined;
-  Account: undefined;
-  ProfileSetup: undefined;
-  Battle: {
-    challengeId: string;
-    battle?: Battle;
-    share?: boolean;
-    justPlayed?: { reps: number; counted: number };
-    promptAttempt?: boolean;
-    /** Created, accepted, or joined this challenge on the way here. */
-    promptNotifications?: boolean;
-  };
-  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
-  Friends: undefined;
-  Friend: { friend: Friend };
-  Invite: { token: string };
-};
-
-const Tabs = createBottomTabNavigator<TabParamList>();
+export type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /** Web invite links (https://<domain>/b/<token>, once a domain exists) are mapped to the scheme form. */
 let webBaseUrl: string | null = null;
+
+/** Frame 5: the goal sheet, a native form sheet (grabber, 34 pt corners). */
+const GOAL_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: [0.62, 1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: color.surface },
+};
+
+/** Frame 21: New challenge, a full-height native form sheet with its own Cancel / title row. */
+const NEW_CHALLENGE_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: [1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: color.surface },
+};
+
+/** The league's (i): how the two boards work, a short native sheet. */
+const LEAGUE_INFO_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: color.surface },
+};
+
+/** Invite sheets (invite frames a3, a6, b1–b6): native form sheets sized to their content. */
+const INVITE_SHEET: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 34,
+  contentStyle: { backgroundColor: color.surface },
+};
+
 const normalizeUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
   const link = parseAppLink(url, webBaseUrl);
-  if (link?.type === 'invite' && !url.toLowerCase().startsWith(`${APP_SCHEME}://`)) return `${APP_SCHEME}://invite/${link.token}`;
+  const web = !url.toLowerCase().startsWith(`${APP_SCHEME}://`);
+  if (link?.type === 'invite' && web) return `${APP_SCHEME}://invite/${link.token}`;
+  if (link?.type === 'friendInvite' && web) return `${APP_SCHEME}://i/${link.code}`;
   return url;
 };
+
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+/** Screens where a held invite waits instead of opening its sheet on top. */
+const HOLD_INVITE_ON: ReadonlySet<string> = new Set(['FriendInvite', 'Welcome', 'GoalPick', 'HowItWorks', 'ProfileSetup', 'Session', 'GoalSetup']);
 const pushUrl = (r: Notifications.NotificationResponse | null | undefined) =>
   r ? notificationLink(r.notification.request.content.data, webBaseUrl) : null;
 
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), `${APP_SCHEME}://`],
-  config: {
-    screens: {
-      Main: {
-        screens: {
-          Today: {
-            path: '',
-            alias: ['today'],
-          },
-          Progress: 'progress',
-          League: 'league',
-          Challenges: {
-            path: 'challenges',
-            alias: ['battles'],
-          },
-        },
-      },
-      History: 'history',
-      Account: 'account',
-      Friends: 'friends',
-      Battle: {
-        path: 'challenge/:challengeId',
-        alias: ['battle/:challengeId'],
-      },
-      Invite: 'invite/:token',
-    },
-  },
+  config: linkingConfig,
+  getStateFromPath,
   // Cold start from a link or from tapping one of our pushes (data.url).
   async getInitialURL() {
     const url = normalizeUrl(await Linking.getInitialURL());
@@ -181,451 +151,8 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 const theme = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg, text: colors.text, primary: colors.accent },
+  colors: { ...DarkTheme.colors, background: color.bg, card: color.bg, text: color.label, primary: color.label },
 };
-
-type Props<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;
-type TabProps<T extends keyof TabParamList> = CompositeScreenProps<BottomTabScreenProps<TabParamList, T>, NativeStackScreenProps<RootStackParamList>>;
-
-interface RemoteProgress {
-  doc: ServerProgress | null;
-  status: 'idle' | 'ready' | 'error';
-}
-
-interface AppState {
-  settings: Settings;
-  updateSettings: (s: Settings) => void;
-  nudges: NudgePrefs;
-  updateNudges: (prefs: NudgePrefs) => void;
-  savedSets: number;
-  refreshSavedSets: () => void;
-  enrollments: GoalEnrollment[];
-  saveChoice: (choice: Parameters<typeof saveEnrollment>[1]) => Promise<void>;
-  remote: RemoteProgress;
-  lateIds: ReadonlySet<string>;
-  refreshRemote: () => void;
-  howToOpen: boolean;
-  openHowTo: () => void;
-  closeHowTo: () => void;
-}
-
-const AppStateContext = createContext<AppState | null>(null);
-const useAppState = () => {
-  const s = useContext(AppStateContext);
-  if (!s) throw new Error('AppStateContext missing');
-  return s;
-};
-
-function TodayRoute({ navigation }: TabProps<'Today'>) {
-  const { savedSets, refreshSavedSets, enrollments, remote, refreshRemote, howToOpen, openHowTo, closeHowTo } = useAppState();
-  const { session } = useBackend();
-  const { profile } = useIdentity();
-  const focused = useIsFocused();
-  const askedFor = useRef<string | null>(null);
-  const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
-  const [ranks, setRanks] = useState<WeekRanks | null>(null);
-  const reload = useCallback(() => {
-    refreshSavedSets();
-    refreshRemote();
-    historyStore.load().then((rows) => setWorkouts(rows.map(workoutFromRecord))).catch(() => {});
-  }, [refreshSavedSets, refreshRemote]);
-  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
-  useEffect(() => {
-    const uid = session?.user.id;
-    if (uid && profile === null && askedFor.current !== uid && navigation.isFocused()) {
-      askedFor.current = uid;
-      navigation.navigate('ProfileSetup');
-    }
-  }, [session, profile, navigation]);
-  const zone = deviceTimeZone();
-  const now = Date.now();
-  const today = localDate(now, zone);
-  const phone = buildToday({ workouts, enrollments, today, timeZone: zone });
-  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).today : phone;
-  const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
-  const weekStart = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks: null })?.weekStart ?? null;
-  useEffect(() => {
-    if (!weekStart || !session || !profile || !supabase) {
-      setRanks(null);
-      return undefined;
-    }
-    let alive = true;
-    fetchRecapRanks(supabase, weekStart)
-      .then((next) => {
-        if (alive) setRanks(next);
-      })
-      .catch(() => {
-        if (alive) setRanks(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [weekStart, session, profile]);
-  const week = weekCard({ now, timeZone: zone, workouts, enrollments, signedIn: !!session, ranks });
-  return (
-    <TodayScreen
-      view={view}
-      banner={banner}
-      week={week}
-      depth={faceTrackingSupported()}
-      howToOpen={howToOpen && focused}
-      savedSets={savedSets}
-      onStart={() => navigation.navigate('Session')}
-      onGoal={() => navigation.navigate('GoalSetup')}
-      onAccount={() => navigation.navigate('Account')}
-      onWeek={week ? () => navigation.navigate(week.destination === 'league' ? 'League' : 'Progress') : undefined}
-      onOpenHowTo={openHowTo}
-      onCloseHowTo={closeHowTo}
-    />
-  );
-}
-
-function LeagueRoute({ navigation }: TabProps<'League'>) {
-  const { configured, session } = useBackend();
-  const { profile } = useIdentity();
-  const userId = session?.user.id ?? null;
-  const askedFor = useRef<string | null>(null);
-  const userRef = useRef(userId);
-  userRef.current = userId;
-  const [board, setBoard] = useState<LeagueBoard | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (userId && profile === null && askedFor.current !== userId && navigation.isFocused()) {
-      askedFor.current = userId;
-      navigation.navigate('ProfileSetup');
-    }
-  }, [userId, profile, navigation]);
-
-  useEffect(() => {
-    let alive = true;
-    setBoard(null);
-    setBanner(null);
-    if (!userId) return undefined;
-    loadLeagueCache(AsyncStorage, userId).then((cached) => {
-      if (alive && cached) setBoard((current) => current ?? cached);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [userId]);
-
-  const reload = useCallback(() => {
-    if (!supabase || !userId || !profile) return;
-    const requested = userId;
-    fetchMyLeague(supabase)
-      .then((doc) => {
-        if (userRef.current !== requested) return;
-        setBoard(doc);
-        setBanner(null);
-        saveLeagueCache(AsyncStorage, userId, doc).catch(() => {});
-      })
-      .catch(() => {
-        if (userRef.current === requested) setBanner(REFRESH_FAILED);
-      });
-  }, [userId, profile]);
-
-  useEffect(() => navigation.addListener('focus', reload), [navigation, reload]);
-
-  return (
-    <LeagueScreen
-      configured={configured}
-      signedIn={!!session}
-      username={profile === undefined ? 'loading' : profile === null ? 'needed' : 'ready'}
-      board={board}
-      banner={banner}
-      meId={userId}
-      onAddFriend={() => navigation.navigate('Friends')}
-      onOpenFriend={(row) => {
-        if (!userId || row.userId === userId) return;
-        navigation.navigate('Friend', {
-          friend: { userId: row.userId, username: row.username, displayName: row.displayName, relation: 'friend' },
-        });
-      }}
-      onProfile={() => navigation.navigate('ProfileSetup')}
-    />
-  );
-}
-
-function ProgressRoute({ navigation }: TabProps<'Progress'>) {
-  const { enrollments, remote, refreshRemote } = useAppState();
-  const { session } = useBackend();
-  const [workouts, setWorkouts] = useState<ReturnType<typeof workoutFromRecord>[]>([]);
-  const [storedCount, setStoredCount] = useState(0);
-  const reload = useCallback(() => {
-    refreshRemote();
-    historyStore
-      .load()
-      .then((rows) => {
-        setWorkouts(rows.map(workoutFromRecord));
-        setStoredCount(rows.length);
-      })
-      .catch(() => {});
-  }, [refreshRemote]);
-  useEffect(() => {
-    reload();
-    return navigation.addListener('focus', reload);
-  }, [navigation, reload]);
-  const zone = deviceTimeZone();
-  const today = localDate(Date.now(), zone);
-  const phone = buildProgress({ workouts, enrollments, today, timeZone: zone, storedCount });
-  const view = session && remote.doc && remote.status === 'ready' ? signedInViews(remote.doc, workouts).progress : phone;
-  const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
-  return (
-    <ProgressScreen
-      view={view}
-      banner={banner}
-      onAllSets={() => navigation.navigate('History')}
-      onProgram={() => navigation.navigate('GoalSetup')}
-    />
-  );
-}
-
-function SessionRoute({ navigation, route }: Props<'Session'>) {
-  const { settings } = useAppState();
-  const { deviceId } = useIdentity();
-  const battle = route.params?.battle;
-  return (
-    <SessionScreen
-      settings={settings}
-      battle={battle}
-      onFinished={(record) => {
-        if (!battle) return navigation.replace('Summary', { record, from: 'session' });
-        submitBattleAttempt(record, battle.battleId, deviceId).catch(() => {});
-        navigation.replace('Battle', {
-          challengeId: battle.battleId,
-          justPlayed: { reps: record.reps.length, counted: countedReps(record.reps, record.startedAt, battle) },
-        });
-      }}
-      onCancel={() => navigation.goBack()}
-    />
-  );
-}
-
-const gate = (navigation: { navigate: (r: 'Account' | 'ProfileSetup') => void }) => ({
-  onAccount: () => navigation.navigate('Account'),
-  onProfile: () => navigation.navigate('ProfileSetup'),
-});
-
-function BattlesRoute({ navigation }: TabProps<'Challenges'>) {
-  return (
-    <BattlesScreen
-      {...gate(navigation)}
-      onOpen={(battle) => navigation.navigate('Battle', { challengeId: battle.id, battle })}
-      onNew={() => navigation.navigate('NewBattle')}
-      onFriends={() => navigation.navigate('Friends')}
-    />
-  );
-}
-
-function openGoal(enrollments: { endedOn: string | null }[]): boolean {
-  return enrollments.some((row) => row.endedOn === null);
-}
-
-function BattleRoute({ navigation, route }: Props<'Battle'>) {
-  const { appSettings } = useBackend();
-  const { enrollments } = useAppState();
-  const d = appSettings.asyncBattleDefaults;
-  return (
-    <BattleScreen
-      {...gate(navigation)}
-      battleId={route.params.challengeId}
-      initialBattle={route.params.battle}
-      share={route.params.share}
-      justPlayed={route.params.justPlayed}
-      promptAttempt={route.params.promptAttempt}
-      promptNotifications={route.params.promptNotifications}
-      hasGoal={openGoal(enrollments)}
-      onNeedGoal={() => navigation.navigate('GoalSetup')}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
-      onPlay={(b) =>
-        navigation.navigate('Session', {
-          battle: {
-            battleId: b.id,
-            format: b.durationS ? 'timed' : 'max_reps',
-            durationS: b.durationS,
-            idleEndS: d.maxRepsIdleEndS,
-            capS: d.maxRepsCapS,
-          },
-        })
-      }
-    />
-  );
-}
-
-function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
-  const { enrollments } = useAppState();
-  return (
-    <NewBattleScreen
-      {...gate(navigation)}
-      friendIds={route.params?.friendIds}
-      fromSet={route.params?.fromSet}
-      offer={route.params?.offer}
-      hasGoal={openGoal(enrollments)}
-      onNeedGoal={() => navigation.navigate('GoalSetup')}
-      onBack={() => navigation.goBack()}
-      onFriends={() => navigation.navigate('Friends')}
-      onCreated={(challengeId, share, extras) =>
-        navigation.replace('Battle', {
-          challengeId,
-          share,
-          promptAttempt: extras?.promptAttempt,
-          justPlayed: extras?.justPlayed,
-          promptNotifications: true,
-        })
-      }
-    />
-  );
-}
-
-function FriendsRoute({ navigation }: Props<'Friends'>) {
-  return (
-    <FriendsScreen
-      {...gate(navigation)}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Challenges' }))}
-      onOpenFriend={(friend) => navigation.navigate('Friend', { friend })}
-    />
-  );
-}
-
-function FriendRoute({ navigation, route }: Props<'Friend'>) {
-  return (
-    <FriendScreen
-      {...gate(navigation)}
-      friend={route.params.friend}
-      onBack={() => navigation.goBack()}
-      onChallenge={(f) => navigation.navigate('NewBattle', { friendIds: [f.userId] })}
-      onOpenBattle={(challengeId) => navigation.navigate('Battle', { challengeId })}
-    />
-  );
-}
-
-function InviteRoute({ navigation, route }: Props<'Invite'>) {
-  const { enrollments } = useAppState();
-  return (
-    <InviteScreen
-      {...gate(navigation)}
-      token={route.params.token}
-      hasGoal={openGoal(enrollments)}
-      onNeedGoal={() => navigation.navigate('GoalSetup')}
-      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main', { screen: 'Today' }))}
-      onJoined={(challengeId, promptNotifications) => navigation.replace('Battle', { challengeId, promptNotifications })}
-    />
-  );
-}
-
-function SummaryRoute({ navigation, route }: Props<'Summary'>) {
-  const { enrollments, lateIds } = useAppState();
-  const { appSettings, session } = useBackend();
-  const record = route.params.record;
-  const fromHistory = route.params.from === 'history';
-  const fromSession = route.params.from === 'session' && record.reps.length > 0;
-  const challenge = summaryChallengeAction(fromSession, !!session, record, {
-    timedDurationsS: appSettings.asyncBattleDefaults.timedDurationsS,
-    claimMaxAgeS: appSettings.asyncBattleDefaults.claimSetMaxAgeS,
-  });
-  const [progress, setProgress] = useState<React.ComponentProps<typeof SummaryScreen>['progress']>(null);
-  useEffect(() => {
-    if (fromHistory) return;
-    let cancelled = false;
-    historyStore.load().then((rows) => {
-      if (cancelled) return;
-      const records = rows.some((r) => r.id === record.id) ? rows : [record, ...rows];
-      const zone = record.timeZone || deviceTimeZone();
-      const today = localDate(record.startedAt, zone);
-      const workouts = records.map(workoutFromRecord);
-      const form = formScoreForReps(record.reps, appSettings.formScoreWeights, {
-        startedAt: record.startedAt,
-        timerDurationS: record.timerDurationS,
-      });
-      setProgress({
-        counted: phoneCountedReps(record),
-        shallow: record.reps.filter((r) => r.quality === 'shallow').length,
-        formScore: form.score,
-        tempoCaption: form.tempoCaption,
-        contribution: contributionFor(workouts, enrollments, today, zone),
-        celebration: celebrate(workouts, enrollments, today, zone, record.id),
-      });
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [record, enrollments, fromHistory, appSettings.formScoreWeights]);
-  return (
-    <SummaryScreen
-      record={record}
-      fromHistory={fromHistory}
-      syncedLate={lateIds.has(record.id)}
-      progress={fromHistory ? null : progress}
-      onChallenge={
-        challenge.type === 'none'
-          ? undefined
-          : () => {
-              if (challenge.type === 'sign-in') navigation.navigate('Account');
-              else navigation.navigate('NewBattle', { fromSet: record, offer: challenge.offer });
-            }
-      }
-      onDone={() => (route.params.from === 'history' ? navigation.goBack() : navigation.popToTop())}
-    />
-  );
-}
-
-function HistoryRoute({ navigation }: Props<'History'>) {
-  return (
-    <HistoryScreen onOpen={(record) => navigation.navigate('Summary', { record, from: 'history' })} onBack={() => navigation.goBack()} />
-  );
-}
-
-function AccountRoute({ navigation }: Props<'Account'>) {
-  const { settings, updateSettings, nudges, updateNudges } = useAppState();
-  return (
-    <AccountScreen
-      settings={settings}
-      onChangeSettings={updateSettings}
-      nudges={nudges}
-      onChangeNudges={updateNudges}
-      onEditProfile={() => navigation.navigate('ProfileSetup')}
-      onBack={() => navigation.goBack()}
-    />
-  );
-}
-
-function GoalRoute({ navigation }: Props<'GoalSetup'>) {
-  const { enrollments, saveChoice } = useAppState();
-  const zone = deviceTimeZone();
-  return (
-    <GoalSetupScreen
-      enrollments={enrollments}
-      today={localDate(Date.now(), zone)}
-      onSave={(choice) => {
-        void saveChoice(choice).finally(() => navigation.goBack());
-      }}
-      onClose={() => navigation.goBack()}
-    />
-  );
-}
-
-function ProfileSetupRoute({ navigation }: Props<'ProfileSetup'>) {
-  return <ProfileSetupScreen onDone={() => navigation.goBack()} onCancel={() => navigation.goBack()} />;
-}
-
-function MainTabs() {
-  return (
-    <Tabs.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: '#2A3145' },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.muted,
-      }}
-    >
-      <Tabs.Screen name="Today" component={TodayRoute} />
-      <Tabs.Screen name="Progress" component={ProgressRoute} />
-      <Tabs.Screen name="League" component={LeagueRoute} />
-      <Tabs.Screen name="Challenges" component={BattlesRoute} />
-    </Tabs.Navigator>
-  );
-}
 
 function openServerEnrollment(doc: ServerProgress | null): GoalSnapshot | null {
   const open = [...(doc?.enrollments ?? [])].reverse().find((row) => row.endedOn === null) ?? null;
@@ -636,6 +163,17 @@ export function RootNavigator() {
   const { appSettings, session } = useBackend();
   const { profile, push } = useIdentity();
   webBaseUrl = appSettings.inviteLinks.webBaseUrl;
+
+  // An invite held while signing in or picking a username opens again once there is one.
+  const hasProfile = !!session && !!profile;
+  const resumeInvite = useCallback(() => {
+    const invite = pendingInvite.get();
+    if (!invite || !hasProfile || !navigationRef.isReady()) return;
+    const current = navigationRef.getCurrentRoute()?.name;
+    if (!current || HOLD_INVITE_ON.has(current)) return;
+    navigationRef.navigate('FriendInvite', { code: invite.code });
+  }, [hasProfile]);
+  useEffect(resumeInvite, [resumeInvite]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [nudges, setNudges] = useState<NudgePrefs>(DEFAULT_NUDGE_PREFS);
   const [nudgesReady, setNudgesReady] = useState(false);
@@ -644,7 +182,6 @@ export function RootNavigator() {
   const [enrollments, setEnrollments] = useState<GoalEnrollment[]>([]);
   const [remote, setRemote] = useState<RemoteProgress>({ doc: null, status: 'idle' });
   const [lateIds, setLateIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [howToOpen, setHowToOpen] = useState(false);
   const goalSyncRef = useRef<ReturnType<typeof sanitizeGoalSync> | null>(null);
   const remoteRef = useRef(remote);
   remoteRef.current = remote;
@@ -690,9 +227,6 @@ export function RootNavigator() {
         nudgeSyncRef.current = sanitizeNudgeSync(JSON.parse(raw));
       })
       .catch(() => {});
-    AsyncStorage.getItem(HOWTO_KEY)
-      .then((v) => setHowToOpen(v !== '1'))
-      .catch(() => setHowToOpen(true));
   }, []);
 
   const refreshSavedSets = useCallback(() => {
@@ -885,6 +419,9 @@ export function RootNavigator() {
       });
   }, []);
 
+  // A delete reached the backup: Today and You show server totals, so reload them.
+  useEffect(() => onServerSetsChanged(refreshRemote), [refreshRemote]);
+
   useEffect(() => {
     if (session?.user.id) refreshRemote();
     else {
@@ -934,12 +471,6 @@ export function RootNavigator() {
       });
   }, []);
 
-  const closeHowTo = useCallback(() => {
-    setHowToOpen(false);
-    AsyncStorage.setItem(HOWTO_KEY, '1').catch(() => {});
-  }, []);
-  const openHowTo = useCallback(() => setHowToOpen(true), []);
-
   const value = useMemo(
     () => ({
       settings,
@@ -953,29 +484,35 @@ export function RootNavigator() {
       remote,
       lateIds,
       refreshRemote,
-      howToOpen,
-      openHowTo,
-      closeHowTo,
     }),
-    [settings, updateSettings, nudges, updateNudges, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote, howToOpen, openHowTo, closeHowTo],
+    [settings, updateSettings, nudges, updateNudges, savedSets, refreshSavedSets, enrollments, saveChoice, remote, lateIds, refreshRemote],
   );
 
   return (
     <AppStateContext.Provider value={value}>
-      <NavigationContainer linking={linking} theme={theme}>
-        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+      <NavigationContainer ref={navigationRef} linking={linking} theme={theme} onStateChange={resumeInvite}>
+        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}>
           <Stack.Screen name="Main" component={MainTabs} />
-          <Stack.Screen name="GoalSetup" component={GoalRoute} />
+          <Stack.Screen name="Welcome" component={WelcomeRoute} options={{ gestureEnabled: false, animation: 'none' }} />
+          <Stack.Screen name="GoalPick" component={GoalPickRoute} />
+          <Stack.Screen name="HowItWorks" component={HowItWorksRoute} />
+          <Stack.Screen name="GoalSetup" component={GoalRoute} options={GOAL_SHEET} />
           <Stack.Screen name="Session" component={SessionRoute} options={{ gestureEnabled: false }} />
           <Stack.Screen name="Summary" component={SummaryRoute} />
-          <Stack.Screen name="History" component={HistoryRoute} />
-          <Stack.Screen name="Account" component={AccountRoute} />
+          <Stack.Screen name="AllSets" component={AllSetsRoute} options={header('All sets')} />
+          <Stack.Screen name="Settings" component={SettingsRoute} options={header('Settings')} />
+          <Stack.Screen name="DailyReminder" component={DailyReminderRoute} options={header('Daily reminder')} />
+          <Stack.Screen name="QuietHours" component={QuietHoursRoute} options={header('Quiet hours')} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupRoute} />
-          <Stack.Screen name="Battle" component={BattleRoute} />
-          <Stack.Screen name="NewBattle" component={NewBattleRoute} />
-          <Stack.Screen name="Friends" component={FriendsRoute} />
-          <Stack.Screen name="Friend" component={FriendRoute} />
-          <Stack.Screen name="Invite" component={InviteRoute} />
+          <Stack.Screen name="Battle" component={BattleRoute} options={header('')} />
+          <Stack.Screen name="NewBattle" component={NewBattleRoute} options={NEW_CHALLENGE_SHEET} />
+          <Stack.Screen name="LeagueInfo" component={LeagueInfoRoute} options={LEAGUE_INFO_SHEET} />
+          <Stack.Screen name="Friends" component={FriendsRoute} options={header('Friends')} />
+          <Stack.Screen name="Friend" component={FriendRoute} options={({ route }) => header(personName(route.params.friend))} />
+          <Stack.Screen name="Invite" component={InviteRoute} options={header('Challenge invite')} />
+          <Stack.Screen name="InviteLink" component={InviteLinkRoute} options={INVITE_SHEET} />
+          <Stack.Screen name="InviteQr" component={InviteQrRoute} options={INVITE_SHEET} />
+          <Stack.Screen name="FriendInvite" component={FriendInviteRoute} options={INVITE_SHEET} />
         </Stack.Navigator>
       </NavigationContainer>
     </AppStateContext.Provider>

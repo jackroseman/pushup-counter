@@ -1,243 +1,109 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Stat } from '../components/ui';
-import { DistanceChart, RepChart } from '../components/charts';
-import { analyzeSet, qualityLabel, tempoTrendLabel, SetAnalysis } from '../core';
-import { Celebration, SYNCED_LATE, formatFormScore } from '../progress';
+import React from 'react';
+import { ScrollView, Share, StyleSheet, View } from 'react-native';
+
+import type { TodayCard } from '../progress/summaryModel';
+import { formSplit, setClock, setSeconds, summaryBadge } from '../progress/summaryModel';
+import type { Celebration } from '../progress';
 import { SessionRecord } from '../storage/history';
-import { colors } from '../theme';
+import { Button, Card, FadeIn, FormSplitBar, IconButton, Pill, ProgressBar, Text, color, gutter, motion } from '../ui';
 
-const sec = (v: number | null, digits = 1) => (v === null ? '—' : `${v.toFixed(digits)} s`);
-
-function clock(totalSec: number): string {
-  const s = Math.round(totalSec);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+/** Today's progress under the count (frame 11 / E4). */
+function TodayProgress({ card }: { card: TodayCard }) {
+  return (
+    <Card style={styles.card}>
+      <View style={styles.cardHead}>
+        <Text variant="headline">Today</Text>
+        <Text variant="subhead">
+          <Text variant="subhead" tone="label" weight="700">
+            {String(card.reps)}
+          </Text>
+          {card.target != null ? ` of ${card.target}` : ' reps'}
+        </Text>
+      </View>
+      {card.progress != null ? (
+        <ProgressBar
+          progress={card.progress}
+          fill={card.done ? color.signal : color.label}
+          track={card.done ? color.fill.signalSoft : color.graphite}
+          style={styles.bar}
+        />
+      ) : null}
+      {card.line ? (
+        <Text variant="footnote" tone={card.done ? 'signal' : 'secondary'} style={styles.line}>
+          {card.line}
+        </Text>
+      ) : null}
+    </Card>
+  );
 }
 
-/** Plain-language takeaways from the analysis. */
-export function insights(a: SetAnalysis): string[] {
-  const out: string[] = [];
-  if (a.tempo) {
-    if (a.tempo.trend === 'slowing')
-      out.push(
-        `Your reps slowed from ${a.tempo.firstThirdSec.toFixed(1)} s to ${a.tempo.lastThirdSec.toFixed(1)} s apart in the last third of the set (+${a.tempo.changePct}%), a sign of fatigue.`
-      );
-    else if (a.tempo.trend === 'speeding-up')
-      out.push(`You sped up toward the end (${a.tempo.firstThirdSec.toFixed(1)} s → ${a.tempo.lastThirdSec.toFixed(1)} s between reps).`);
-    else out.push(`You kept a steady pace of about ${a.avgIntervalSec?.toFixed(1)} s per rep.`);
-  }
-  if (a.depthChangePct !== null && a.depthChangePct <= -10)
-    out.push(`Depth dropped ${Math.abs(a.depthChangePct)} points in the last third. Watch your range when you get tired.`);
-  if (a.depthConsistency === 'variable') out.push('Your depth varied a lot from rep to rep. Aim for the same bottom position every time.');
-  if (a.avgDescentSec !== null && a.avgAscentSec !== null && a.avgDescentSec < 0.6)
-    out.push('Your descents were quick. Lowering more slowly builds more strength and control.');
-  return out;
-}
-
+/** Just-finished set (frame 11, E4): the count first, a quiet badge, today's progress and the depth split; Done, then quiet Challenge a friend and Set details. */
 export function SummaryScreen({
   record,
+  today,
+  celebration,
   onDone,
-  fromHistory,
-  syncedLate,
+  onDetails,
   onChallenge,
-  progress,
 }: {
   record: SessionRecord;
+  /** Null until today's numbers are loaded. */
+  today: TodayCard | null;
+  celebration: Celebration | null;
   onDone: () => void;
-  fromHistory?: boolean;
-  /** The server received this set too late for the streak. Totals still include it. */
-  syncedLate?: boolean;
-  /** Just-finished set. Opens create-challenge, or sign-in when there is no account. History omits it. */
+  onDetails: () => void;
+  /** "Challenge a friend" under Done; omitted for a set with no reps. */
   onChallenge?: () => void;
-  /** Present for a set that just finished. History stays on the analysis. */
-  progress?: {
-    counted: number;
-    shallow: number;
-    formScore: number | null;
-    tempoCaption: string | null;
-    contribution: string;
-    celebration: Celebration | null;
-  } | null;
 }) {
-  const a = useMemo(() => analyzeSet(record.reps, record.startedAt, record.endedAt), [record]);
-  const tips = insights(a);
-
-  const traceSamples = useMemo(
-    () => (record.trace ?? []).map(([t, d]) => ({ t: record.startedAt + t, d })),
-    [record]
-  );
-  const markers = record.reps.map((r) => ({ t: r.timestamp, quality: r.quality, index: r.index }));
-  const traceEnd = traceSamples.length ? traceSamples[traceSamples.length - 1].t : record.endedAt;
-  const qualityOf = new Map(record.reps.map((r) => [r.index, r.quality]));
-
+  const reps = record.reps.length;
+  const badge = summaryBadge(celebration);
+  const share = () => {
+    Share.share({ message: `${reps} push-ups in one set.` }).catch(() => {});
+  };
   return (
     <View style={styles.container}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-        <Text style={styles.title}>{fromHistory ? 'Set analysis' : 'Set complete'}</Text>
-        <Text style={[styles.date, syncedLate ? styles.dateBeforeLate : null]}>{new Date(record.startedAt).toLocaleString()}</Text>
-        {syncedLate ? <Text style={styles.late}>{SYNCED_LATE}</Text> : null}
-        {progress ? (
-          <View style={styles.card}>
-            <Text style={styles.progressValue}>{progress.counted} counted</Text>
-            <Text style={styles.caption}>
-              {progress.shallow === 0
-                ? 'Shallow reps are not counted.'
-                : progress.shallow === 1
-                  ? '1 shallow rep is not counted.'
-                  : `${progress.shallow} shallow reps are not counted.`}
-            </Text>
-            <Text style={styles.progressValue}>Form score {formatFormScore(progress.formScore)}</Text>
-            {progress.tempoCaption ? <Text style={styles.caption}>{progress.tempoCaption}</Text> : null}
-            <Text style={styles.contribution}>{progress.contribution}</Text>
-            {progress.celebration ? (
-              <View style={styles.celebrate}>
-                <Text style={styles.celebrateTitle}>{progress.celebration.title}</Text>
-                {progress.celebration.also ? <Text style={styles.celebrateAlso}>{progress.celebration.also}</Text> : null}
-              </View>
-            ) : null}
-          </View>
+      <View style={styles.bar44}>
+        <IconButton icon="share" onPress={share} accessibilityLabel="Share" />
+      </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          {badge ? (
+            <FadeIn delay={motion.roll} style={styles.badge}>
+              <Pill label={badge.label} icon={badge.icon} tone="inverse" size="large" />
+            </FadeIn>
+          ) : null}
+          <Text variant="hero" size={150} style={styles.count} accessibilityLabel={`${reps} reps`}>
+            {String(reps)}
+          </Text>
+          <Text variant="subhead" style={styles.meta}>
+            reps · {setClock(setSeconds(record))}
+          </Text>
+        </View>
+        {today ? <TodayProgress card={today} /> : null}
+        {reps > 0 ? (
+          <Card style={[styles.card, styles.split]}>
+            <FormSplitBar split={formSplit(record.reps)} />
+          </Card>
         ) : null}
-        {onChallenge ? <Button title="Challenge a friend" kind="secondary" onPress={onChallenge} style={styles.challenge} /> : null}
-
-        <View style={styles.row}>
-          <Stat label="Reps" value={String(a.totalReps)} />
-          <Stat label="Set time" value={clock(a.durationSec)} />
-          <Stat label="Reps / min" value={a.repsPerMinute === null ? '—' : a.repsPerMinute.toFixed(0)} />
-        </View>
-        <View style={styles.row}>
-          <Stat label="Avg between reps" value={sec(a.avgIntervalSec)} />
-          <Stat label="Median between reps" value={sec(a.medianIntervalSec)} />
-        </View>
-        <View style={styles.row}>
-          <Stat
-            label="Tempo trend (last vs first third)"
-            value={tempoTrendLabel(a.tempo)}
-            small
-            color={a.tempo?.trend === 'slowing' ? colors.quality.good : undefined}
-          />
-        </View>
-        <View style={styles.row}>
-          <Stat label="Avg depth" value={a.avgDepthPct === null ? '—' : `${a.avgDepthPct}%`} />
-          <Stat
-            label="Depth consistency"
-            value={a.depthConsistency === null ? '—' : `±${a.depthStdPct?.toFixed(0)}%`}
-          />
-        </View>
-        {a.depthConsistency ? <Text style={styles.caption}>Depth was {a.depthConsistency} across reps.</Text> : null}
-        <View style={styles.row}>
-          <Stat label="Full" value={String(a.fullReps)} color={colors.quality.full} />
-          <Stat label="Good" value={String(a.goodReps)} color={colors.quality.good} />
-          <Stat label="Shallow" value={String(a.shallowReps)} color={colors.quality.shallow} />
-        </View>
-        <View style={styles.row}>
-          <Stat label="Avg down" value={sec(a.avgDescentSec)} />
-          <Stat label="Avg up" value={sec(a.avgAscentSec)} />
-        </View>
-        <View style={styles.row}>
-          <Stat label="Fastest rep" value={a.fastestRep ? `#${a.fastestRep.rep} · ${a.fastestRep.value.toFixed(1)}s` : '—'} small />
-          <Stat label="Slowest rep" value={a.slowestRep ? `#${a.slowestRep.rep} · ${a.slowestRep.value.toFixed(1)}s` : '—'} small />
-        </View>
-
-        {tips.length ? (
-          <View style={styles.card}>
-            {tips.map((t, i) => (
-              <Text key={i} style={styles.tip}>
-                • {t}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-
-        <Text style={styles.section}>Time between reps</Text>
-        <Text style={styles.caption}>Seconds from one rep to the next. A rising line means you're slowing down.</Text>
-        <RepChart
-          kind="line"
-          unit="rep #"
-          yMin={0}
-          data={a.intervals}
-          refs={a.avgIntervalSec !== null ? [{ value: a.avgIntervalSec, label: 'avg', color: colors.muted }] : []}
-        />
-
-        <Text style={styles.section}>Depth per rep</Text>
-        <RepChart
-          kind="bar"
-          unit="rep #"
-          yMin={0}
-          yMax={100}
-          data={a.depthPcts.map((d) => ({ ...d, color: colors.quality[d.quality] }))}
-          refs={[
-            { value: 70, label: 'Full', color: colors.quality.full },
-            { value: 45, label: 'Good', color: colors.quality.good },
-          ]}
-        />
-
-        <Text style={styles.section}>Face distance over the set</Text>
-        {traceSamples.length ? (
-          <DistanceChart
-            samples={traceSamples}
-            tStart={record.startedAt}
-            tEnd={Math.max(traceEnd, markers.length ? markers[markers.length - 1].t : 0)}
-            top={record.calibratedTopDistance}
-            reps={markers}
-            height={200}
-            showRepNumbers={markers.length <= 30}
-          />
-        ) : (
-          <Text style={styles.caption}>No distance trace was saved for this set (recorded with an older version).</Text>
-        )}
-
-        <Text style={styles.section}>Reps</Text>
-        <View style={styles.repHeader}>
-          <Text style={[styles.cell, styles.cIdx]}>#</Text>
-          <Text style={[styles.cell, styles.cQual]}>Quality</Text>
-          <Text style={[styles.cell, styles.cNum]}>Depth</Text>
-          <Text style={[styles.cell, styles.cNum]}>Down</Text>
-          <Text style={[styles.cell, styles.cNum]}>Up</Text>
-          <Text style={[styles.cell, styles.cNum]}>Gap</Text>
-        </View>
-        {record.reps.map((r, i) => {
-          const gap = r.intervalMs ?? (i > 0 ? r.timestamp - record.reps[i - 1].timestamp : null);
-          return (
-            <View key={r.index} style={styles.repRow}>
-              <Text style={[styles.cell, styles.cIdx]}>{r.index}</Text>
-              <Text style={[styles.cell, styles.cQual, { color: colors.quality[qualityOf.get(r.index) ?? r.quality], fontWeight: '700' }]}>
-                {qualityLabel(r.quality)}
-              </Text>
-              <Text style={[styles.cell, styles.cNum]}>{r.depthRatio !== null ? `${Math.round(r.depthRatio * 100)}%` : '—'}</Text>
-              <Text style={[styles.cell, styles.cNum]}>{r.descentMs != null ? (r.descentMs / 1000).toFixed(1) : '—'}</Text>
-              <Text style={[styles.cell, styles.cNum]}>{r.ascentMs != null ? (r.ascentMs / 1000).toFixed(1) : '—'}</Text>
-              <Text style={[styles.cell, styles.cNum]}>{gap != null ? (gap / 1000).toFixed(1) : '—'}</Text>
-            </View>
-          );
-        })}
-        <Text style={styles.caption}>Down/Up/Gap in seconds. Gap = time since the previous rep.</Text>
       </ScrollView>
       <Button title="Done" onPress={onDone} />
+      {onChallenge ? <Button title="Challenge a friend" kind="plain" onPress={onChallenge} /> : null}
+      <Button title="Set details" kind="plain" onPress={onDetails} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingBottom: 32 },
-  title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 8 },
-  date: { color: colors.muted, fontSize: 14, marginBottom: 12 },
-  dateBeforeLate: { marginBottom: 4 },
-  late: { color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
-  row: { flexDirection: 'row', marginHorizontal: -4 },
-  card: { backgroundColor: colors.card, borderRadius: 14, padding: 14, marginTop: 8 },
-  tip: { color: colors.text, fontSize: 15, lineHeight: 21, marginVertical: 2 },
-  section: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 22, marginBottom: 6 },
-  caption: { color: colors.muted, fontSize: 13, marginVertical: 6 },
-  progressValue: { color: colors.text, fontSize: 22, fontWeight: '800', marginTop: 8 },
-  contribution: { color: colors.text, fontSize: 16, marginTop: 10 },
-  celebrate: { backgroundColor: colors.bg, borderRadius: 12, padding: 12, marginTop: 12 },
-  celebrateTitle: { color: colors.accent, fontSize: 18, fontWeight: '800' },
-  celebrateAlso: { color: colors.text, fontSize: 15, marginTop: 4 },
-  challenge: { marginTop: 12, paddingVertical: 12 },
-  repHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
-  repRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3145' },
-  cell: { color: colors.muted, fontSize: 14, fontVariant: ['tabular-nums'] },
-  cIdx: { width: 34 },
-  cQual: { width: 74 },
-  cNum: { flex: 1, textAlign: 'right' },
+  container: { flex: 1, paddingHorizontal: gutter, paddingBottom: 14, backgroundColor: color.bg },
+  bar44: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
+  scroll: { flexGrow: 1, paddingBottom: 16 },
+  hero: { alignItems: 'center', marginTop: 26 },
+  badge: { marginBottom: 22 },
+  count: {},
+  meta: { marginTop: 6, fontSize: 17, lineHeight: 22 },
+  card: { marginTop: 34 },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  bar: { marginTop: 12 },
+  line: { marginTop: 8 },
+  split: { marginTop: 10, paddingVertical: 14 },
 });

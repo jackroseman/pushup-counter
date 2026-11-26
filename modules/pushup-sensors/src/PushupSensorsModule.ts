@@ -13,6 +13,13 @@ declare class PushupSensorsModule extends NativeModule<PushupSensorsModuleEvents
   stopFaceDistance(): Promise<void>;
   /** iOS: AVAudioSession .playback so speech is audible with the silent switch on. */
   enablePlaybackAudioSession(): Promise<void>;
+  /** True when Core Motion device motion is available (false on the Simulator). Missing on builds before 1.2.1. */
+  isMotionSupported?(): boolean;
+  /** Starts gravity updates (onGravity) at up to `hz`. Resolves false if unavailable. Missing on builds before 1.2.1. */
+  startGravity?(hz: number): Promise<boolean>;
+  stopGravity?(): Promise<void>;
+  /** True when FaceMeshView supports `variant` (1.3.0+). Missing on older builds. */
+  isFaceMeshVariantSupported?(): boolean;
 }
 
 export default requireNativeModule<PushupSensorsModule>('PushupSensors');

@@ -16,6 +16,16 @@ class PushupSensorsModule extends NativeModule<PushupSensorsModuleEvents> {
   }
   async stopFaceDistance(): Promise<void> {}
   async enablePlaybackAudioSession(): Promise<void> {}
+  isMotionSupported(): boolean {
+    return false;
+  }
+  async startGravity(_hz: number): Promise<boolean> {
+    return false;
+  }
+  async stopGravity(): Promise<void> {}
+  isFaceMeshVariantSupported(): boolean {
+    return false;
+  }
 }
 
 export default registerWebModule(PushupSensorsModule, 'PushupSensorsModule');

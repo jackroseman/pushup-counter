@@ -1,0 +1,29 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "S8KKL73JCN.com.jackroseman.pushupcounter",
+          "S8KKL73JCN.com.jackroseman.pushupcounter.dev"
+        ],
+        "appID": "S8KKL73JCN.com.jackroseman.pushupcounter",
+        "paths": [
+          "/i/*"
+        ],
+        "components": [
+          {
+            "/": "/i/*",
+            "comment": "Personal invite links"
+          }
+        ]
+      },
+      {
+        "appID": "S8KKL73JCN.com.jackroseman.pushupcounter.dev",
+        "paths": [
+          "/i/*"
+        ]
+      }
+    ]
+  }
+}

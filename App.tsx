@@ -1,28 +1,21 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { BackendProvider } from './src/backend/BackendProvider';
 import { IdentityProvider } from './src/backend/IdentityProvider';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { colors } from './src/theme';
 
+/** No root SafeAreaView: native headers and tabs inset themselves; other screens use `navigation/frame`. */
 export default function App() {
   return (
     <SafeAreaProvider>
       <BackendProvider>
         <IdentityProvider>
-          <SafeAreaView style={styles.root}>
-            <StatusBar style="light" />
-            <RootNavigator />
-          </SafeAreaView>
+          <StatusBar style="light" />
+          <RootNavigator />
         </IdentityProvider>
       </BackendProvider>
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-});

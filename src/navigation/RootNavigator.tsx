@@ -16,7 +16,7 @@ import { personName } from '../battles/model';
 import { deviceTimeZone } from '../backend/profile';
 import { enrollGoal, fetchMyProgress } from '../backend/progressClient';
 import { fetchNotificationPrefs, saveNotificationPrefs } from '../backend/nudgeClient';
-import { onHistoryChanged } from '../backend/syncEvents';
+import { onHistoryChanged, onServerSetsChanged } from '../backend/syncEvents';
 import { supabase } from '../backend/supabase';
 import {
   DAILY_NUDGE_ID,
@@ -371,6 +371,9 @@ export function RootNavigator() {
         setRemote((current) => ({ doc: current.doc, status: 'error' }));
       });
   }, []);
+
+  // A delete reached the backup: Today and You show server totals, so reload them.
+  useEffect(() => onServerSetsChanged(refreshRemote), [refreshRemote]);
 
   useEffect(() => {
     if (session?.user.id) refreshRemote();

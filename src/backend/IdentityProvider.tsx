@@ -15,12 +15,15 @@ import {
   registerDevice,
   registerPushToken,
   sendTestPush,
+  setInChallenge,
   supabaseSyncBackend,
   unregisterPushToken,
 } from './identity';
 import { notificationTurnOn } from '../notifications/prompt';
 import { loadSyncState, syncSets, syncStatus, SyncStatus } from './sync';
-import { onHistoryChanged } from './syncEvents';
+import { notifyHistoryChanged, notifyServerSetsChanged, onHistoryChanged } from './syncEvents';
+import { deleteSet as deleteSetFlow, type DeleteSetResult } from './setDelete';
+import type { SessionRecord } from '../storage/history';
 import { historyStore } from '../session/useSession';
 
 Notifications.setNotificationHandler({
@@ -47,6 +50,8 @@ export interface IdentityState {
   };
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ ok: boolean; message?: string }>;
+  /** Delete set (Set details): this phone now, the backup copy when online. Challenge sets stay. */
+  deleteSet: (record: SessionRecord) => Promise<DeleteSetResult>;
 }
 
 const noop = async () => {};
@@ -66,6 +71,7 @@ const IdentityContext = createContext<IdentityState>({
   },
   signOut: noop,
   deleteAccount: async () => ({ ok: false }),
+  deleteSet: async () => ({ ok: true }),
 });
 
 /** Signed-in account state: profile, this phone's device row + push token, and set backup. */
@@ -85,6 +91,8 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
     error: null,
   });
   const syncing = useRef<Promise<void> | null>(null);
+  /** A forced sync asked for while one was running (e.g. a delete): run once more after it. */
+  const syncAgain = useRef(false);
   const lastSync = useRef(0);
 
   // Profile for the signed-in user.
@@ -203,19 +211,26 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
   const runSync = useCallback(
     async (force: boolean) => {
       if (!supabase || !userId || !hasProfile || !deviceId) return;
-      if (syncing.current) return syncing.current;
+      if (syncing.current) {
+        if (force) syncAgain.current = true;
+        return syncing.current;
+      }
       if (!force && Date.now() - lastSync.current < SYNC_MIN_INTERVAL_MS) return;
       const client = supabase;
       const job = (async () => {
         setSyncState((s) => ({ ...s, running: true }));
-        try {
-          const history = await historyStore.load();
-          const r = await syncSets({ backend: supabaseSyncBackend(client), kv: AsyncStorage, userId, history, ctx: payloadContext(deviceId) });
-          lastSync.current = Date.now();
-          setSyncState({ status: syncStatus(history, r.state), running: false, error: r.error });
-        } catch (e) {
-          setSyncState((s) => ({ ...s, running: false, error: e instanceof Error ? e.message : String(e) }));
-        }
+        do {
+          syncAgain.current = false;
+          try {
+            const history = await historyStore.load();
+            const r = await syncSets({ backend: supabaseSyncBackend(client), kv: AsyncStorage, userId, history, ctx: payloadContext(deviceId) });
+            lastSync.current = Date.now();
+            setSyncState({ status: syncStatus(history, r.state), running: false, error: r.error });
+            if (r.deleted > 0) notifyServerSetsChanged();
+          } catch (e) {
+            setSyncState((s) => ({ ...s, running: false, error: e instanceof Error ? e.message : String(e) }));
+          }
+        } while (syncAgain.current);
       })();
       syncing.current = job;
       try {
@@ -293,6 +308,18 @@ export function IdentityProvider({ children }: { children: React.ReactNode }) {
         if (!supabase) return { ok: false, message: 'Not available.' };
         const r = await deleteAccountApi(supabase);
         if (r.ok) await AsyncStorage.removeItem(PENDING_DISPLAY_NAME_KEY).catch(() => {});
+        return r;
+      },
+      deleteSet: async (record) => {
+        const client = supabase;
+        const r = await deleteSetFlow({
+          record,
+          userId,
+          kv: AsyncStorage,
+          removeLocal: (id) => historyStore.remove(id),
+          inChallenge: client ? (uid, id) => setInChallenge(client, uid, id) : null,
+        });
+        if (r.ok) notifyHistoryChanged();
         return r;
       },
     }),

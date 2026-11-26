@@ -35,29 +35,17 @@ export function challengeOffers(
   return [...best, ...TOTALS, ...TOGETHER];
 }
 
-export type SummaryChallenge =
-  | { type: 'none' }
-  | { type: 'sign-in' }
-  | { type: 'create'; offer: ChallengeOffer };
-
 /**
- * The post-set screen has one challenge action. A signed-in person opens the
- * create screen with this set. A set that can be claimed starts on that best
- * set, so the timer matches and the set is the creator's attempt. Anything
- * else starts on most reps today, which counts the set without claiming it.
- * History has no action.
+ * "Challenge a friend" on the post-set summary opens New challenge with this set. A set
+ * that can be claimed starts on that best set, so the timer matches and the set is the
+ * creator's attempt. Anything else starts on most reps today, which counts the set
+ * without claiming it. Signed out, New challenge shows the sign-in pitch.
  */
-export function summaryChallengeAction(
-  fromSession: boolean,
-  signedIn: boolean,
+export function summaryChallengeOffer(
   set: { timerDurationS?: number | null; challengeId?: string | null; battleId?: string | null; endedAt?: number | null },
   opts: { timedDurationsS: readonly number[]; claimMaxAgeS: number; now?: number },
-): SummaryChallenge {
-  if (!fromSession) return { type: 'none' };
-  if (!signedIn) return { type: 'sign-in' };
-  const offers = challengeOffers(set, opts);
-  const best = offers.find((offer) => offer.kind === 'best_set');
-  return { type: 'create', offer: best ?? TOTALS[0] };
+): ChallengeOffer {
+  return challengeOffers(set, opts).find((offer) => offer.kind === 'best_set') ?? TOTALS[0];
 }
 
 export function offerLabel(offer: ChallengeOffer): string {

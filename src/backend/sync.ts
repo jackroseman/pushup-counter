@@ -5,8 +5,11 @@ import type { KeyValueStore, SessionRecord } from '../storage/history';
 /**
  * Solo set backup: every set saved on this phone is uploaded once with submit_set()
  * (idempotent on (user, SessionRecord.id)), including sets recorded before sign-in.
- * Local history stays the source of truth on the phone; clearing it does not delete the
- * backup. Pure logic + injected I/O so it is unit-tested; wiring lives in IdentityProvider.
+ * Local history stays the source of truth on the phone. Deleting a set (Set details) removes it
+ * here at once and queues the backup copy for deletion (`deleting`), which is flushed before
+ * uploads, so an offline delete finishes the next time the app is online. Sets that belong to a
+ * challenge are never deleted. Pure logic + injected I/O so it is unit-tested; wiring lives in
+ * IdentityProvider.
  */
 
 /** Bump when the rep detector's counting logic changes (stored with every uploaded set). */
@@ -23,9 +26,11 @@ export interface SyncState {
   rejected: string[];
   /** Whether the server's list of sets has been merged in for this account. */
   reconciled: boolean;
+  /** SessionRecord ids deleted on this phone whose backup copy still has to be deleted. */
+  deleting: string[];
 }
 
-export const EMPTY_SYNC_STATE: SyncState = { userId: null, uploaded: [], rejected: [], reconciled: false };
+export const EMPTY_SYNC_STATE: SyncState = { userId: null, uploaded: [], rejected: [], reconciled: false, deleting: [] };
 
 export function sanitizeSyncState(raw: unknown): SyncState {
   if (typeof raw !== 'object' || raw === null) return EMPTY_SYNC_STATE;
@@ -36,6 +41,7 @@ export function sanitizeSyncState(raw: unknown): SyncState {
     uploaded: ids(r.uploaded),
     rejected: ids(r.rejected),
     reconciled: r.reconciled === true,
+    deleting: ids(r.deleting),
   };
 }
 
@@ -146,12 +152,16 @@ export function isPermanentError(e: { code?: string } | null | undefined): boole
 
 export interface SyncBackend {
   submitSet(payload: Record<string, unknown>): Promise<{ error: { code?: string; message: string } | null }>;
+  /** Delete the user's solo set with this SessionRecord id. No row (already gone, or in a challenge) is not an error. */
+  deleteSet(userId: string, clientSetId: string): Promise<{ error: { code?: string; message: string } | null }>;
   /** SessionRecord ids of the user's solo sets already on the server. */
   listUploadedIds(userId: string): Promise<string[]>;
 }
 
 export interface SyncResult {
   uploaded: number;
+  /** Backup copies deleted in this round. */
+  deleted: number;
   rejected: number;
   pending: number;
   error: string | null;
@@ -196,8 +206,26 @@ export async function syncSets(opts: {
       state = { ...state, uploaded: [...new Set([...state.uploaded, ...remote])], reconciled: true };
       await saveSyncState(kv, state);
     } catch (e) {
-      return { uploaded: 0, rejected: 0, pending: -1, error: e instanceof Error ? e.message : String(e), state };
+      return { uploaded: 0, deleted: 0, rejected: 0, pending: -1, error: e instanceof Error ? e.message : String(e), state };
     }
+  }
+
+  // Deletes first, so a set deleted offline is never counted again.
+  let deleted = 0;
+  while (state.deleting.length) {
+    const id = state.deleting[0];
+    let res: { error: { code?: string; message: string } | null };
+    try {
+      res = await backend.deleteSet(userId, id);
+    } catch (e) {
+      res = { error: { message: e instanceof Error ? e.message : String(e) } };
+    }
+    if (res.error && !isPermanentError(res.error)) {
+      return { uploaded: 0, deleted, rejected: 0, pending: -1, error: res.error.message, state };
+    }
+    if (!res.error) deleted++;
+    state = { ...state, deleting: state.deleting.slice(1), uploaded: state.uploaded.filter((x) => x !== id) };
+    await saveSyncState(kv, state);
   }
 
   const done = new Set([...state.uploaded, ...state.rejected]);
@@ -225,5 +253,21 @@ export async function syncSets(opts: {
     }
     await saveSyncState(kv, state);
   }
-  return { uploaded, rejected, pending: todo.length - uploaded - rejected, error, state };
+  return { uploaded, deleted, rejected, pending: todo.length - uploaded - rejected, error, state };
+}
+
+/**
+ * Queue the backup copy of a set deleted on this phone. The account is the one the state belongs
+ * to (a signed-out phone keeps the last account's state, so the delete runs after signing back in).
+ * With no account and nothing uploaded, there is nothing to delete.
+ */
+export async function queueSetDelete(kv: KeyValueStore, id: string, userId: string | null): Promise<SyncState> {
+  let state = await loadSyncState(kv);
+  if (userId && state.userId !== userId) state = { ...EMPTY_SYNC_STATE, userId };
+  if (!state.userId) return state;
+  if (!userId && !state.uploaded.includes(id)) return state;
+  if (state.deleting.includes(id)) return state;
+  state = { ...state, deleting: [...state.deleting, id], uploaded: state.uploaded.filter((x) => x !== id) };
+  await saveSyncState(kv, state);
+  return state;
 }

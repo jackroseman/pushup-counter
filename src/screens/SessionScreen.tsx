@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { LiveDistanceChart } from '../components/charts';
 import { LevelView } from '../components/level';
-import { HOW_COUNTING_WORKS } from '../progress/howto';
 import { FaceCentering } from '../session/FaceCentering';
 import { countdownProgress, countingTitle, toBeatLine } from '../session/sessionView';
 import { BattleSessionOptions, COUNTDOWN_SECONDS, LIVE_WINDOW_MS, setVoiceOn, useSession } from '../session/useSession';
@@ -24,16 +23,13 @@ function SetBar({ title, onClose, right }: { title: string; onClose: () => void;
   );
 }
 
-function showHowTo() {
-  Alert.alert('How it works', HOW_COUNTING_WORKS.map((s, i) => `${i + 1}. ${s}`).join('\n\n'));
-}
-
 export function SessionScreen({
   settings,
   onFinished,
   onCancel,
   battle,
   setNumber = null,
+  onHowItWorks,
 }: {
   settings: Settings;
   battle?: BattleSessionOptions;
@@ -41,6 +37,8 @@ export function SessionScreen({
   setNumber?: number | null;
   onFinished: (record: SessionRecord) => void;
   onCancel: () => void;
+  /** The (i) on "Get set": opens How it works (frame 3). No (i) when not given. */
+  onHowItWorks?: () => void;
 }) {
   const { state, finish, live, recalibrate, startNow } = useSession(settings, battle);
   const [voice, setVoice] = useState(true);
@@ -66,6 +64,8 @@ export function SessionScreen({
     const id = setInterval(() => setElapsedMs(Date.now() - t0), 250);
     return () => clearInterval(id);
   }, [active]);
+
+  const infoButton = onHowItWorks ? <IconButton icon="info" onPress={onHowItWorks} accessibilityLabel="How it works" /> : undefined;
 
   const toggleVoice = () => {
     setVoiceOn(!voice);
@@ -101,7 +101,7 @@ export function SessionScreen({
   if (state.phase === 'starting' || state.phase === 'placing') {
     return (
       <View style={styles.container}>
-        <SetBar title="Get set" onClose={onCancel} right={<IconButton icon="info" onPress={showHowTo} accessibilityLabel="How it works" />} />
+        <SetBar title="Get set" onClose={onCancel} right={infoButton} />
         {state.phase === 'placing' ? (
           <>
             <View style={styles.levelWrap}>
@@ -117,7 +117,7 @@ export function SessionScreen({
   if (state.phase === 'calibrating') {
     return (
       <View style={styles.container}>
-        <SetBar title="Get set" onClose={onCancel} right={<IconButton icon="info" onPress={showHowTo} accessibilityLabel="How it works" />} />
+        <SetBar title="Get set" onClose={onCancel} right={infoButton} />
         <View style={styles.faceWrap}>
           <FaceCentering guide={state.guide} flatCheck={state.flatCheck} />
         </View>

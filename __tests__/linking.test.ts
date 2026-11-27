@@ -46,6 +46,10 @@ describe('challenge links and push taps', () => {
     expect(notificationLink({ url: 42 })).toBeNull();
     expect(notificationLink(null)).toBeNull();
     expect(notificationLink('pushupcounter://friends')).toBeNull();
+    expect(notificationLink(JSON.stringify({ url: 'pushupcounter://friends' }))).toBe('pushupcounter://friends');
+    expect(notificationLink({ challengeId: ID })).toBe(`pushupcounter://challenge/${ID}`);
+    expect(notificationLink({ battleId: ID })).toBe(`pushupcounter://challenge/${ID}`);
+    expect(notificationLink({ challengeId: 'not-a-uuid' })).toBeNull();
   });
 });
 

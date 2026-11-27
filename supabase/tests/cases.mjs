@@ -773,6 +773,16 @@ const ND = 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0';
 const NE = 'e4e4e4e4-e4e4-4e4e-8e4e-e4e4e4e4e4e4';
 const NG = 'f5f5f5f5-f5f5-4f5f-8f5f-f5f5f5f5f5f5';
 
+// Isolated windows so earlier week sets are not counted as an opening score.
+const setWinA = Date.now() + 3 * 86400000;
+const setWinB = Date.now() + 7 * 86400000;
+const customWin = (startMs) => ({
+  kind: 'total',
+  window: 'custom',
+  customStartsAt: new Date(startMs - 86400000).toISOString(),
+  customEndsAt: new Date(startMs + 2 * 86400000).toISOString(),
+});
+
 steps.push(
   ['slice7: nudge helpers stay private and anon cannot read prefs (expect ERR)', `
     select count(*)::int as exposed from pg_proc p
@@ -868,14 +878,34 @@ steps.push(
     from private.notification_outbox where kind = 'weekly_recap' and user_id = '${ND}';
     select count(*)::int as n from private.notification_outbox where kind = 'weekly_recap' and user_id = '${ND}';
   `],
-  ['slice7: a window challenge pings once per friend per day', `
-    ${as(NA)} ${create('nwin', { kind: 'total', window: 'week' }, [NB])} reset role;
+  ['slice7: a window challenge stays quiet for an outsider or a small opening set', `
+    ${as(NA)} ${create('nwin', customWin(setWinA), [NB])} reset role;
     ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nwin')}::uuid and user_id = '${NB}'; reset role;
-    ${solo('nudge-win-1', 6, NA)}
-    ${solo('nudge-win-2', 6, NA)}
-    select count(*)::int as n, min(dedupe_key) as dedupe
+    ${solo('nudge-out-1', 30, NC, { start: setWinA })}
+    ${solo('nudge-win-1', 6, NA, { start: setWinA })}
+    ${solo('nudge-win-2', 6, NA, { start: setWinA + 60000 })}
+    select
+      (select count(*)::int from private.notification_outbox
+        where kind = 'set_submitted' and challenge_id = ${ctx('nwin')}::uuid) as n;
+  `],
+  ['slice7: taking the lead notifies, a later milestone is throttled', `
+    ${solo('nudge-win-nb-16', 16, NB, { start: setWinA + 120000 })}
+    ${solo('nudge-win-nb-20', 20, NB, { start: setWinA + 180000 })}
+    select
+      (select count(*)::int from private.notification_outbox
+        where kind = 'set_submitted' and user_id = '${NA}' and challenge_id = ${ctx('nwin')}::uuid
+          and actor_id = '${NB}') as n,
+      (select dedupe_key from private.notification_outbox
+        where kind = 'set_submitted' and user_id = '${NA}' and challenge_id = ${ctx('nwin')}::uuid
+          and actor_id = '${NB}' limit 1) as lead_key;
+  `],
+  ['slice7: an uncontested opening at a milestone notifies', `
+    ${as(NA)} ${create('nwinm', customWin(setWinB), [NB])} reset role;
+    ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nwinm')}::uuid and user_id = '${NB}'; reset role;
+    ${solo('nudge-mile-30', 30, NA, { start: setWinB })}
+    select count(*)::int as n
       from private.notification_outbox
-     where kind = 'set_submitted' and user_id = '${NB}' and challenge_id = ${ctx('nwin')}::uuid;
+     where kind = 'set_submitted' and user_id = '${NB}' and challenge_id = ${ctx('nwinm')}::uuid and actor_id = '${NA}';
   `],
   ['slice7: ranks are only the caller aggregate', `
     ${as(NA)} select my_recap_ranks(null) as ranks; reset role;
@@ -978,9 +1008,17 @@ Object.assign(checks, {
     ok(r[0][0].week_key === true, 'key ' + JSON.stringify(r[0]));
     ok(r[1][0].n === 1, 'count ' + JSON.stringify(r[1]));
   },
-  'slice7: a window challenge pings once per friend per day': (r) => {
+  'slice7: a window challenge stays quiet for an outsider or a small opening set': (r) => {
     const row = r[r.length - 1][0];
-    ok(row.n === 1 && /^\d{4}-\d{2}-\d{2}$/.test(row.dedupe), 'window ' + JSON.stringify(row));
+    ok(row.n === 0, 'window opening ' + JSON.stringify(row));
+  },
+  'slice7: taking the lead notifies, a later milestone is throttled': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.n === 1 && String(row.lead_key || '').startsWith('set:'), 'lead/throttle ' + JSON.stringify(row));
+  },
+  'slice7: an uncontested opening at a milestone notifies': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.n === 1, 'milestone opening ' + JSON.stringify(row));
   },
   'slice7: ranks are only the caller aggregate': (r) => {
     const nina = typeof r[0][0].ranks === 'string' ? JSON.parse(r[0][0].ranks) : r[0][0].ranks;
@@ -1169,7 +1207,7 @@ steps.push(
       quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
       quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
      where user_id = '${WK}';
-    ${wakeRow('w-quiet')}
+    insert into private.notification_outbox (kind, user_id, dedupe_key) values ('daily_nudge', '${WK}', 'w-quiet');
     select private.has_unsent_notifications() as wake;
   `],
   ['wake: an expired lease wakes again', `
@@ -1200,6 +1238,65 @@ Object.assign(checks, {
   'wake: a stale row wakes once, then expiry stops the wakes': (r) => {
     ok(JSON.stringify(wakes(r)) === '[true,false]', JSON.stringify(wakes(r)));
     ok(r.find((set) => set[0] && 'expired' in set[0])[0].expired === true, 'not expired ' + JSON.stringify(r));
+  },
+});
+
+steps.push(
+  ['wake: a friend request still wakes during quiet hours', `
+    update notification_prefs set
+      quiet_start = ((now() at time zone 'UTC') - interval '1 hour')::time,
+      quiet_end = ((now() at time zone 'UTC') + interval '1 hour')::time
+     where user_id = '${WK}';
+    insert into private.notification_outbox (kind, user_id, dedupe_key) values ('friend_request', '${WK}', 'w-social');
+    select private.has_unsent_notifications() as wake;
+    delete from private.notification_outbox where dedupe_key = 'w-social';
+    update notification_prefs set quiet_start = '00:00', quiet_end = '00:00' where user_id = '${WK}';
+  `],
+  ['expire: no token fails after 2 hours; a token waits a day', `
+    delete from private.notification_outbox where user_id = '${WK}';
+    insert into private.notification_outbox (kind, user_id, dedupe_key, created_at)
+      values ('friend_request', '${WK}', 'w-notoken', now() - interval '3 hours');
+    insert into private.notification_outbox (kind, user_id, dedupe_key, created_at)
+      values ('friend_request', '${ND}', 'w-hastoken', now() - interval '3 hours');
+    select private.has_unsent_notifications() as wake;
+    select private.expire_notifications();
+    select
+      (select failed_at is not null from private.notification_outbox where dedupe_key = 'w-notoken') as no_token_expired,
+      (select failed_at is null and sent_at is null from private.notification_outbox where dedupe_key = 'w-hastoken') as token_kept;
+    delete from private.notification_outbox where dedupe_key in ('w-notoken', 'w-hastoken');
+  `],
+  ['settle: two-arg still works and three-arg stores the copy', `
+    insert into private.notification_outbox (kind, user_id, dedupe_key) values ('friend_request', '${WK}', 'settle-2');
+    select public.settle_notifications(array[(select id from private.notification_outbox where dedupe_key = 'settle-2')], '{}'::bigint[]);
+    select sent_at is not null as two_arg_sent, title is null as two_arg_no_copy
+      from private.notification_outbox where dedupe_key = 'settle-2';
+    insert into private.notification_outbox (kind, user_id, dedupe_key) values ('friend_request', '${WK}', 'settle-3');
+    select public.settle_notifications(
+      array[(select id from private.notification_outbox where dedupe_key = 'settle-3')],
+      '{}'::bigint[],
+      jsonb_build_array(jsonb_build_object(
+        'id', (select id from private.notification_outbox where dedupe_key = 'settle-3'),
+        'title', 'Friend request',
+        'body', 'Wanda wants to be friends',
+        'data', jsonb_build_object('url', 'pushupcounter://friends')
+      ))
+    );
+    select title, body, data->>'url' as url, sent_at is not null as sent
+      from private.notification_outbox where dedupe_key = 'settle-3';
+  `],
+);
+
+Object.assign(checks, {
+  'wake: a friend request still wakes during quiet hours': (r) => ok(wakes(r).slice(-1)[0] === true, JSON.stringify(wakes(r))),
+  'expire: no token fails after 2 hours; a token waits a day': (r) => {
+    const row = r.find((set) => set[0] && 'no_token_expired' in set[0])[0];
+    ok(row.no_token_expired === true && row.token_kept === true, 'expire ' + JSON.stringify(row));
+  },
+  'settle: two-arg still works and three-arg stores the copy': (r) => {
+    const two = r.find((set) => set[0] && 'two_arg_sent' in set[0])[0];
+    const three = r.find((set) => set[0] && 'title' in set[0] && set[0].title === 'Friend request')[0];
+    ok(two.two_arg_sent === true && two.two_arg_no_copy === true, 'two-arg ' + JSON.stringify(two));
+    ok(three.title === 'Friend request' && three.body === 'Wanda wants to be friends' && three.url === 'pushupcounter://friends' && three.sent === true, 'three-arg ' + JSON.stringify(three));
   },
 });
 

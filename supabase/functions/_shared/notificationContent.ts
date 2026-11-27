@@ -80,6 +80,7 @@ export interface ChallengeFacts {
   status?: string;
   endsAt?: string;
   creator?: string;
+  creatorName?: string;
   creatorIsMe?: boolean;
   mySetDone?: boolean;
 }
@@ -195,9 +196,10 @@ export function buildNotification(n: ClaimedNotification, now: Date = new Date()
     case 'invite_declined':
       return c ? { title: 'Challenge declined', body: `${short(f.actor)} declined.`, data: data(n.kind) } : null;
     case 'set_submitted': {
-      if (!c || c.status === 'completed') return null;
+      if (!c || c.status === 'completed' || !f.actorScore) return null;
       if (isWindow(c)) {
-        const reps = f.actorScore?.validReps ?? 0;
+        const reps = f.actorScore.validReps;
+        if (reps == null || reps <= 0) return null;
         const where = windowPhrase(c.windowUnit);
         return { title: 'Challenge update', body: `${short(f.actor)} is on ${reps} reps${where ? ` ${where}` : ''}.`, data: data(n.kind) };
       }
@@ -209,7 +211,8 @@ export function buildNotification(n: ClaimedNotification, now: Date = new Date()
     }
     case 'challenge_reminder':
     case 'challenge_reminder_half': {
-      if (!c || c.mySetDone || c.status === 'completed') return null;
+      if (!c || c.status === 'completed') return null;
+      if (c.mySetDone && !isWindow(c)) return null;
       const h = hoursLeft(c.endsAt, now);
       const left = h == null ? 'Time is running out' : h <= 1 ? 'Under an hour left' : `${h} hours left`;
       const target = !isWindow(c) && f.leader ? ` to beat ${short(f.leader)}'s ${standingNumber(f.leader, metric)}` : '';
@@ -263,7 +266,7 @@ export function buildNotification(n: ClaimedNotification, now: Date = new Date()
     case 'challenge_expired':
       return c ? { title: 'Challenge ended', body: 'The challenge ended before enough people played.', data: data(n.kind) } : null;
     case 'challenge_cancelled':
-      return c ? { title: 'Challenge cancelled', body: `${c.creator ? `@${c.creator}` : 'The creator'} cancelled the challenge.`, data: data(n.kind) } : null;
+      return c ? { title: 'Challenge cancelled', body: `${c.creatorName?.trim() || (c.creator ? `@${c.creator}` : 'The creator')} cancelled the challenge.`, data: data(n.kind) } : null;
     default:
       return null;
   }

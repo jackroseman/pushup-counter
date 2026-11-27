@@ -1,7 +1,9 @@
 # Contributing to Rep Royale (formerly Pushup Counter)
 
 This guide covers how code gets from your editor to a phone: branches, commits, pull
-requests, CI checks, deploys (CD) and rollbacks. Read it before your first PR.
+requests, CI checks, deploys (CD) and rollbacks. Read it before your first PR. For the
+architecture principle and how the app is put together, start with
+[docs/developer-guide.md](docs/developer-guide.md).
 
 ## TL;DR
 

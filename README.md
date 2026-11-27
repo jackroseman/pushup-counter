@@ -20,8 +20,10 @@ as the fallback on web and Android. Buttons, the daily ring, the rep count and t
 Minimum iOS is **26**. Because of a custom native module, **Expo Go will not work** — use
 the **Pushup Dev** development build or the TestFlight app.
 
-> **Contributing?** Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch model
-> (`dev` → `main`), PRs, CI, CD and the dev client.
+> **Developers.** Start with [docs/developer-guide.md](docs/developer-guide.md) for the
+> architecture principle (the back end has the opinions; the front end implements the
+> back end), how the app is put together, and the conventions. [CONTRIBUTING.md](CONTRIBUTING.md)
+> covers the branch model (`dev` → `main`), PRs, CI, CD and the dev client.
 >
 > **Design.** The rebrand plan, 30 flow frames and 15 empty states live in
 > [docs/rebrand/](docs/rebrand/). Tokens are in `src/ui/tokens.ts`.
@@ -387,6 +389,7 @@ src/storage/                  AsyncStorage history and settings
 src/components/               charts, the lay-flat level, notification prompt
 modules/pushup-sensors/       local Expo Module (ios/*.swift, android/*.kt, src/*.ts)
 supabase/                     migrations, Edge Functions, database tests
+docs/developer-guide.md       architecture principle, how the app is put together
 docs/rebrand/                 implementation plan, frames, empty states
 docs/battles/                 challenge/league backend spec and architecture
 docs/notification-experience.md  notification specification

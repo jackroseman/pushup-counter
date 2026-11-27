@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
+import { NotificationOptInBanner } from '../../components/NotificationPrompt';
 import { TodayScreen } from '../../screens/TodayScreen';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
@@ -161,6 +162,7 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
         onNewChallenge={() => navigation.navigate('NewBattle')}
         onInvite={() => (session ? navigation.navigate('Friends') : navigation.navigate('Compete', { segment: 'league' }))}
         onHowItWorks={() => navigation.navigate('HowItWorks')}
+        optInBanner={<NotificationOptInBanner />}
       />
     </Frame>
   );

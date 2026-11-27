@@ -1,7 +1,8 @@
 import React from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
-import { ICON_ROW_INSET, ListGroup, ListRow, SectionHeader, Text, color, gutter } from '../ui';
+import { NOTIFICATION_PROMPT_COPY } from '../notifications/prompt';
+import { Button, ICON_ROW_INSET, ListGroup, ListRow, SectionHeader, Text, color, gutter } from '../ui';
 
 /** Friend pings, signed in only (no mockup spot; kept under Notifications). Toggles save at once. */
 export interface SettingsPings {
@@ -80,7 +81,20 @@ export function SettingsScreen({
 
       <SectionHeader title="Notifications" />
       <ListGroup inset={ICON_ROW_INSET}>
-        <ListRow icon="bell" title="Notifications" value={notificationsValue} chevron onPress={onNotifications} />
+        <ListRow
+          icon="bell"
+          title="Notifications"
+          subtitle={notificationsValue === 'Off' ? NOTIFICATION_PROMPT_COPY.line : undefined}
+          subtitleNumberOfLines={3}
+          value={notificationsValue}
+          trailing={
+            notificationsValue === 'Off' ? (
+              <Button title={NOTIFICATION_PROMPT_COPY.bannerTurnOn} kind="tinted" size="small" onPress={onNotifications} />
+            ) : undefined
+          }
+          chevron={notificationsValue !== 'Off'}
+          onPress={notificationsValue === 'Off' ? undefined : onNotifications}
+        />
         {hasGoal ? <ListRow icon="clock" title="Daily reminder" value={reminderValue} chevron onPress={onReminder} /> : null}
         {hasGoal ? <ListRow icon="moon" title="Quiet hours" value={quietHoursValue} chevron onPress={onQuietHours} /> : null}
         {!hasGoal ? <ListRow icon="clock" title="Set a daily goal to get reminders" chevron onPress={onGoal} /> : null}

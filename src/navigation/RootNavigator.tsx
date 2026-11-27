@@ -129,9 +129,13 @@ const linking: LinkingOptions<RootStackParamList> = {
   getStateFromPath,
   // Cold start from a link or from tapping one of our pushes (data.url).
   async getInitialURL() {
-    const url = normalizeUrl(await Linking.getInitialURL());
-    if (url) return url;
-    return pushUrl(Notifications.getLastNotificationResponse());
+    const launch = normalizeUrl(await Linking.getInitialURL());
+    const fromPush = pushUrl(Notifications.getLastNotificationResponse());
+    if (fromPush) Notifications.clearLastNotificationResponse();
+    const launchLink = launch ? parseAppLink(launch, webBaseUrl) : null;
+    const launchIsBare = !launch || !launchLink || launchLink.type === 'home';
+    if (fromPush && launchIsBare) return fromPush;
+    return launch;
   },
   subscribe(listener) {
     const links = Linking.addEventListener('url', ({ url }) => {
@@ -140,6 +144,7 @@ const linking: LinkingOptions<RootStackParamList> = {
     });
     const taps = Notifications.addNotificationResponseReceivedListener((r) => {
       const u = pushUrl(r);
+      Notifications.clearLastNotificationResponse();
       if (u) listener(u);
     });
     return () => {
@@ -197,7 +202,6 @@ export function RootNavigator() {
   nudgesRef.current = nudges;
   const profileRef = useRef(profile);
   profileRef.current = profile;
-  const askedReminder = useRef(false);
   const firedRef = useRef<string | null>(null);
   const reminderFlight = useRef<Promise<void>>(Promise.resolve());
 
@@ -323,12 +327,7 @@ export function RootNavigator() {
       await Notifications.cancelScheduledNotificationAsync(DAILY_NUDGE_ID).catch(() => {});
       if (!alive || !when) return;
       const permission = await Notifications.getPermissionsAsync().catch(() => null);
-      let granted = permission?.granted === true;
-      if (!granted && permission?.canAskAgain && nudgesRef.current.dailyNudge && !askedReminder.current) {
-        askedReminder.current = true;
-        const asked = await Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } }).catch(() => null);
-        granted = asked?.granted === true;
-      }
+      const granted = permission?.granted === true;
       if (!alive || !granted) return;
       const day = localDate(when.getTime(), zone);
       const goal = goalForDate(enrollmentsRef.current, day);
@@ -504,15 +503,15 @@ export function RootNavigator() {
           <Stack.Screen name="DailyReminder" component={DailyReminderRoute} options={header('Daily reminder')} />
           <Stack.Screen name="QuietHours" component={QuietHoursRoute} options={header('Quiet hours')} />
           <Stack.Screen name="ProfileSetup" component={ProfileSetupRoute} />
-          <Stack.Screen name="Battle" component={BattleRoute} options={header('')} />
+          <Stack.Screen name="Battle" component={BattleRoute} options={header('')} getId={({ params }) => params.challengeId} />
           <Stack.Screen name="NewBattle" component={NewBattleRoute} options={NEW_CHALLENGE_SHEET} />
           <Stack.Screen name="LeagueInfo" component={LeagueInfoRoute} options={LEAGUE_INFO_SHEET} />
           <Stack.Screen name="Friends" component={FriendsRoute} options={header('Friends')} />
-          <Stack.Screen name="Friend" component={FriendRoute} options={({ route }) => header(personName(route.params.friend))} />
-          <Stack.Screen name="Invite" component={InviteRoute} options={header('Challenge invite')} />
+          <Stack.Screen name="Friend" component={FriendRoute} options={({ route }) => header(personName(route.params.friend))} getId={({ params }) => params.friend.userId} />
+          <Stack.Screen name="Invite" component={InviteRoute} options={header('Challenge invite')} getId={({ params }) => params.token} />
           <Stack.Screen name="InviteLink" component={InviteLinkRoute} options={INVITE_SHEET} />
           <Stack.Screen name="InviteQr" component={InviteQrRoute} options={INVITE_SHEET} />
-          <Stack.Screen name="FriendInvite" component={FriendInviteRoute} options={INVITE_SHEET} />
+          <Stack.Screen name="FriendInvite" component={FriendInviteRoute} options={INVITE_SHEET} getId={({ params }) => params.code} />
         </Stack.Navigator>
       </NavigationContainer>
     </AppStateContext.Provider>

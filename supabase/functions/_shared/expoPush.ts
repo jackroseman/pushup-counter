@@ -95,5 +95,5 @@ export function parseNotifyRequest(body: unknown, isServer: boolean): NotifyRequ
 export const TEST_CONTENT: PushContent = {
   title: 'Rep Royale',
   body: 'Notifications are working. You will hear from us when a friend challenges you.',
-  data: { type: 'test' },
+  data: { type: 'test', url: 'pushupcounter://today' },
 };

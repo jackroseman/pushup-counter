@@ -72,6 +72,7 @@ export function SectionHeader({
 export function ListRow({
   title,
   subtitle,
+  subtitleNumberOfLines = 1,
   icon,
   leading,
   value,
@@ -86,6 +87,8 @@ export function ListRow({
 }: {
   title: string;
   subtitle?: string;
+  /** Defaults to 1. Pass 2 or 3 when the subtitle is a full sentence. */
+  subtitleNumberOfLines?: number;
   /** Icon tile (30 pt graphite square, white glyph). */
   icon?: IconName;
   /** Any leading element instead of the icon tile (avatar, rank). */
@@ -115,7 +118,7 @@ export function ListRow({
           {title}
         </Text>
         {subtitle ? (
-          <Text variant="footnote" numberOfLines={1}>
+          <Text variant="footnote" numberOfLines={subtitleNumberOfLines}>
             {subtitle}
           </Text>
         ) : null}

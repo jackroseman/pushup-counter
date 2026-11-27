@@ -1,47 +1,111 @@
-import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Modal, Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useBackend } from '../backend/BackendProvider';
 import { useIdentity } from '../backend/IdentityProvider';
-import { NOTIFICATION_PROMPT_COPY, markNotificationPromptShown, notificationSurface, readNotificationPromptShown } from '../notifications/prompt';
-import { Button, Icon, Text, color, radius, space } from '../ui';
+import {
+  NOTIFICATION_PROMPT_COPY,
+  markNotificationBannerDismissed,
+  markNotificationPromptShown,
+  notificationBannerAction,
+  notificationBannerVisible,
+  notificationOptInState,
+  notificationSurface,
+  readNotificationBannerDismiss,
+  readNotificationPromptShown,
+  subscribeNotificationOptInStorage,
+  type BannerDismiss,
+} from '../notifications/prompt';
+import { Button, Card, Icon, Text, color, radius, space } from '../ui';
 
-/** The sheet after the first create, accept, or join (frame 22), shown once. No banner anywhere. */
-export function ChallengeNotifications({ justActed, onConsumed }: { justActed: boolean; onConsumed: () => void }) {
+function useNotificationOptIn(justActed: boolean) {
   const { session } = useBackend();
   const { push } = useIdentity();
-  const insets = useSafeAreaInsets();
   const [shown, setShown] = useState(false);
+  const [dismiss, setDismiss] = useState<BannerDismiss>({ count: 0, at: null });
   const [ready, setReady] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    let alive = true;
-    readNotificationPromptShown(AsyncStorage).then((seen) => {
-      if (!alive) return;
+  const loadGen = useRef(0);
+  const load = useCallback(() => {
+    const id = ++loadGen.current;
+    Promise.all([readNotificationPromptShown(AsyncStorage), readNotificationBannerDismiss(AsyncStorage)]).then(([seen, banner]) => {
+      if (id !== loadGen.current) return;
       setShown(seen);
+      setDismiss(banner);
       setReady(true);
     });
-    return () => {
-      alive = false;
-    };
   }, []);
 
-  if (!session || !ready || !push.checked) return null;
-  const surface = notificationSurface({ permission: push.permission, justActed, shown });
-  if (surface !== 'sheet') return null;
+  useEffect(() => {
+    load();
+    const off = subscribeNotificationOptInStorage(() => {
+      load();
+      setNow(Date.now());
+    });
+    return () => {
+      loadGen.current += 1;
+      off();
+    };
+  }, [load]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setNow(Date.now());
+    });
+    return () => sub.remove();
+  }, []);
+
+  const available = !!session && ready && push.checked;
+  const state = notificationOptInState({ permission: push.permission, shown });
+  const sheet = available && notificationSurface({ permission: push.permission, justActed, shown }) === 'sheet';
+  const banner =
+    available &&
+    notificationBannerVisible({
+      state,
+      dismissCount: dismiss.count,
+      lastDismissAt: dismiss.at,
+      now,
+      sheetOpen: sheet,
+    });
+  const action = notificationBannerAction(state);
 
   const answered = () => {
     setShown(true);
-    onConsumed();
     markNotificationPromptShown(AsyncStorage).catch(() => {});
   };
-  const turnOn = () => {
+  const turnOnSheet = () => {
     answered();
     void push.enable();
   };
-  const notNow = answered;
+  const enable = () => {
+    void push.enable();
+  };
+  const dismissBanner = () => {
+    const at = Date.now();
+    setNow(at);
+    setDismiss((prev) => ({ count: prev.count + 1, at }));
+    markNotificationBannerDismissed(AsyncStorage, at).catch(() => {});
+  };
+
+  return { sheet, banner, action, answered, turnOnSheet, enable, dismissBanner };
+}
+
+/** The sheet after the first create, accept, or join, including an invite-link join (once). */
+export function ChallengeNotifications({ justActed, onConsumed }: { justActed: boolean; onConsumed: () => void }) {
+  const insets = useSafeAreaInsets();
+  const optIn = useNotificationOptIn(justActed);
+  if (!optIn.sheet) return null;
+
+  const notNow = () => {
+    optIn.answered();
+    onConsumed();
+  };
+  const turnOn = () => {
+    optIn.turnOnSheet();
+    onConsumed();
+  };
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={notNow}>
@@ -64,6 +128,34 @@ export function ChallengeNotifications({ justActed, onConsumed }: { justActed: b
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+/** Soft-nudge on Today and on the challenge screen after Not now or an iOS denial. */
+export function NotificationOptInBanner({ style }: { style?: StyleProp<ViewStyle> }) {
+  const optIn = useNotificationOptIn(false);
+  if (!optIn.banner) return null;
+  const cta = optIn.action === 'settings' ? NOTIFICATION_PROMPT_COPY.openSettings : NOTIFICATION_PROMPT_COPY.bannerTurnOn;
+  return (
+    <Card padding={0} style={[styles.banner, style]}>
+      <View style={styles.bannerTop}>
+        <View style={styles.bannerTile}>
+          <Icon name="bell" size={16} color={color.label} />
+        </View>
+        <View style={styles.bannerCopy}>
+          <Text variant="headline" style={styles.bannerTitle}>
+            {NOTIFICATION_PROMPT_COPY.title}
+          </Text>
+          <Text variant="footnote">{NOTIFICATION_PROMPT_COPY.line}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={optIn.dismissBanner} hitSlop={8} style={styles.bannerDismiss}>
+          <Icon name="xmark" size={14} color={color.secondary} />
+        </Pressable>
+      </View>
+      <View style={styles.bannerAction}>
+        <Button title={cta} kind="tinted" size="small" onPress={optIn.enable} />
+      </View>
+    </Card>
   );
 }
 
@@ -92,4 +184,19 @@ const styles = StyleSheet.create({
   line: { marginTop: space.xs, lineHeight: 23 },
   actions: { marginTop: 26 },
   notNow: { marginTop: 2 },
+  banner: { padding: 12, paddingLeft: 14, paddingRight: 10 },
+  bannerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  bannerTile: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.tile,
+    backgroundColor: color.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  bannerCopy: { flex: 1, minWidth: 0 },
+  bannerTitle: { fontSize: 15, lineHeight: 20 },
+  bannerDismiss: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', marginTop: -2 },
+  bannerAction: { alignItems: 'flex-end', marginTop: 10, marginLeft: 40 },
 });

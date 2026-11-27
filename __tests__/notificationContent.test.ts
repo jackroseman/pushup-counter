@@ -44,6 +44,8 @@ describe('notification text', () => {
     const weekUpdate = buildNotification(row('set_submitted', { actor: { displayName: 'Bob' }, actorScore: { validReps: 40 }, challenge: week }))!;
     expect(weekUpdate.body).toBe('Bob is on 40 reps this week.');
     expect(buildNotification(row('set_submitted', { actor: { username: 'bob' }, challenge: { ...challenge, status: 'completed' } }))).toBeNull();
+    expect(buildNotification(row('set_submitted', { actor: { displayName: 'Lizzy' }, challenge: week }))).toBeNull();
+    expect(buildNotification(row('set_submitted', { actor: { displayName: 'Lizzy' }, actorScore: { validReps: 0 }, challenge: week }))).toBeNull();
   });
 
   it('accept and decline', () => {
@@ -57,6 +59,8 @@ describe('notification text', () => {
     expect(n.body).toBe("4 hours left to beat sunny's 32.");
     expect(buildNotification(row('challenge_reminder', { challenge: { ...challenge, mySetDone: true } }), now)).toBeNull();
     expect(buildNotification(row('challenge_reminder_half', { challenge: { ...challenge, endsAt: '2026-11-06T19:20:00Z' } }), now)!.body).toBe('Under an hour left.');
+    const windowReminder = buildNotification(row('challenge_reminder', { challenge: { ...week, mySetDone: true, endsAt: '2026-11-06T23:00:00Z' } }), now)!;
+    expect(windowReminder.body).toBe('4 hours left.');
   });
 
   it('results: win, loss, draw', () => {
@@ -108,6 +112,7 @@ describe('notification text', () => {
 
   it('cancel and expiry', () => {
     expect(buildNotification(row('challenge_cancelled', { challenge: { ...challenge, creator: 'sunny' } }))!.body).toBe('@sunny cancelled the challenge.');
+    expect(buildNotification(row('challenge_cancelled', { challenge: { ...challenge, creator: 'sunny', creatorName: 'Sunny' } }))!.body).toBe('Sunny cancelled the challenge.');
     expect(buildNotification(row('challenge_expired', { challenge: { ...challenge, creatorIsMe: true } }))!.body).toBe('The challenge ended before enough people played.');
   });
 });

@@ -76,7 +76,7 @@ describe('pushSender', () => {
 });
 
 function ops() {
-  const settled: { sent: number[]; failed: number[] }[] = [];
+  const settled: { sent: number[]; failed: number[]; contents?: { id: number; title: string; body: string }[] }[] = [];
   const released: number[][] = [];
   let queued: ClaimedNotification[] = [];
   const x: OutboxOps = {
@@ -85,8 +85,8 @@ function ops() {
       queued = [];
       return rows;
     },
-    settle: async (sent, failed) => {
-      settled.push({ sent, failed });
+    settle: async (sent, failed, contents) => {
+      settled.push({ sent, failed, ...(contents ? { contents: contents.map((c) => ({ id: c.id, title: c.title, body: c.body })) } : {}) });
     },
     release: async (ids) => {
       released.push(ids);
@@ -104,7 +104,7 @@ describe('drainOutbox', () => {
     ]);
     const { x } = io();
     await drainOutbox(box.x, x);
-    expect(box.settled).toEqual([{ sent: [], failed: [8] }]);
+    expect(box.settled).toEqual([{ sent: [], failed: [8], contents: [] }]);
     expect(box.released).toEqual([[9]]);
   });
 
@@ -113,7 +113,7 @@ describe('drainOutbox', () => {
     box.queue([friendReq('a', 3)]);
     const { x } = io({ data: [{ status: 'ok', id: 't' }] });
     await drainOutbox(box.x, x);
-    expect(box.settled).toEqual([{ sent: [3], failed: [] }]);
+    expect(box.settled).toEqual([{ sent: [3], failed: [], contents: [{ id: 3, title: 'Friend request', body: '@bob wants to be friends' }] }]);
     expect(box.released).toEqual([[]]);
   });
 
@@ -122,7 +122,7 @@ describe('drainOutbox', () => {
     box.queue([friendReq('a', 6)]);
     const { x } = io({}, false);
     await drainOutbox(box.x, x);
-    expect(box.settled).toEqual([{ sent: [], failed: [] }]);
+    expect(box.settled).toEqual([{ sent: [], failed: [], contents: [] }]);
     expect(box.released).toEqual([[6]]);
   });
 
@@ -139,7 +139,7 @@ describe('drainOutbox', () => {
       },
     };
     await drainOutbox(box.x, x);
-    expect(box.settled).toEqual([{ sent: [], failed: [] }]);
+    expect(box.settled).toEqual([{ sent: [], failed: [], contents: [] }]);
     expect(box.released).toEqual([[7]]);
   });
 

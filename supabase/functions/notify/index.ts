@@ -54,8 +54,12 @@ async function drain() {
       if (error) throw new Error(error.message);
       return (data ?? []) as ClaimedNotification[];
     },
-    async settle(sent, failed) {
-      const { error } = await admin.rpc('settle_notifications', { p_sent: sent, p_failed: failed });
+    async settle(sent, failed, contents) {
+      const { error } = await admin.rpc('settle_notifications', {
+        p_sent: sent,
+        p_failed: failed,
+        p_contents: contents ?? [],
+      });
       if (error) throw new Error(error.message);
     },
     async release(ids) {

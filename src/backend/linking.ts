@@ -55,6 +55,23 @@ export function parseAppLink(url: string, webBaseUrl: string | null = null): App
 
 /** The deep link carried by one of our pushes (data.url), if it is one the app understands. */
 export function notificationLink(data: unknown, webBaseUrl: string | null = null): string | null {
-  const url = typeof data === 'object' && data !== null ? (data as { url?: unknown }).url : undefined;
-  return typeof url === 'string' && parseAppLink(url, webBaseUrl) ? url : null;
+  let payload: unknown = data;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof payload !== 'object' || payload === null) return null;
+  const rec = payload as { url?: unknown; challengeId?: unknown; battleId?: unknown };
+  if (typeof rec.url === 'string' && parseAppLink(rec.url, webBaseUrl)) return rec.url;
+  const id = typeof rec.challengeId === 'string' ? rec.challengeId
+    : typeof rec.battleId === 'string' ? rec.battleId
+    : null;
+  if (id && UUID.test(id)) {
+    const built = `${APP_SCHEME}://challenge/${id.toLowerCase()}`;
+    return parseAppLink(built, webBaseUrl) ? built : null;
+  }
+  return null;
 }

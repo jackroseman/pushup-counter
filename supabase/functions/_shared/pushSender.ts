@@ -156,9 +156,16 @@ export async function deliverClaimed(
   return { notifications: rows.length, ...stats };
 }
 
+export interface SettledContent {
+  id: number;
+  title: string;
+  body: string;
+  data: Record<string, unknown> | null;
+}
+
 export interface OutboxOps {
   lease(limit: number): Promise<ClaimedNotification[]>;
-  settle(sent: number[], failed: number[]): Promise<void>;
+  settle(sent: number[], failed: number[], contents?: SettledContent[]): Promise<void>;
   release(ids: number[]): Promise<void>;
 }
 
@@ -185,7 +192,13 @@ export async function drainOutbox(ops: OutboxOps, io: PushIO, now: Date = new Da
         retry.push(...plan.ready.map((row) => row.id));
       }
     }
-    await ops.settle(attempted, plan.failed);
+    const contents: SettledContent[] = [];
+    for (const row of plan.ready) {
+      if (!attempted.includes(row.id)) continue;
+      const content = buildNotification(row, now);
+      if (content) contents.push({ id: row.id, title: content.title, body: content.body, data: content.data ?? null });
+    }
+    await ops.settle(attempted, plan.failed, contents);
     await ops.release(retry);
     totals.notifications += rows.length;
     if (rows.length < 200) break;

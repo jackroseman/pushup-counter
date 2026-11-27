@@ -22,6 +22,7 @@ export function TodayScreen({
   onNewChallenge,
   onInvite,
   onHowItWorks,
+  optInBanner,
   active = true,
 }: {
   view: TodayView;
@@ -40,6 +41,8 @@ export function TodayScreen({
   onNewChallenge: () => void;
   onInvite: () => void;
   onHowItWorks: () => void;
+  /** Soft-nudge to turn on notifications, after Not now or an iOS denial. */
+  optInBanner?: React.ReactNode;
   /** False while Today is behind another screen: the ring and count wait to animate until it is back. */
   active?: boolean;
 }) {
@@ -87,6 +90,8 @@ export function TodayScreen({
           This iPhone can't count reps. It needs a Face ID camera.
         </Text>
       )}
+
+      {optInBanner ? <View style={styles.optIn}>{optInBanner}</View> : null}
 
       {view.league ? (
         <Card padding={0} onPress={onLeague} style={styles.firstCard} accessibilityLabel={`${view.league.title}. ${view.league.detail}`}>
@@ -281,6 +286,7 @@ const styles = StyleSheet.create({
   note: { marginTop: 6 },
   start: { marginTop: 18 },
   startAfterCount: { marginTop: 34 },
+  optIn: { marginTop: 12 },
   firstCard: { marginTop: 12 },
   card: { marginTop: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },

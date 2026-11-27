@@ -52,6 +52,7 @@ export function LinkInviteScreen(props: {
     setBusy(false);
     if (!r.ok) return setError(friendlyError(r.message));
     api.kickNotify(supabase);
+    // Landing on the challenge should show the notification sheet (once) before the first set.
     onJoined(r.data, true);
   };
 

@@ -31,6 +31,10 @@ the **Pushup Dev** development build or the TestFlight app.
 > architecture notes are in [docs/battles/](docs/battles/) (they still use the older
 > "battles" name; the product UI says "challenges").
 >
+> **Notifications.** The living specification (trigger, recipient, copy, destination,
+> and throttling for every push) is
+> [docs/notification-experience.md](docs/notification-experience.md).
+>
 > **Releases.** [docs/RELEASING.md](docs/RELEASING.md).
 
 * Expo SDK 58 · React Native 0.88 · TypeScript (strict) · Node 22 in CI
@@ -385,6 +389,7 @@ modules/pushup-sensors/       local Expo Module (ios/*.swift, android/*.kt, src/
 supabase/                     migrations, Edge Functions, database tests
 docs/rebrand/                 implementation plan, frames, empty states
 docs/battles/                 challenge/league backend spec and architecture
+docs/notification-experience.md  notification specification
 docs/RELEASING.md             release recipe
 scripts/                      dev-server.sh, eas-ship.sh, release.sh
 tools/preview/                web preview and UI capture tooling (see docs/ui-preview.md)

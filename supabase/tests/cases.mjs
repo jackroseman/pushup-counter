@@ -782,6 +782,18 @@ const customWin = (startMs) => ({
   customStartsAt: new Date(startMs - 86400000).toISOString(),
   customEndsAt: new Date(startMs + 2 * 86400000).toISOString(),
 });
+const remWin = {
+  kind: 'total',
+  window: 'custom',
+  customStartsAt: new Date(Date.now() - 20 * 3600 * 1000).toISOString(),
+  customEndsAt: new Date(Date.now() + 1 * 3600 * 1000).toISOString(),
+};
+const halfWin = {
+  kind: 'total',
+  window: 'custom',
+  customStartsAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+  customEndsAt: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+};
 
 steps.push(
   ['slice7: nudge helpers stay private and anon cannot read prefs (expect ERR)', `
@@ -1284,6 +1296,50 @@ steps.push(
     select title, body, data->>'url' as url, sent_at is not null as sent
       from private.notification_outbox where dedupe_key = 'settle-3';
   `],
+  ['spec: accept and decline notify the other participants', `
+    ${as(NA)} ${create('nacc', { kind: 'best_set', deadlineHours: 24 }, [NB, NC])} reset role;
+    ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nacc')}::uuid and user_id = '${NB}'; reset role;
+    ${as(NC)} update challenge_participants set status = 'declined' where challenge_id = ${ctx('nacc')}::uuid and user_id = '${NC}'; reset role;
+    select
+      (select count(*)::int from private.notification_outbox where kind = 'invite_accepted' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NA}') as accepted_creator,
+      (select count(*)::int from private.notification_outbox where kind = 'invite_accepted' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NC}') as accepted_other,
+      (select count(*)::int from private.notification_outbox where kind = 'invite_accepted' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NB}') as accepted_actor,
+      (select count(*)::int from private.notification_outbox where kind = 'invite_declined' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NA}') as declined_creator,
+      (select count(*)::int from private.notification_outbox where kind = 'invite_declined' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NB}') as declined_other,
+      (select count(*)::int from private.notification_outbox where kind = 'invite_declined' and challenge_id = ${ctx('nacc')}::uuid and user_id = '${NC}') as declined_actor;
+  `],
+  ['spec: a window reminder still reaches someone who already has reps', `
+    ${as(NA)} ${create('nrem', remWin, [NB])} reset role;
+    ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nrem')}::uuid and user_id = '${NB}'; reset role;
+    ${solo('nrem-na', 8, NA, { start: Date.now() - 19 * 3600 * 1000 })}
+    select finalize_challenges();
+    select
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_reminder' and challenge_id = ${ctx('nrem')}::uuid and user_id = '${NA}') as with_reps,
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_reminder' and challenge_id = ${ctx('nrem')}::uuid and user_id = '${NB}') as still_open;
+  `],
+  ['spec: halfway through a window is measured from the window start', `
+    ${as(NA)} ${create('nhalf', halfWin, [NB])} reset role;
+    ${as(NB)} update challenge_participants set status = 'accepted' where challenge_id = ${ctx('nhalf')}::uuid and user_id = '${NB}'; reset role;
+    select finalize_challenges();
+    select
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_reminder_half' and challenge_id = ${ctx('nhalf')}::uuid) as half_n,
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_reminder' and challenge_id = ${ctx('nhalf')}::uuid) as two_hour_n;
+  `],
+  ['spec: an expired challenge tells the invitee', `
+    ${as(NA)} ${create('nexp', { kind: 'best_set', deadlineHours: 24 }, [NB])} reset role;
+    update challenges
+       set created_at = now() - interval '25 hours',
+           starts_at = now() - interval '25 hours',
+           ends_at = now() - interval '1 minute',
+           invite_expires_at = now() - interval '1 minute'
+     where id = ${ctx('nexp')}::uuid;
+    select set_config('request.jwt.claim.sub', '', false);
+    select finalize_challenges();
+    select status as challenge_status from challenges where id = ${ctx('nexp')}::uuid;
+    select
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_expired' and challenge_id = ${ctx('nexp')}::uuid and user_id = '${NA}') as creator_n,
+      (select count(*)::int from private.notification_outbox where kind = 'challenge_expired' and challenge_id = ${ctx('nexp')}::uuid and user_id = '${NB}') as invitee_n;
+  `],
 );
 
 Object.assign(checks, {
@@ -1297,6 +1353,25 @@ Object.assign(checks, {
     const three = r.find((set) => set[0] && 'title' in set[0] && set[0].title === 'Friend request')[0];
     ok(two.two_arg_sent === true && two.two_arg_no_copy === true, 'two-arg ' + JSON.stringify(two));
     ok(three.title === 'Friend request' && three.body === 'Wanda wants to be friends' && three.url === 'pushupcounter://friends' && three.sent === true, 'three-arg ' + JSON.stringify(three));
+  },
+  'spec: accept and decline notify the other participants': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.accepted_creator === 1 && row.accepted_other === 1 && row.accepted_actor === 0, 'accepted ' + JSON.stringify(row));
+    ok(row.declined_creator === 1 && row.declined_other === 1 && row.declined_actor === 0, 'declined ' + JSON.stringify(row));
+  },
+  'spec: a window reminder still reaches someone who already has reps': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.with_reps === 1 && row.still_open === 1, 'window reminder ' + JSON.stringify(row));
+  },
+  'spec: halfway through a window is measured from the window start': (r) => {
+    const row = r[r.length - 1][0];
+    ok(row.half_n === 2 && row.two_hour_n === 0, 'half window ' + JSON.stringify(row));
+  },
+  'spec: an expired challenge tells the invitee': (r) => {
+    const status = r.find((set) => set[0] && 'challenge_status' in set[0])[0];
+    const row = r.find((set) => set[0] && 'invitee_n' in set[0])[0];
+    ok(status.challenge_status === 'expired', 'status ' + JSON.stringify(status));
+    ok(row.creator_n === 1 && row.invitee_n === 1, 'expired ' + JSON.stringify(row));
   },
 });
 

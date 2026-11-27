@@ -37,7 +37,7 @@ import {
 } from '../../battles/model';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { loadBattleQueue } from '../../battles/uploadQueue';
-import { ChallengeNotifications } from '../../components/NotificationPrompt';
+import { ChallengeNotifications, NotificationOptInBanner } from '../../components/NotificationPrompt';
 import { formatCount, formatDeadline } from '../../progress';
 import {
   Avatar,
@@ -238,6 +238,7 @@ export function ChallengeScreen({
   }, [b, invited, over, isCreator, onHeader, shareLink, run, onClosed]);
 
   const notifications = <ChallengeNotifications justActed={justActed} onConsumed={() => setJustActed(false)} />;
+  const optInBanner = <NotificationOptInBanner style={styles.top} />;
 
   if (b === undefined) {
     return (
@@ -287,6 +288,7 @@ export function ChallengeScreen({
       <View style={styles.root}>
         {notifications}
         <ScrollView contentContainerStyle={styles.content}>
+          {optInBanner}
           <View style={styles.inviteHead}>
             <Avatar name={who} size={72} />
             <Text variant="title2" align="center" style={styles.inviteTitle}>
@@ -337,7 +339,9 @@ export function ChallengeScreen({
     const team = b.kind === 'team' ? teamProgress(b) : null;
     return (
       <View style={styles.root}>
+        {notifications}
         <ScrollView contentContainerStyle={styles.content}>
+          {optInBanner}
           <View style={styles.resultHead}>
             {crowned ? <Icon name="crown" size={22} color={color.label} /> : <View style={styles.crownSpace} />}
             <View style={styles.resultAvatar}>
@@ -400,6 +404,7 @@ export function ChallengeScreen({
     <View style={styles.root}>
       {notifications}
       <ScrollView contentContainerStyle={styles.content}>
+        {optInBanner}
         {justPlayed?.phoneMoved ? <Note title="Set ended" text="Your phone moved." /> : null}
         {cue.showClaimed && justPlayed ? (
           <Note

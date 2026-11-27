@@ -146,11 +146,40 @@ This is the per-set push. It must not fire on every set, and it must only name a
 
 ## Permission sheet
 
-- **Trigger:** Shown once on this phone, right after the first time the person creates, accepts, or joins a challenge, if notification permission is not already granted. It is not shown on an ordinary visit. Settings still has a Notifications row.
+- **Trigger:** Shown once on this phone, while the opt-in state is never-asked, right after the first time the person creates, accepts, or joins a challenge in the app, or right after they join through an invite link and land on that challenge, before their first set. It is not shown on an ordinary visit, and it is not shown if iOS has already denied permission. Settings still has a Notifications row, and a banner covers later soft-declined and iOS-denied states. See [Opt-in flow](#opt-in-flow).
 - **Recipient:** The person using this phone. It is a local sheet, not a push.
-- **Copy:** Title: `Turn on notifications`. Body: `Stay in the loop with your friends and challenges.` Actions: `Turn on notifications` and `Not now`. The system prompt is shown only from this sheet or from Settings, not from the local reminder.
-- **Tap:** Allow or not now, on the sheet.
-- **Frequency:** Once per phone.
+- **Copy:** Title: `Keep up with your friends`. Body: `Stay on top of challenges and scores without opening the app.` Actions: `Turn on notifications` and `Not now`. The system prompt is shown only after they tap Turn on notifications on this sheet, or Turn on on the banner while iOS has not asked yet, or from Settings. It is not shown from the local reminder.
+- **Tap:** Turn on notifications shows the iOS system prompt. Not now, or dismissing the sheet, is a soft decline.
+- **Frequency:** Once per phone. Whichever ask moment comes first is the one that asks.
+
+## Opt-in flow
+
+Approved, as of 27 November 2026, America/New_York. This is the contract for getting more people to enable push notifications. The in-app surfaces use the copy below.
+
+### States
+
+| State | How you get there | What they see |
+| --- | --- | --- |
+| Never asked | iOS permission is still undetermined, and the in-app sheet has not been answered on this phone. | Show the pre-permission sheet at the next ask moment. No banner. |
+| Soft-declined | They tapped Not now on the sheet. iOS has not been asked yet, so permission is still undetermined. | Banner on Today and on the challenge screen, with Turn on. Settings shows Off, the supporting line, and a Turn on button. The sheet does not return. |
+| iOS-denied | They tapped Don't Allow on the iOS prompt, or later turned notifications off in iPhone Settings. | Same banner, with Open Settings, because iOS will not show its prompt again. Settings shows Off, the supporting line, and a Turn on button that opens iPhone Settings. |
+| Granted | iOS permission is allowed. | No sheet and no banner. Settings shows On. |
+
+Ask moments for the sheet, only while the state is never-asked: right after the first time the person creates, accepts, or joins a challenge in the app, and right after they join through an invite link and land on that challenge, before their first set. The sheet is still shown once per phone. Whichever moment comes first is the one that asks; a later invite-link join does not show it again.
+
+Tapping Turn on notifications on the sheet shows the iOS system prompt. Allow moves them to granted and registers the token. Don't Allow moves them to iOS-denied. Tapping Not now, or dismissing the sheet, moves them to soft-declined and does not show the iOS prompt.
+
+The banner is dismissible and is shared across Today and the challenge screen. It is not shown during a set, while the sheet is open, or once permission is granted. Dismissing it hides it for 7 days. After that it can return if they are still soft-declined or iOS-denied. After 3 dismissals on this phone, the banner stops. The Settings row remains the way to turn notifications on.
+
+The banner button depends on the state. In soft-declined, Turn on still shows the iOS system prompt, because iOS has not asked yet. In iOS-denied, Open Settings opens the app's page in iPhone Settings. The Settings Turn on button follows the same split.
+
+### Copy
+
+- **Headline** (sheet and banner): `Keep up with your friends`
+- **Supporting line** (sheet, banner, and the Settings row when Off): `Stay on top of challenges and scores without opening the app.`
+- **Sheet buttons:** `Turn on notifications` and `Not now`
+- **Banner buttons:** `Turn on` (soft-declined) or `Open Settings` (iOS-denied), plus dismiss
+- **Settings:** Notifications shows `On` with a chevron, or `Off` with a `Turn on` button
 
 ## Current gaps and fixes
 
@@ -176,6 +205,6 @@ What happened: Lizzy logged a 4-rep solo set. The old window trigger attached th
 Where the earlier draft of this spec and the code disagreed, they were aligned as follows:
 
 - Challenge results go to accepted or forfeited participants (people with a result), not to invitees who never joined.
-- The permission sheet is shown once, after the first create, accept, or join, and uses the in-app copy above.
+- The permission sheet is shown once, after the first create, accept, or join (including an invite-link join), and uses the opt-in copy in [Opt-in flow](#opt-in-flow).
 
 Still open for a decision: the milestone values and the 30-minute throttle; which kinds wait for quiet hours; the 2-hour no-token expiry; and whether later copy should say someone took the lead (it stays generic for now).

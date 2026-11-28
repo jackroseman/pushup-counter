@@ -1,0 +1,55 @@
+# Copies production data into staging so dev builds can be tested on real-shaped data.
+# Manual only: Actions tab -> "Sync staging from production" -> Run workflow.
+# Production is only read (the Management API read-only query endpoint); staging is
+# emptied and refilled by supabase/staging/sync-from-prod.mjs, which also refuses to run
+# unless the target is a different project whose name contains "staging".
+#
+# What it copies, what it skips and how it stays migration safe: docs/developer-guide.md
+# ("Syncing production data into staging"). The log shows row counts only; this repo is
+# public, so nothing else is ever printed or uploaded as an artifact.
+#
+# Needs: SUPABASE_ACCESS_TOKEN (repo secret), SUPABASE_PROJECT_REF in the "staging"
+# environment (the target), and the repo variable PROD_PROJECT_REF (the source).
+name: Sync staging from production
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only read production and print row counts; write nothing to staging
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-staging
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync (staging)
+    # Never from a branch other than dev or main: the job holds the staging secrets.
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      TARGET_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SOURCE_REF: ${{ vars.PROD_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Copy production into staging
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            node supabase/staging/sync-from-prod.mjs --dry-run
+          else
+            node supabase/staging/sync-from-prod.mjs
+          fi

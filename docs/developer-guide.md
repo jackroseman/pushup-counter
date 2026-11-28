@@ -302,6 +302,40 @@ every Edge Function (`supabase functions deploy --no-verify-jwt --use-api --yes`
 Folders that start with `_` are shared code, not functions. After a deploy it wakes
 `notify` once so the function can register its URL with the database.
 
+### Syncing production data into staging
+
+Dev builds talk to staging, which is nearly empty. To test on real-shaped data, copy
+production into it. Run **Actions → Sync staging from production**
+([`sync-staging.yml`](../.github/workflows/sync-staging.yml)), which is manual only. It is
+free and takes about a minute. Leave `dry_run` on to read production and print row counts;
+turn it off to write. It only runs from `dev` or `main`.
+
+* **Mechanism:** [`supabase/staging/sync-from-prod.mjs`](../supabase/staging/sync-from-prod.mjs)
+  uses the Supabase Management API and the existing `SUPABASE_ACCESS_TOKEN`, with no
+  database password. Production is read through the read-only query endpoint. Staging is
+  emptied and refilled in **one transaction**, so a failure leaves it as it was. Project
+  refs: staging is `SUPABASE_PROJECT_REF` in the `staging` environment, production is the
+  repo variable `PROD_PROJECT_REF`. The script refuses to run if they are the same or the
+  target's name does not contain "staging".
+* **Copied:** profiles, devices, friendships, invite links, challenges, participants,
+  results, sets, reps, traces, goal enrollments, programs, detector configs, and the auth
+  users and identities.
+* **Never copied:** `push_tokens` (staging must never push to a real phone), the
+  notification outbox, `private.server_config` (the staging notify URL), `app_settings`
+  (staging owns its tuning), auth sessions and tokens. The test bot
+  (`supabase/staging/test_bot.sql`) is kept.
+* **Scrubbed:** every user except `@jack` loses email, phone and metadata and gets a made-up
+  Apple subject, so only `@jack` can sign in (with Apple, on a dev build). Usernames and
+  display names are kept. After a sync you sign in again, because sessions are not copied.
+* **Migration safe:** the columns to insert come from staging's catalog, limited to the keys
+  present in production's rows. A column only staging has takes its default; a column only
+  production has is ignored; a table only staging has is left alone. A new `NOT NULL`
+  column without a default fails the load and rolls it back, as it would on production's
+  real rows. Migrations are not replayed, so a backfill inside a new dev migration does not
+  touch copied rows. To rehearse a release, sync first, then apply the pending migrations.
+* **Public repo:** the log shows row counts only. Never add output of row values, SQL or an
+  API response body, and never upload the data as an artifact.
+
 ## Local development and testing
 
 Requirements, the Pushup Dev client, Metro / tunnel, and environment variable

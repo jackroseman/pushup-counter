@@ -37,6 +37,8 @@ function createBackend(options = {}) {
     my_progress: () => (empty ? F.emptyProgress : F.progress),
     my_league: () => (empty ? { ...F.league, total: [], improvement: [] } : F.league),
     my_challenges: (args) => (args && args.p_battle ? F.challenges.filter((c) => c.id === args.p_battle) : empty ? [] : F.challenges),
+    my_open_challenges: () => (empty ? [] : F.openChallenges),
+    my_challenge_record: () => (empty ? { periodFrom: F.now, periodTo: F.now, wins: 0, ties: 0, losses: 0, forfeits: 0, cancelled: 0, expired: 0, declined: 0, friends: [], otherEvents: [] } : F.challengeRecord),
     my_friends: () => (empty ? [] : F.friends),
     search_users: () => F.friends.slice(0, 2),
     friend_challenge_record: () => F.friendRecord,

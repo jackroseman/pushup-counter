@@ -604,6 +604,7 @@ begin
       'windowUnit', s.window_unit,
       'targetReps', s.target_reps
     ) order by case when s.in_action then 0 else 1 end,
+              case when s.needs_response then 0 else 1 end,
               s.ends_at nulls last,
               s.created_at), '[]'::jsonb)
       from shaped s

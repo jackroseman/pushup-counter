@@ -332,7 +332,7 @@ steps.push(
   ['claim: a 60 s set and a 120 s battle', `${as(A)} ${create('ct120', { kind: 'best_set', durationS: 120, deadlineHours: 24 }, [B])} reset role; ${solo('claim-t60b', 4, A, { extra: { timerDurationS: 60 } })}`],
   ['claim: that 60 s set does not fit a 120 s battle (expect ERR)', link('claim-t60b', 4, 'ct120', A, { extra: { timerDurationS: 60 } })],
   ['claim: streak and team are rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'streak', friendIds: [B] })}); reset role;`],
-  ['claim: a total counts solo sets in the window and does not link them', `${as(A)} ${create('cmd', { kind: 'total', window: 'week' }, [B])} reset role; select kind::text kind, window_unit::text window_unit, attempts_allowed is null no_cap, metric is null no_metric, starts_at is not null started from challenges where id=${ctx('cmd')}::uuid; ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('cmd')}::uuid and user_id='${B}'; reset role; select coalesce(valid_reps,0) before_reps, coalesce(attempts_used,0) before_attempts from challenge_standings where challenge_id=${ctx('cmd')}::uuid and user_id='${A}'; ${solo('claim-md1', 10, A)} ${solo('claim-md2', 10, A)} select valid_reps, attempts_used, metric_value from challenge_standings where challenge_id=${ctx('cmd')}::uuid and user_id='${A}'; select challenge_id is null solo from sets where client_set_id='claim-md1'; ${as(B)} select count(*) n from sets where client_set_id='claim-md1'; reset role;`],
+  ['claim: a total counts solo sets in the window and does not link them', `${as(A)} ${create('cmd', { kind: 'total', window: 'week' }, [B])} reset role; select kind::text kind, window_unit::text window_unit, duration_days, attempts_allowed is null no_cap, metric is null no_metric, starts_at is not null started from challenges where id=${ctx('cmd')}::uuid; ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('cmd')}::uuid and user_id='${B}'; reset role; select coalesce(valid_reps,0) before_reps, coalesce(attempts_used,0) before_attempts from challenge_standings where challenge_id=${ctx('cmd')}::uuid and user_id='${A}'; ${solo('claim-md1', 10, A)} ${solo('claim-md2', 10, A)} select valid_reps, attempts_used, metric_value from challenge_standings where challenge_id=${ctx('cmd')}::uuid and user_id='${A}'; select challenge_id is null solo from sets where client_set_id='claim-md1'; ${as(B)} select count(*) n from sets where client_set_id='claim-md1'; reset role;`],
   ['claim: shallow reps still do not count', `${as(A)} ${create('cshallow', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role; ${solo('claim-shallow', 4, A, { bottoms: [0.15, 0.30] })} ${link('claim-shallow', 4, 'cshallow', A, { bottoms: [0.15, 0.30] })} select valid_reps from challenge_standings where challenge_id=${ctx('cshallow')}::uuid and user_id='${A}';`],
   ['claim: a legacy set is uploaded', `${as(A)} select public.submit_set(${q({ id: 'claim-legacy', startedAt: Date.now() - 60000, endedAt: Date.now() - 1000, reps: [{ index: 1, timestamp: Date.now() - 30000, quality: 'good', source: 'proximity', bottomDistance: null, topDistance: null, faceLostAtBottom: false }], calibratedTopDistance: null, depthTracking: false })}) is not null; reset role; ${as(A)} ${create('cleg', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;`],
   ['claim: a legacy set cannot be scored (expect ERR)', `select set_config('request.jwt.claim.sub','',false); set role service_role; select public.submit_set(jsonb_build_object('id','claim-legacy','challengeId', ${ctx('cleg')}, 'userId','${A}','linkFinishedSet', true)); reset role;`],
@@ -367,7 +367,7 @@ Object.assign(checks, {
   },
   'claim: a total counts solo sets in the window and does not link them': (r) => {
     const meta = r.find((x) => x[0] && 'kind' in x[0] && 'window_unit' in x[0])[0];
-    ok(meta.kind === 'total' && meta.window_unit === 'week' && meta.no_cap === true && meta.no_metric === true && meta.started === true, 'window ' + JSON.stringify(meta));
+    ok(meta.kind === 'total' && meta.window_unit == null && Number(meta.duration_days) === 7 && meta.no_cap === true && meta.no_metric === true && meta.started === true, 'window ' + JSON.stringify(meta));
     const before = r.find((x) => x[0] && 'before_reps' in x[0])[0];
     const score = r.find((x) => x[0] && 'metric_value' in x[0])[0];
     ok(Number(score.valid_reps) - Number(before.before_reps) === 20 && Number(score.attempts_used) - Number(before.before_attempts) === 2 && Number(score.metric_value) === Number(score.valid_reps), 'total ' + JSON.stringify({ before, score }));
@@ -1514,5 +1514,162 @@ Object.assign(checks, {
   'invite: deleting the inviter removes the link': (r) => {
     ok(r[1][0].n === 0, 'rows ' + JSON.stringify(r[1]));
     ok(r[2][0].p.status === 'invalid', 'preview ' + JSON.stringify(r[1]));
+  },
+});
+
+
+steps.push(
+  ['open: a 7-day challenge starts at local midnight and stays open until it ends', `
+    ${as(A)} update profiles set time_zone = 'America/New_York' where id = '${A}'; reset role;
+    ${as(A)} ${create('odur', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    select
+      duration_days,
+      window_unit::text as window_unit,
+      (invite_expires_at = ends_at) as invite_until_end,
+      (starts_at = date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York') as from_midnight,
+      (ends_at = starts_at + interval '7 days') as seven_days
+      from challenges where id = ${ctx('odur')}::uuid;
+  `],
+  ['open: a week window maps to 7 days', `
+    ${as(A)} ${create('oweek', { kind: 'total', window: 'week' }, [B])} reset role;
+    select duration_days, window_unit::text as window_unit,
+      (ends_at = starts_at + interval '7 days') as seven_days
+      from challenges where id = ${ctx('oweek')}::uuid;
+  `],
+  ['open: a 3-day length is rejected (expect ERR)', `${as(A)} select create_challenge(${q({ kind: 'total', durationDays: 3, friendIds: [B] })}); reset role;`],
+  ['open: a leading most-reps row stays on the action list', `
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('odur')}::uuid and user_id='${B}'; reset role;
+    ${solo('open-lead-a', 8, A)}
+    ${as(A)} select
+      (select count(*) from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('odur')}) as n,
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('odur')}) as can_do,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('odur')}) as my_turn,
+      (select x->>'statusKey' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('odur')}) as status_key,
+      (select x->>'title' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('odur')}) as title
+    ; reset role;
+  `],
+  ['open: a tie for the lead still lets you add reps', `
+    ${as(A)} ${create('otie', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('otie')}::uuid and user_id='${B}'; reset role;
+    update challenges set starts_at = now(), ends_at = now() + interval '7 days', invite_expires_at = now() + interval '7 days'
+      where id=${ctx('otie')}::uuid;
+    ${solo('open-tie-a', 8, A)}
+    ${solo('open-tie-b', 8, B)}
+    ${placeSet('open-tie-a', 'otie', "interval '1 second'")}
+    ${placeSet('open-tie-b', 'otie', "interval '1 second'")}
+    ${as(A)} select
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('otie')}) as can_do,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('otie')}) as my_turn,
+      (select x->>'statusKey' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('otie')}) as status_key,
+      (select (x->>'myValidReps')::int from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('otie')}) as a_reps,
+      (select (x->>'leaderReps')::int from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('otie')}) as leader_reps
+    ; reset role;
+  `],
+  ['open: a team goal in the window is an action', `
+    ${as(A)} ${create('oteam', { kind: 'team', durationDays: 7, targetReps: 1000 }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('oteam')}::uuid and user_id='${B}'; reset role;
+    ${as(A)} select
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oteam')}) as can_do,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oteam')}) as my_turn,
+      (select x->>'statusKey' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oteam')}) as status_key,
+      (select x->>'ctaType' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oteam')}) as cta_type,
+      (select (x->>'sortRank')::int from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oteam')}) as sort_rank
+    ; reset role;
+  `],
+  ['open: an invite to accept is an action even without a set', `
+    ${as(A)} ${create('oinv', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;
+    ${as(B)} select
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as can_do,
+      (select x->>'needsResponse' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as needs,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as my_turn,
+      (select x->>'ctaType' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as cta_type,
+      (select x->>'statusKey' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as status_key
+    ; reset role;
+  `],
+  ['open: after a best set you wait on the other person', `
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('oinv')}::uuid and user_id='${B}'; reset role;
+    ${link('open-best-a', 6, 'oinv', A)}
+    ${as(A)} select
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as can_do,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as my_turn,
+      (select x->>'statusKey' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('oinv')}) as status_key
+    ; reset role;
+  `],
+  ['open: leave forfeits; cancel is only while pending', `
+    ${as(A)} ${create('oleave', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='accepted' where challenge_id=${ctx('oleave')}::uuid and user_id='${B}'; reset role;
+    ${as(B)} select leave_challenge(${ctx('oleave')}::uuid); reset role;
+    select status as b_status from challenge_participants where challenge_id=${ctx('oleave')}::uuid and user_id='${B}';
+    ${as(A)} ${create('opend', { kind: 'best_set' }, [B])} reset role;
+    ${as(A)} select cancel_challenge(${ctx('opend')}::uuid); reset role;
+    select status as cancelled_status from challenges where id=${ctx('opend')}::uuid;
+  `],
+  ['open: cancel after it starts is rejected (expect ERR)', `
+    ${as(A)} select cancel_challenge(${ctx('oleave')}::uuid); reset role;
+  `],
+  ['open: declined invites are omitted from the record', `
+    ${as(A)} ${create('odecl', { kind: 'best_set' }, [B])} reset role;
+    ${as(B)} update challenge_participants set status='declined' where challenge_id=${ctx('odecl')}::uuid and user_id='${B}'; reset role;
+    ${as(A)} select
+      (my_challenge_record()->>'declined')::int as declined,
+      (select count(*) from jsonb_array_elements(coalesce(my_challenge_record()->'friends', '[]'::jsonb)) f
+        where f->>'userId' = '${B}' and (f->>'lastOutcome') = 'declined') as declined_friend_rows
+    ; reset role;
+    select count(*) as b_declined
+      from private.challenge_record_events e
+     where e.challenge_id = ${ctx('odecl')}::uuid and e.user_id = '${B}' and e.outcome = 'declined';
+  `],
+  ['open: friend record still reports a last-30-days score', `
+    ${as(A)} select
+      (friend_challenge_record('${B}')->>'played')::int as played,
+      jsonb_typeof(friend_challenge_record('${B}')->'recent') as recent_type,
+      friend_challenge_record('${B}') ? 'wins' as has_wins,
+      friend_challenge_record('${B}') ? 'periodFrom' as has_period
+    ; reset role;
+  `],
+);
+Object.assign(checks, {
+  'open: a 7-day challenge starts at local midnight and stays open until it ends': (r) => {
+    const x = r[0][0];
+    ok(Number(x.duration_days) === 7 && x.window_unit == null && x.invite_until_end === true && x.from_midnight === true && x.seven_days === true, 'duration ' + JSON.stringify(x));
+  },
+  'open: a week window maps to 7 days': (r) => {
+    const x = r[0][0];
+    ok(Number(x.duration_days) === 7 && x.window_unit == null && x.seven_days === true, 'week map ' + JSON.stringify(x));
+  },
+  'open: a leading most-reps row stays on the action list': (r) => {
+    const x = r.find((row) => row[0] && 'can_do' in row[0])[0];
+    ok(Number(x.n) === 1 && x.can_do === 'true' && x.my_turn === 'true' && x.status_key === 'you_lead' && x.title === 'Most reps · 7 days', 'lead ' + JSON.stringify(x));
+  },
+  'open: a tie for the lead still lets you add reps': (r) => {
+    const x = r.find((row) => row[0] && 'can_do' in row[0])[0];
+    ok(Number(x.a_reps) === 8 && Number(x.leader_reps) === 8 && x.can_do === 'true' && x.my_turn === 'true' && x.status_key === 'tied', 'tie ' + JSON.stringify(x));
+  },
+  'open: a team goal in the window is an action': (r) => {
+    const x = r.find((row) => row[0] && 'can_do' in row[0])[0];
+    ok(x.can_do === 'true' && x.my_turn === 'true' && x.status_key === 'contribute' && x.cta_type === 'start_set' && Number(x.sort_rank) === 0, 'team ' + JSON.stringify(x));
+  },
+  'open: an invite to accept is an action even without a set': (r) => {
+    const x = r.find((row) => row[0] && 'can_do' in row[0])[0];
+    ok(x.can_do === 'false' && x.needs === 'true' && x.my_turn === 'true' && x.cta_type === 'accept_decline' && x.status_key === 'invited_you', 'invite ' + JSON.stringify(x));
+  },
+  'open: after a best set you wait on the other person': (r) => {
+    const x = r.find((row) => row[0] && 'can_do' in row[0])[0];
+    ok(x.can_do === 'false' && x.my_turn === 'false' && x.status_key === 'waiting_on', 'wait ' + JSON.stringify(x));
+  },
+  'open: leave forfeits; cancel is only while pending': (r) => {
+    const left = r.find((x) => x[0] && 'b_status' in x[0])[0];
+    const st = r.find((x) => x[0] && 'cancelled_status' in x[0])[0];
+    ok(left.b_status === 'forfeited', 'leave ' + JSON.stringify(left));
+    ok(st.cancelled_status === 'cancelled', 'cancel ' + JSON.stringify(st));
+  },
+  'open: declined invites are omitted from the record': (r) => {
+    const rec = r.find((row) => row[0] && 'declined' in row[0])[0];
+    const ev = r.find((row) => row[0] && 'b_declined' in row[0])[0];
+    ok(Number(rec.declined) === 0 && Number(rec.declined_friend_rows) === 0 && Number(ev.b_declined) === 1, 'omit ' + JSON.stringify({ rec, ev }));
+  },
+  'open: friend record still reports a last-30-days score': (r) => {
+    const x = r.find((row) => row[0] && 'played' in row[0])[0];
+    ok(Number(x.played) >= 0 && x.recent_type === 'array' && x.has_wins === true && x.has_period === true, 'friend rec ' + JSON.stringify(x));
   },
 });

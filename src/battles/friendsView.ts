@@ -1,6 +1,7 @@
 import { formatCount, formatShortDate } from '../progress';
 import { kindLabel } from './challengeView';
-import { Battle, canPlay, canRespond, FriendRecord, isOpen } from './model';
+import type { OpenChallenge } from './openChallenges';
+import { Battle, FriendRecord, isOpen } from './model';
 
 /** Friends row subtitle (plan §5 #12, v1): this week's reps from the league board. */
 export function friendRowSubtitle(reps: number | null | undefined): string {
@@ -56,18 +57,32 @@ export function friendChallengeRows(
   rec: FriendRecord | null,
   now: number,
   timeZone: string,
+  openRows: readonly OpenChallenge[] = [],
 ): FriendChallengeRow[] {
-  const open = battles
-    .filter((b) => isOpen(b) && b.participants.some((p) => p.userId === friendId && p.status !== 'declined' && p.status !== 'expired'))
-    .map((b) => ({
-      challengeId: b.id,
-      title: kindLabel(b),
-      status: canRespond(b, now) ? 'Invite' : canPlay(b, now) ? 'Your move' : 'In progress',
+  const fromOpen = openRows
+    .filter((r) => r.people.some((p) => p.userId === friendId && p.status !== 'declined' && p.status !== 'expired'))
+    .map((r) => ({
+      challengeId: r.challengeId,
+      title: r.title,
+      status: r.isMyTurn ? (r.needsResponse ? 'Invite' : 'Your turn') : r.statusLabel || 'Waiting',
     }));
-  const done = (rec?.recent ?? []).map((r) => ({
-    challengeId: r.challengeId,
-    title: kindLabel(r),
-    status: `${OUTCOME_WORD[recentOutcome(r)]} · ${formatShortDate(r.finishedAt, timeZone, now)}`,
-  }));
+  const open = fromOpen.length
+    ? fromOpen
+    : battles
+        .filter((b) => isOpen(b) && b.participants.some((p) => p.userId === friendId && p.status !== 'declined' && p.status !== 'expired'))
+        .map((b) => ({
+          challengeId: b.id,
+          title: kindLabel(b),
+          status: 'In progress',
+        }));
+  const done = (rec?.finished ?? rec?.recent ?? []).map((r) => {
+    const finishedAt = r.finishedAt;
+    const label = 'outcomeLabel' in r && r.outcomeLabel ? r.outcomeLabel : OUTCOME_WORD[recentOutcome(r as FriendRecord['recent'][number])];
+    return {
+      challengeId: r.challengeId,
+      title: 'title' in r && r.title ? r.title : kindLabel(r),
+      status: `${label} · ${formatShortDate(finishedAt, timeZone, now)}`,
+    };
+  });
   return [...open, ...done];
 }

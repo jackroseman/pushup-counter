@@ -1,10 +1,11 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, ProgressBar, SectionHeader, StatTile, TabHeader, Text, color, gutter, radius } from '../ui';
+import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, ProgressBar, SectionHeader, Segmented, StatTile, TabHeader, Text, color, gutter, radius, space } from '../ui';
 import { formatCount } from '../progress';
 import { formatSetDateTime } from '../progress/format';
 import type { YouModel, YouRecentRow } from '../progress/you';
+import { recordIsEmpty, type MyChallengeRecord } from '../battles/openChallenges';
 
 export interface YouIdentity {
   name: string;
@@ -26,6 +27,10 @@ export function YouScreen({
   onStartSet,
   onAllSets,
   onOpenSet,
+  segment = 'sets',
+  onSegment,
+  challengeRecord,
+  onOpenChallenge,
 }: {
   model: YouModel;
   /** Signed in with a username. */
@@ -42,6 +47,10 @@ export function YouScreen({
   onStartSet: () => void;
   onAllSets: () => void;
   onOpenSet: (id: string) => void;
+  segment?: 'sets' | 'challenges';
+  onSegment?: (key: 'sets' | 'challenges') => void;
+  challengeRecord?: MyChallengeRecord | null;
+  onOpenChallenge?: (id: string) => void;
 }) {
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
@@ -77,7 +86,21 @@ export function YouScreen({
       ) : null}
       {pickUsername ? <PromptCard avatar title="Pick a username" subtitle="So friends can find you" onPress={pickUsername} /> : null}
 
-      {model.empty ? (
+      {identity || challengeRecord !== undefined ? (
+        <Segmented
+          options={[
+            { key: 'sets', label: 'Sets' },
+            { key: 'challenges', label: 'Challenges' },
+          ]}
+          value={segment}
+          onChange={(key) => onSegment?.(key)}
+          style={styles.segment}
+        />
+      ) : null}
+
+      {segment === 'challenges' ? (
+        <ChallengeStats rec={challengeRecord ?? null} onOpen={onOpenChallenge} />
+      ) : model.empty ? (
         <Card padding={20} style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
             <Icon name="trophy" size={26} color={color.label} />
@@ -103,9 +126,9 @@ export function YouScreen({
         </View>
       )}
 
-      {model.showGoalRow ? <PromptCard icon="target" title="Set a daily goal" subtitle="Track streaks and a daily target" onPress={onSetGoal} /> : null}
+      {segment === 'sets' && model.showGoalRow ? <PromptCard icon="target" title="Set a daily goal" subtitle="Track streaks and a daily target" onPress={onSetGoal} /> : null}
 
-      {model.milestone ? (
+      {segment === 'sets' && model.milestone ? (
         <Card padding={16} style={styles.milestone}>
           <View
             style={styles.milestoneHead}
@@ -126,7 +149,7 @@ export function YouScreen({
         </Card>
       ) : null}
 
-      {model.recent.length ? (
+      {segment === 'sets' && model.recent.length ? (
         <>
           <SectionHeader title="Recent sets" action="See all" onAction={onAllSets} />
           <ListGroup>
@@ -197,6 +220,81 @@ function PromptCard({
   );
 }
 
+
+
+function ChallengeStats({ rec, onOpen }: { rec: MyChallengeRecord | null; onOpen?: (id: string) => void }) {
+  if (recordIsEmpty(rec)) {
+    return (
+      <Card padding={20} style={styles.emptyCard}>
+        <View style={styles.emptyIcon}>
+          <Icon name="bolt" size={26} color={color.label} />
+        </View>
+        <Text variant="title2" align="center" style={styles.emptyTitle} accessibilityRole="header">
+          No challenges yet
+        </Text>
+        <Text variant="subhead" align="center" style={styles.emptyText}>
+          Wins, ties and losses from the last 30 days will show up here.
+        </Text>
+      </Card>
+    );
+  }
+  if (!rec) return null;
+  return (
+    <>
+      <View style={styles.wtl} accessible accessibilityLabel={`${rec.wins} wins, ${rec.ties} ties, ${rec.losses} losses`}>
+        <View style={styles.wtlItem}>
+          <Text variant="hero" size={34}>{String(rec.wins)}</Text>
+          <Text variant="footnote">Wins</Text>
+        </View>
+        <View style={styles.wtlItem}>
+          <Text variant="hero" size={34} tone="secondary">{String(rec.ties)}</Text>
+          <Text variant="footnote">Ties</Text>
+        </View>
+        <View style={styles.wtlItem}>
+          <Text variant="hero" size={34} tone="secondary">{String(rec.losses)}</Text>
+          <Text variant="footnote">Losses</Text>
+        </View>
+      </View>
+      {rec.forfeits > 0 ? (
+        <Text variant="footnote" align="center" style={styles.forfeitNote}>
+          {rec.forfeits === 1 ? '1 forfeit' : `${rec.forfeits} forfeits`}
+        </Text>
+      ) : null}
+      {rec.friends.length ? (
+        <>
+          <SectionHeader title="Friends" />
+          <ListGroup>
+            {rec.friends.map((f) => (
+              <ListRow
+                key={f.userId}
+                title={f.displayName || f.username}
+                subtitle={`${f.wins}–${f.ties}–${f.losses}`}
+                chevron={false}
+              />
+            ))}
+          </ListGroup>
+        </>
+      ) : null}
+      {rec.otherEvents.length ? (
+        <>
+          <SectionHeader title="Other" />
+          <ListGroup>
+            {rec.otherEvents.map((e) => (
+              <ListRow
+                key={e.challengeId}
+                title={e.title}
+                subtitle={e.outcomeLabel}
+                chevron
+                onPress={onOpen ? () => onOpen(e.challengeId) : undefined}
+              />
+            ))}
+          </ListGroup>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
   content: { paddingHorizontal: gutter, paddingBottom: 32 },
@@ -226,6 +324,10 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8 },
   promptTile: { width: 30, height: 30, borderRadius: radius.tile, alignItems: 'center', justifyContent: 'center', backgroundColor: color.elevated },
   promptTitleSmall: { fontSize: 15 },
+  segment: { marginBottom: space.md },
+  wtl: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: space.sm },
+  wtlItem: { alignItems: 'center', minWidth: 72 },
+  forfeitNote: { marginBottom: space.md },
   emptyCard: { marginTop: 12, paddingTop: 26, paddingBottom: 26, alignItems: 'center' },
   emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: color.elevated, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 14 },

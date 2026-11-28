@@ -44,6 +44,7 @@ export interface Battle {
   mode: 'async' | 'live';
   kind: ChallengeKind;
   windowUnit: ChallengeWindow | null;
+  durationDays?: number | null;
   metric: BattleMetric | null;
   status: BattleStatus;
   durationS: number | null;
@@ -58,6 +59,8 @@ export interface Battle {
   finishedAt: string | null;
   createdBy: string | null;
   locked: boolean;
+  myOutcome?: string | null;
+  myOutcomeLabel?: string | null;
   participants: Participant[];
   inviteLinks: InviteLink[];
 }
@@ -76,6 +79,25 @@ export interface FriendRecord {
   won: number;
   drawn: number;
   lost: number;
+  wins?: number;
+  ties?: number;
+  losses?: number;
+  forfeits?: number;
+  cancelled?: number;
+  expired?: number;
+  periodFrom?: string;
+  periodTo?: string;
+  finished?: {
+    challengeId: string;
+    kind: ChallengeKind;
+    title: string;
+    outcome: string;
+    outcomeLabel: string;
+    finishedAt: string;
+    myReps: number | null;
+    theirReps: number | null;
+    sortRank: number;
+  }[];
   recent: {
     challengeId: string;
     finishedAt: string;
@@ -120,9 +142,14 @@ export function streakDayCount(b: { startsAt?: string | null; endsAt?: string | 
   return Math.max(1, Math.round(ms / 86_400_000));
 }
 
+export function durationLabel(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
 export function battleTitle(b: {
   kind: ChallengeKind;
   windowUnit?: ChallengeWindow | null;
+  durationDays?: number | null;
   durationS: number | null;
   targetReps?: number | null;
   startsAt?: string | null;
@@ -130,6 +157,7 @@ export function battleTitle(b: {
 }): string {
   if (b.kind === 'best_set') return b.durationS ? `Best set · ${b.durationS} s` : 'Best set';
   if (b.kind === 'total') {
+    if (b.durationDays) return `Most reps · ${durationLabel(b.durationDays)}`;
     if (b.windowUnit === 'day') return 'Most reps today';
     if (b.windowUnit === 'week') return 'Most reps this week';
     if (b.windowUnit === 'month') return 'Most reps this month';
@@ -139,7 +167,13 @@ export function battleTitle(b: {
     const days = streakDayCount(b);
     return days ? `Streak · ${days} day${days === 1 ? '' : 's'}` : 'Streak face-off';
   }
-  if (b.kind === 'team') return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
+  if (b.kind === 'team') {
+    if (b.durationDays) return `Team · ${durationLabel(b.durationDays)}`;
+    if (b.windowUnit === 'day') return 'Team today';
+    if (b.windowUnit === 'week') return 'Team week';
+    if (b.windowUnit === 'month') return 'Team month';
+    return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
+  }
   return 'Challenge';
 }
 
@@ -273,6 +307,9 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('cannot use a finished set')) return "A live challenge can't use a set you already finished.";
   if (m.includes('cannot be scored')) return "That set can't be used in a challenge.";
   if (m.includes('was not linked')) return "That set wasn't added to the challenge.";
+  if (m.includes('cannot leave')) return "You can't leave this challenge.";
+  if (m.includes('cannot cancel')) return "This challenge can't be cancelled.";
+  if (m.includes('length must be')) return 'Pick 1, 7, 14, or 30 days.';
   if (m.includes('deadline')) return 'The deadline has passed.';
   if (m.includes('network') || m.includes('fetch')) return "Couldn't reach the server. Check your connection.";
   return message || 'Something went wrong.';

@@ -70,7 +70,7 @@ describe('friend page (frame 27, E14)', () => {
     } as unknown as Battle;
     const other = { ...open, id: 'other', participants: [open.participants[0], { ...open.participants[1], userId: 'jack' }] } as Battle;
     expect(friendChallengeRows('brett', [open, other], record(rows.slice(0, 2)), NOW, TZ)).toEqual([
-      { challengeId: 'open', title: 'Best set', status: 'Your move' },
+      { challengeId: 'open', title: 'Best set', status: 'In progress' },
       { challengeId: 'a', title: 'Best set', status: 'Won · Nov 16' },
       { challengeId: 'b', title: 'Most reps', status: 'Lost · Nov 9' },
     ]);

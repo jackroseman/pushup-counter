@@ -204,6 +204,7 @@ export function finishedTitle(b: Battle): string {
   const name = b.kind === 'team' || b.kind === 'streak' ? challengeName(b) : kindLabel(b);
   if (b.status === 'cancelled') return `Cancelled · ${name}`;
   if (b.status === 'expired') return `Ended early · ${name}`;
+  if (b.myOutcomeLabel) return `${b.myOutcomeLabel} · ${name}`;
   const result = resultOf(b);
   return `${result.short} · ${name}`;
 }
@@ -332,9 +333,10 @@ export function rematchParams(b: Battle): { friendIds: string[]; offer: Challeng
   const friendIds = b.participants.filter((p) => !p.isMe && p.status !== 'declined' && p.status !== 'expired').map((p) => p.userId);
   let offer: ChallengeOffer;
   if (b.kind === 'best_set') offer = { kind: 'best_set', durationS: b.durationS };
-  else if (b.kind === 'total')
-    offer = { kind: 'total', window: b.windowUnit === 'day' || b.windowUnit === 'month' ? b.windowUnit : 'week' };
-  else offer = { kind: b.kind };
+  else if (b.kind === 'total' || b.kind === 'team') {
+    const days = (b.durationDays ?? (b.windowUnit === 'day' ? 1 : b.windowUnit === 'month' ? 30 : 7)) as 1 | 7 | 14 | 30;
+    offer = { kind: b.kind, durationDays: days };
+  } else offer = { kind: b.kind };
   return { friendIds, offer };
 }
 

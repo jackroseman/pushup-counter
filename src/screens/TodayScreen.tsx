@@ -3,6 +3,8 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Avatar, AvatarStack, Button, Card, Icon, Ring, RollingNumber, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
 import { color, gutter, radius } from '../ui/tokens';
+import { todayActionRows, type OpenChallenge } from '../battles/openChallenges';
+import { YourTurnList } from './compete/YourTurnList';
 import { heroLabel, type TodayChallengeCard, type TodayHero, type TodayView } from '../ui/models/today';
 
 /** A ring at 0 still shows its start as a dot (E1, E3). */
@@ -22,6 +24,8 @@ export function TodayScreen({
   onNewChallenge,
   onInvite,
   onHowItWorks,
+  onSeeAll,
+  openRows,
   optInBanner,
   active = true,
 }: {
@@ -41,6 +45,8 @@ export function TodayScreen({
   onNewChallenge: () => void;
   onInvite: () => void;
   onHowItWorks: () => void;
+  onSeeAll?: () => void;
+  openRows?: OpenChallenge[] | null;
   /** Soft-nudge to turn on notifications, after Not now or an iOS denial. */
   optInBanner?: React.ReactNode;
   /** False while Today is behind another screen: the ring and count wait to animate until it is back. */
@@ -111,15 +117,33 @@ export function TodayScreen({
         </Card>
       ) : null}
 
-      {view.challenge ? (
-        <ChallengeRow
-          card={view.challenge}
-          first={!view.league}
-          onChallenge={onChallenge}
-          onPlay={onPlay}
-          onNewChallenge={onNewChallenge}
-        />
-      ) : null}
+      {(() => {
+        const today = todayActionRows(openRows ?? []);
+        if (today.rows.length > 0) {
+          return (
+            <YourTurnList
+              rows={openRows ?? []}
+              cap={3}
+              seeAll={today.seeAll}
+              showWaiting={false}
+              onOpen={onChallenge}
+              onSeeAll={onSeeAll}
+            />
+          );
+        }
+        if (view.challenge) {
+          return (
+            <ChallengeRow
+              card={view.challenge}
+              first={!view.league}
+              onChallenge={onChallenge}
+              onPlay={onPlay}
+              onNewChallenge={onNewChallenge}
+            />
+          );
+        }
+        return null;
+      })()}
 
       {view.betterWithFriends ? (
         <Card padding={0} style={view.league || view.challenge ? styles.card : styles.firstCard}>

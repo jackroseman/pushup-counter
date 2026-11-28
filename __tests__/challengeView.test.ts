@@ -172,7 +172,7 @@ describe('results (frame 25)', () => {
       status: 'completed',
       participants: [you(), person({ userId: 'jack' }), person({ userId: 'tara', status: 'declined' })],
     });
-    expect(rematchParams(b)).toEqual({ friendIds: ['jack'], offer: { kind: 'total', window: 'day' } });
+    expect(rematchParams(b)).toEqual({ friendIds: ['jack'], offer: { kind: 'total', durationDays: 1 } });
     expect(rematchParams(battle({ durationS: 90, participants: [you(), person({ userId: 'jack' })] }))).toEqual({
       friendIds: ['jack'],
       offer: { kind: 'best_set', durationS: 90 },

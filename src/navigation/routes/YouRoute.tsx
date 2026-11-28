@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { YouScreen } from '../../screens/YouScreen';
+import { supabase } from '../../backend/supabase';
+import { api } from '../../battles/api';
+import type { MyChallengeRecord } from '../../battles/openChallenges';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { isAppleSignInAvailable, signInWithApple } from '../../backend/auth';
@@ -15,19 +18,26 @@ import { Frame } from '../frame';
 import type { TabProps } from '../types';
 import { useFocusNow } from './useFocusNow';
 
-export function YouRoute({ navigation }: TabProps<'You'>) {
+export function YouRoute({ navigation, route }: TabProps<'You'>) {
   const { enrollments, remote, refreshRemote } = useAppState();
   const { configured, session } = useBackend();
   const { profile } = useIdentity();
   const [records, setRecords] = useState<SessionRecord[]>([]);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
+  const [challengeRecord, setChallengeRecord] = useState<MyChallengeRecord | null>(null);
+  const segment = route.params?.segment === 'challenges' ? 'challenges' : 'sets';
   const reload = useCallback(() => {
     refreshRemote();
     historyStore
       .load()
       .then(setRecords)
       .catch(() => {});
+    if (supabase) {
+      api.myChallengeRecord(supabase).then((r) => {
+        if (r.ok) setChallengeRecord(r.data);
+      });
+    }
   }, [refreshRemote]);
   useEffect(() => {
     reload();
@@ -83,6 +93,10 @@ export function YouRoute({ navigation }: TabProps<'You'>) {
         onSetGoal={() => navigation.navigate('GoalSetup')}
         onStartSet={() => navigation.navigate('Session')}
         onAllSets={() => navigation.navigate('AllSets')}
+        segment={segment}
+        onSegment={(key) => navigation.setParams({ segment: key })}
+        challengeRecord={challengeRecord}
+        onOpenChallenge={(id) => navigation.navigate('Battle', { challengeId: id })}
         onOpenSet={(id) => {
           const record = records.find((r) => r.id === id);
           if (record) navigation.navigate('Summary', { record, from: 'history' });

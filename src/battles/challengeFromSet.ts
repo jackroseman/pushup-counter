@@ -7,14 +7,16 @@
  */
 export type ChallengeOffer =
   | { kind: 'best_set'; durationS: number | null }
-  | { kind: 'total'; window: 'day' | 'week' | 'month' }
+  | { kind: 'total'; durationDays: 1 | 7 | 14 | 30 }
+  | { kind: 'team'; durationDays: 1 | 7 | 14 | 30 }
   | { kind: 'streak' }
   | { kind: 'team' };
 
 const TOTALS: ChallengeOffer[] = [
-  { kind: 'total', window: 'day' },
-  { kind: 'total', window: 'week' },
-  { kind: 'total', window: 'month' },
+  { kind: 'total', durationDays: 1 },
+  { kind: 'total', durationDays: 7 },
+  { kind: 'total', durationDays: 14 },
+  { kind: 'total', durationDays: 30 },
 ];
 
 const TOGETHER: ChallengeOffer[] = [{ kind: 'streak' }, { kind: 'team' }];

@@ -4,8 +4,9 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } fro
 import { fetchMyLeague } from '../../backend/leagueClient';
 import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
-import { friendBestSet, friendChallengeRows, headToHeadRecord } from '../../battles/friendsView';
+import { friendBestSet, friendChallengeRows } from '../../battles/friendsView';
 import { Battle, Friend, FriendRecord, friendlyError, personName } from '../../battles/model';
+import type { OpenChallenge } from '../../battles/openChallenges';
 import { formatCount } from '../../progress';
 import { Avatar, Button, Card, Icon, ListGroup, SectionHeader, Text, color, gutter, space } from '../../ui';
 
@@ -31,6 +32,7 @@ export function FriendScreen({
   const name = personName(friend);
   const [rec, setRec] = useState<FriendRecord | null>(null);
   const [battles, setBattles] = useState<Battle[]>([]);
+  const [open, setOpen] = useState<OpenChallenge[]>([]);
   const [week, setWeek] = useState<number | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
@@ -39,6 +41,7 @@ export function FriendScreen({
     if (!supabase) return;
     api.friendRecord(supabase, friend.userId).then((r) => (r.ok ? setRec(r.data) : setError(friendlyError(r.message))));
     api.myBattles(supabase).then((r) => r.ok && setBattles(r.data ?? []));
+    api.myOpenChallenges(supabase).then((r) => r.ok && setOpen(r.data ?? []));
     fetchMyLeague(supabase)
       .then((board) => setWeek(board.total.find((row) => row.userId === friend.userId)?.reps ?? null))
       .catch(() => setWeek(null));
@@ -76,8 +79,12 @@ export function FriendScreen({
     ]);
   }, [friend.userId, name, onHeader, leave]);
 
-  const rows = useMemo(() => friendChallengeRows(friend.userId, battles, rec, now, timeZone()), [friend.userId, battles, rec, now]);
-  const record = rec ? headToHeadRecord(rec) : null;
+  const rows = useMemo(() => friendChallengeRows(friend.userId, battles, rec, now, timeZone(), open), [friend.userId, battles, rec, now, open]);
+  const wins = rec?.wins ?? rec?.won ?? 0;
+  const ties = rec?.ties ?? rec?.drawn ?? 0;
+  const losses = rec?.losses ?? rec?.lost ?? 0;
+  const forfeits = rec?.forfeits ?? 0;
+  const together = wins + ties + losses + forfeits;
   const best = friendBestSet(rec);
 
   return (
@@ -103,26 +110,38 @@ export function FriendScreen({
         ) : null}
         {!rec && !error ? <ActivityIndicator style={styles.loading} color={color.secondary} /> : null}
 
-        {rec && record && record.together > 0 ? (
+        {rec && together > 0 ? (
           <Card padding={0} style={styles.record}>
             <View style={styles.recordRow}>
-              <View style={styles.recordSide} accessible accessibilityLabel={`You won ${record.youWon}`}>
+              <View style={styles.recordSide} accessible accessibilityLabel={`${wins} wins`}>
                 <Text variant="hero" size={34}>
-                  {String(record.youWon)}
+                  {String(wins)}
                 </Text>
-                <Text variant="footnote">You won</Text>
+                <Text variant="footnote">Wins</Text>
               </View>
               <View style={styles.divider} />
-              <View style={styles.recordSide} accessible accessibilityLabel={`${name} won ${record.theyWon}`}>
+              <View style={styles.recordSide} accessible accessibilityLabel={`${ties} ties`}>
                 <Text variant="hero" size={34} tone="secondary">
-                  {String(record.theyWon)}
+                  {String(ties)}
                 </Text>
-                <Text variant="footnote" numberOfLines={1}>{`${name} won`}</Text>
+                <Text variant="footnote">Ties</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.recordSide} accessible accessibilityLabel={`${losses} losses`}>
+                <Text variant="hero" size={34} tone="secondary">
+                  {String(losses)}
+                </Text>
+                <Text variant="footnote">Losses</Text>
               </View>
             </View>
+            {forfeits > 0 ? (
+              <Text variant="footnote" align="center" style={styles.forfeitNote}>
+                {forfeits === 1 ? '1 forfeit' : `${forfeits} forfeits`}
+              </Text>
+            ) : null}
           </Card>
         ) : null}
-        {rec && record && record.together === 0 && rows.length === 0 ? (
+        {rec && together === 0 && rows.length === 0 ? (
           <Card padding={0} style={styles.record}>
             <View style={styles.none}>
               <Text variant="headline" align="center">
@@ -193,6 +212,7 @@ const styles = StyleSheet.create({
   recordSide: { alignItems: 'center', flex: 1 },
   divider: { width: StyleSheet.hairlineWidth, backgroundColor: color.separator },
   none: { paddingVertical: 22, paddingHorizontal: space.md },
+  forfeitNote: { paddingBottom: space.sm },
   noneLine: { marginTop: space.xxs },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, minHeight: 52 },
   grow: { flex: 1, minWidth: 0 },

@@ -8,6 +8,7 @@ import { supabase } from '../../backend/supabase';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { api } from '../../battles/api';
+import type { OpenChallenge } from '../../battles/openChallenges';
 import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
 import {
   canAddReps,
@@ -112,6 +113,7 @@ export function ChallengeScreen({
   const [queued, setQueued] = useState<{ pending: boolean; failed: string | null }>({ pending: false, failed: null });
   const [justActed, setJustActed] = useState(!!promptNotifications);
   const [now, setNow] = useState(() => Date.now());
+  const [openRow, setOpenRow] = useState<OpenChallenge | null>(null);
   const shared = useRef(false);
   const loadSeq = useRef(0);
   const inFlight = useRef(0);
@@ -133,9 +135,10 @@ export function ChallengeScreen({
         pending: q.pending.some((x) => x.challengeId === battleId),
         failed: q.failed.filter((x) => x.challengeId === battleId).pop()?.error ?? null,
       });
-      const r = await api.battle(supabase, battleId);
+      const [r, o] = await Promise.all([api.battle(supabase, battleId), api.myOpenChallenges(supabase)]);
       if (ticket !== loadSeq.current) return;
       setNow(Date.now());
+      if (o.ok) setOpenRow((o.data ?? []).find((row) => row.challengeId === battleId) ?? null);
       if (r.ok) {
         setB(r.data);
         setError(null);
@@ -209,7 +212,7 @@ export function ChallengeScreen({
   }, [share, b, profile?.id, shareLink]);
 
   // Header: "Invite" while answering, "Result" once over, else the kind. ••• for the creator's actions.
-  const invited = !!b && canRespond(b, now);
+  const invited = !!b && (openRow?.needsResponse ?? canRespond(b, now));
   const over = !!b && !isOpen(b);
   const isCreator = !!b && b.createdBy === profile?.id;
   useLayoutEffect(() => {
@@ -220,6 +223,8 @@ export function ChallengeScreen({
       for (const link of b.inviteLinks) {
         menu.push({ label: 'Turn off invite link', onPress: () => run(() => api.revokeInviteLink(supabase!, link.token)) });
       }
+    }
+    if (isCreator && b.status === 'pending') {
       menu.push({
         label: 'Cancel challenge',
         destructive: true,
@@ -233,9 +238,23 @@ export function ChallengeScreen({
             },
           ]),
       });
+    } else if (me(b)?.status === 'accepted' && isOpen(b)) {
+      menu.push({
+        label: 'Leave challenge',
+        destructive: true,
+        onPress: () =>
+          Alert.alert('Leave this challenge?', 'Your score will count as a forfeit.', [
+            { text: 'Stay', style: 'cancel' },
+            {
+              text: 'Leave',
+              style: 'destructive',
+              onPress: async () => (await run(() => api.leaveBattle(supabase!, b.id))) && onClosed(),
+            },
+          ]),
+      });
     }
     onHeader({ title: invited ? 'Invite' : over ? 'Result' : kindLabel(b), menu });
-  }, [b, invited, over, isCreator, onHeader, shareLink, run, onClosed]);
+  }, [b, invited, over, isCreator, onHeader, shareLink, run, onClosed, openRow]);
 
   const notifications = <ChallengeNotifications justActed={justActed} onConsumed={() => setJustActed(false)} />;
   const optInBanner = <NotificationOptInBanner style={styles.top} />;
@@ -334,7 +353,7 @@ export function ChallengeScreen({
     const completed = b.status === 'completed';
     const showcase = result.winner ?? mine;
     const crowned = completed && (result.kind === 'won' || result.kind === 'lost' || result.kind === 'goal');
-    const title = b.status === 'cancelled' ? 'Cancelled' : b.status === 'expired' ? 'Ended early' : result.title;
+    const title = b.myOutcomeLabel || (b.status === 'cancelled' ? 'Cancelled' : b.status === 'expired' ? 'Ended early' : result.title);
     const rows = standings(b);
     const team = b.kind === 'team' ? teamProgress(b) : null;
     return (
@@ -393,13 +412,13 @@ export function ChallengeScreen({
     justPlayed: !!justPlayed,
     attemptsUsed: mine?.attemptsUsed ?? 0,
     uploadPending: queued.pending,
-    canPlay: canPlay(b, now),
+    canPlay: openRow?.ctaType === 'play' || canPlay(b, now),
   });
   const duel = headToHead(b);
   const line = detailLine(b, now);
   const team = b.kind === 'team' ? teamProgress(b) : null;
-  const playable = canPlay(b, now) && !queued.pending;
-  const counting = canAddReps(b, now);
+  const playable = ((openRow ? openRow.ctaType === 'play' : canPlay(b, now))) && !queued.pending;
+  const counting = openRow ? openRow.canDoPushUps && openRow.ctaType === 'start_set' : canAddReps(b, now);
   return (
     <View style={styles.root}>
       {notifications}

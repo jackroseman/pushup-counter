@@ -1,5 +1,6 @@
 /** Supabase calls for friends and battles (thin wrappers around the phase-3 RPCs). */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { MyChallengeRecord, OpenChallenge } from './openChallenges';
 import type { Battle, Friend, FriendRecord, FriendRelation, InvitePreview } from './model';
 import type { SubmitResult } from './uploadQueue';
 
@@ -39,6 +40,7 @@ export const api = {
       durationS?: number;
       deadlineHours?: number;
       window?: 'day' | 'week' | 'month' | 'custom';
+      durationDays?: number;
       customStartsAt?: string;
       customEndsAt?: string;
       streakDays?: number;
@@ -57,6 +59,10 @@ export const api = {
     return error ? { ok: false, message: error.message } : { ok: true, data: null };
   },
   cancelBattle: (c: SupabaseClient, challengeId: string) => rpc<null>(c, 'cancel_challenge', { p_battle: challengeId }),
+  leaveBattle: (c: SupabaseClient, challengeId: string) => rpc<null>(c, 'leave_challenge', { p_battle: challengeId }),
+  myOpenChallenges: (c: SupabaseClient) => rpc<OpenChallenge[]>(c, 'my_open_challenges'),
+  myChallengeRecord: (c: SupabaseClient, from?: string, to?: string) =>
+    rpc<MyChallengeRecord>(c, 'my_challenge_record', { p_from: from ?? null, p_to: to ?? null }),
   createInviteLink: (c: SupabaseClient, challengeId: string) => rpc<string>(c, 'create_invite_link', { p_battle: challengeId }),
   revokeInviteLink: (c: SupabaseClient, token: string) => rpc<null>(c, 'revoke_invite_link', { p_token: token }),
   invitePreview: (c: SupabaseClient, token: string) => rpc<InvitePreview>(c, 'invite_preview', { p_token: token }),

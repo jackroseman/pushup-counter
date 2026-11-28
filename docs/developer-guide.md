@@ -452,27 +452,30 @@ These helpers implement product rules in TypeScript that should move into views 
 RPCs, so the app can just display what the database returns. Tracked here so new
 work does not add to them.
 
-* **Challenge list sections.** `groupBattles` in `src/battles/model.ts` and
-  `challengeList` / `challengeRow` in `src/battles/challengeView.ts` split challenges
-  into "your move", "in progress", and "finished", and decide the row's type and
-  subtitle. Today also uses `groupBattles` to pick the first "your move" card
-  (`src/ui/models/today.ts`). The server should return the section, sort order, and
-  call to action.
-* **Result wording.** `resultOf` and `finishedTitle` in `src/battles/challengeView.ts`
-  turn ranks and `isWinner` flags into "You won", "Draw", "Lost", or "Finished".
-  Ties can currently show as "Finished" instead of a draw, because that wording is
-  assembled on the client. The database should return a stable outcome key and the
-  display fields that go with it.
-* **Rematch defaults.** `rematchParams` in `src/battles/challengeView.ts` (and
-  `initialForm` in `src/battles/newChallenge.ts`) picks the next challenge's kind,
-  length, and window from the finished one. A rematch RPC should return the
-  `create_challenge` payload.
-* **Head-to-head card.** `headToHead` and `headScore` in `src/battles/challengeView.ts`,
-  and `recentOutcome` / `headToHeadRecord` in `src/battles/friendsView.ts`, decide
-  when a two-person card appears and compute the record from `friend_challenge_record`
-  rows. The RPC should return the card and the record ready to render.
+Resolved in the open-challenge work (`my_open_challenges`, `my_challenge_record`,
+and the upgraded `friend_challenge_record`):
 
-Related display rules in the same files (`canPlay`, `canRespond`, `canAddReps`,
-`leaderLine`, `lengthLabel`, and the "Today" / "This week" / "This month" window
-labels in `src/battles/newChallenge.ts`) should move with them, so a time window or
-turn rule cannot drift between the database and the phone.
+* Challenge list sections, sort order, `can_do_push_ups`, and call to action — the
+  app now lays out `my_open_challenges` (`YourTurnList` on Today and Compete).
+  `groupBattles` / `challengeList` are no longer used to build those screens.
+* Period and friend records (W-T-L, forfeits as a footnote, declined invites
+  omitted) come from the record RPCs. `headToHeadRecord` is unused by the friend
+  page.
+* Result wording on a finished challenge prefers `myOutcome` / `myOutcomeLabel`
+  from `my_challenges`. `resultOf` remains a fallback for older rows.
+* New most-reps and team challenges use `durationDays` (1 / 7 / 14 / 30) starting
+  at the creator's local midnight, so the "Today" / "This week" / "This month"
+  labels are gone from the New challenge sheet.
+
+Still open:
+
+* **Rematch defaults.** `rematchParams` maps a stored `durationDays` or leftover
+  calendar window onto the create form. A rematch RPC should return the
+  `create_challenge` payload directly.
+* **Head-to-head card on the challenge detail.** `headToHead` and `headScore` in
+  `src/battles/challengeView.ts` still decide when a two-person score card appears
+  on the detail screen. The RPC should return that card ready to render.
+* **Legacy list helpers.** `groupBattles`, `canPlay`, `canRespond`, `canAddReps`,
+  `challengeList`, `challengeRow`, and `resultOf` remain for tests and as fallbacks
+  when an open-challenge row is not loaded. New UI should not take a dependency
+  on them.

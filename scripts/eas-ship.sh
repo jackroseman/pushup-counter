@@ -16,9 +16,9 @@
 #   3. No build has that fingerprint (native change):
 #        development: runtimeVersion is the fingerprint, so start build-dev.yml.
 #        production:  runtimeVersion is the app version. If builds already exist for this
-#                     version, stop with an error: bump expo.version in app.json (a native
-#                     change needs a new version). Otherwise start build-production.yml
-#                     (build + submit to TestFlight).
+#                     version, stop with an error (safety net: the dev → main release PR
+#                     should already have bumped the patch automatically). Otherwise start
+#                     build-production.yml (build + submit to TestFlight).
 #      A build workflow already running for this profile is not started twice.
 #      Either way it then publishes an OTA update for the new runtime too (no rollout
 #      percentage: no installed app has this runtime yet, so nothing can receive it before the
@@ -93,7 +93,7 @@ if [ "$PROFILE" = production ]; then
   EXISTING="$("${EAS[@]}" build:list -p ios --build-profile production --runtime-version "$VERSION" --limit 5 --json --non-interactive 2>/dev/null \
     | json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s||"[]").filter(x=>x.status!=="CANCELED"&&x.status!=="ERRORED").length))')"
   if [ "$EXISTING" != 0 ]; then
-    fail "Native change under version $VERSION, which already has a store build. An OTA would reach that build and could crash it. Bump expo.version in app.json (and package.json) and merge again; that starts one new store build."
+    fail "Native change under version $VERSION, which already has a store build. An OTA would reach that build and could crash it. The dev → main release PR should have bumped the patch automatically; re-open or edit that PR so the bump can land on dev, then merge again."
   fi
 fi
 

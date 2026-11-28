@@ -1,0 +1,113 @@
+# When a dev → main release PR is opened, edited, reopened, or updated, bump
+# the production patch version on dev if shipping this head would be a native
+# change under a version that already has a store build.
+#
+# Decision logic is in scripts/release-version-bump.mjs (tested in
+# scripts/tests/release-version-bump-cases.mjs). JS-only / fingerprint matches
+# are a no-op; a version that does not yet have a store build is a no-op
+# (already bumped). Development builds are not considered and are not started.
+#
+# The bump lands through a squash-merged PR into dev (dev requires a PR and the
+# required `checks` job; this workflow does not push directly to dev or main).
+# Commits pushed with GITHUB_TOKEN do not trigger workflows, so the script
+# dispatches ci.yml itself (workflow_dispatch is allowed) so required checks
+# still run on the bump PR and then on the release PR's new head.
+#
+# This is the one pull_request workflow that uses EXPO_TOKEN, and only when the
+# head is the trusted `dev` branch of this repository (the release PR). Feature
+# PRs target dev and never reach this job.
+#
+# Not cancelled mid-run: a bump PR may already have been opened.
+name: Release PR version bump
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'dev → main release PR number'
+        required: true
+        type: string
+
+concurrency:
+  group: release-version-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+jobs:
+  bump:
+    name: Bump version if the release needs a native build
+    if: >
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.pull_request.head.ref == 'dev' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          (github.event.action != 'edited' || github.actor != 'github-actions[bot]')
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Resolve the release PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR="${{ inputs.pr }}"
+          else
+            PR="${{ github.event.pull_request.number }}"
+          fi
+          meta="$(gh api "repos/${{ github.repository }}/pulls/${PR}")"
+          head="$(printf '%s' "$meta" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["head"]["ref"])')"
+          base="$(printf '%s' "$meta" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["base"]["ref"])')"
+          sha="$(printf '%s' "$meta" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["head"]["sha"])')"
+          same_repo="$(printf '%s' "$meta" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d["head"]["repo"]["full_name"]==d["base"]["repo"]["full_name"]).lower())')"
+          if [ "$head" != "dev" ] || [ "$base" != "main" ] || [ "$same_repo" != "true" ]; then
+            echo "::error::PR #${PR} is not a same-repo dev → main release PR."
+            exit 1
+          fi
+          echo "number=${PR}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Fetch dev and main
+        run: git fetch origin dev main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: |
+          npm ci
+          npm install -g eas-cli@27.11.0
+
+      - name: Check secret
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set; cannot fingerprint or list production builds. Nothing was bumped."
+            exit 1
+          fi
+
+      - name: Decide and bump if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: .github/scripts/release-version-bump.sh --apply "${{ steps.pr.outputs.number }}"

@@ -28,8 +28,9 @@ When it does run, it calls `scripts/eas-ship.sh` on a GitHub runner (no EAS queu
      `.eas/workflows/build-dev.yml` (1 build). Install the new Pushup Dev build when it is done.
    * `production`: the runtime version is `expo.version`. If that version already has a store
      build, the job **fails** and publishes nothing: an OTA would reach that build without
-     its native code. Bump the version (below) and merge again. If the version is new, it
-     starts `.eas/workflows/build-production.yml` (1 build + upload to TestFlight).
+     its native code. That is a safety net; the release PR should already have bumped the
+     patch (below). If the version is new, it starts `.eas/workflows/build-production.yml`
+     (1 build + upload to TestFlight).
    * A build workflow that is already running is not started twice.
    * Then, in the same run, it publishes an OTA update of this commit for the new runtime
      (no rollout percentage). No installed app has that runtime yet, so nobody receives it
@@ -52,33 +53,39 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
 
 | variant      | `runtimeVersion` | why |
 |--------------|------------------|-----|
-| production   | `appVersion` (`expo.version` in `app.json`) | Readable versions for the store. A native change needs a version bump; `eas-ship.sh` enforces it with the fingerprint. |
+| production   | `appVersion` (`expo.version` in `app.json`) | Readable versions for the store. A native change needs a version bump; the release PR does this automatically, and `eas-ship.sh` enforces it with the fingerprint. |
 | development  | `fingerprint` (set in `app.config.ts`) | Dev builds are rebuilt for native changes without a version bump; an old dev build never gets an update it cannot run. |
 
 ## Release recipe (`dev` -> `main`)
 
 1. On `dev`, check the change on Pushup Dev.
-2. If anything native changed since the last release (`modules/`, native packages, Expo SDK,
-   plugins or native config in `app.json`/`app.config.ts`), bump `version` in `app.json`
-   **and** `package.json` (e.g. 1.2.1 -> 1.2.2) in a PR into `dev`.
-   Not sure? `scripts/eas-ship.sh production --dry-run` on the `dev` head tells you what
-   merging would do (needs `eas login` or `EXPO_TOKEN`).
-3. `scripts/release.sh`: opens (or reuses) the PR `dev` -> `main`, lists the commits, and
+2. `scripts/release.sh`: opens (or reuses) the PR `dev` -> `main`, lists the commits, and
    brings the PR up to date with `main` if it is BEHIND. It never merges.
-   After the release PR is opened (or if you edit its title or body), a small
-   workflow (`.github/workflows/release-pr-closes.yml`) copies `Closes #N` from
-   the feature PRs in the range onto the release PR body. It does not run on
-   every push, so it does not spend CI minutes on ordinary commits. GitHub only
-   auto-closes issues from PRs merged into `main` (the default branch), and it
-   does not reliably chain those keywords through a merge commit, so the
-   release PR has to list them itself. Open issues mean the work is not in
-   production yet. To refresh the list later, edit the PR body, or run
-   `.github/scripts/release-closes.sh --apply <pr>`. If you open the release
-   PR by hand, include the `Closes #N` lines, or edit the body to trigger the
-   workflow.
-4. Wait for `checks`, then merge it (**merge commit**, not squash). Issues listed in
-   `Closes #N` close automatically when this merge lands on `main`.
-5. Watch **Actions -> CI** (the merge commit's `checks`, then `ship` if the change is
+   After the release PR is opened, updated, or edited, two small workflows run:
+   * `.github/workflows/release-pr-closes.yml` copies `Closes #N` from the
+     feature PRs in the range onto the release PR body. It does not run on
+     every push, so it does not spend CI minutes on ordinary commits. GitHub
+     only auto-closes issues from PRs merged into `main` (the default branch),
+     and it does not reliably chain those keywords through a merge commit, so
+     the release PR has to list them itself. Open issues mean the work is not
+     in production yet. To refresh the list later, edit the PR body, or run
+     `.github/scripts/release-closes.sh --apply <pr>`. If you open the release
+     PR by hand, include the `Closes #N` lines, or edit the body to trigger the
+     workflow.
+   * `.github/workflows/release-pr-version.yml` fingerprints the PR head the
+     way a production ship would. If that fingerprint already has a production
+     store build, nothing happens (JS-only; it will ship as an OTA). If it is a
+     native change and the current `expo.version` already has a store build, it
+     opens a PR into `dev` that bumps the patch (`app.json`, `package.json`,
+     and the package-lock root version, e.g. 1.3.1 -> 1.3.2), waits for the
+     required `checks` job, squash-merges it, and starts CI on the new `dev`
+     tip so this release PR's required check runs. A version that does not yet
+     have a store build is left alone, so it cannot double-bump. Development
+     builds are not started. You do not bump the version by hand.
+3. Wait for `checks` (and for the version bump to land, if one was needed), then
+   merge it (**merge commit**, not squash). Issues listed in `Closes #N` close
+   automatically when this merge lands on `main`.
+4. Watch **Actions -> CI** (the merge commit's `checks`, then `ship` if the change is
    shippable) and **Actions -> EAS ship** on GitHub. If `checks` is red, nothing is
    published and no build is started.
    * OTA: TestFlight installs get it on the next launch and run it on the launch after.
@@ -86,13 +93,14 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
      processed it (about 10-30 min; the first build of a version for external testers needs
      Beta App Review). Groups and "What to Test" are set in App Store Connect -> TestFlight.
    * Upload failed: `eas submit -p ios --id <build id>` retries without a new build.
-6. Optional: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
+5. Optional: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
 
 ## By hand
 
 ```bash
 scripts/eas-ship.sh development --dry-run           # what a merge to dev would do
 node --test scripts/tests/eas-ship-cases.mjs         # eas-ship.sh decisions against a fake eas (CI runs it)
+node --test scripts/tests/release-version-bump-cases.mjs  # when a release PR should bump the patch (CI runs it)
 scripts/eas-ship.sh production --rollout 10         # publish to 10% of production (from main)
 eas workflow:run .eas/workflows/build-dev.yml --ref dev           # new dev client (1 build)
 eas workflow:run .eas/workflows/build-production.yml --ref main   # new store build + upload (1 build)
@@ -117,5 +125,7 @@ See CONTRIBUTING.md section 9 (`eas update:republish`, revert PRs).
 ## Secrets this needs
 
 * `EXPO_TOKEN` (GitHub repo secret): Expo access token for `jackroseman33s-team`, used by
-  `eas-ship.yml`. Without it the job warns and ships nothing.
+  `eas-ship.yml` and by the release-PR version bump workflow (to fingerprint the
+  production profile and list store builds). Without it, ship warns and ships nothing,
+  and the auto version bump cannot run.
 * EAS credentials (App Store Connect API key) for the upload, stored on EAS. Never commit a `.p8`.

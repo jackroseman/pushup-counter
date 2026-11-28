@@ -60,6 +60,11 @@ jobs:
       - name: Ship script tests (scripts/eas-ship.sh)
         run: node --test scripts/tests/eas-ship-cases.mjs
 
+      # scripts/release-version-bump.mjs: when a dev → main release PR should bump the
+      # production patch version. Fake eas, no network. Same reason this is not an npm script.
+      - name: Release version bump tests (scripts/release-version-bump.mjs)
+        run: node --test scripts/tests/release-version-bump-cases.mjs
+
       # No database: the guards and SQL of supabase/staging/sync-from-prod.mjs.
       - name: Staging sync tests (supabase/staging/sync-from-prod.mjs)
         run: node --test supabase/tests/sync-staging.test.mjs

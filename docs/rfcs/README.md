@@ -37,11 +37,16 @@ Feedback, feature request, or bug issue
    for Sunny. Keep the same status in the RFC front-matter and in the PR labels.
 5. **Decision.** Sunny accepts or rejects the RFC. Update the front-matter and
    labels, then merge the RFC PR (including rejected RFCs, so the number and the
-   decision stay in the repo).
+   decision stay in the repo). If the RFC is rejected, close its source issues
+   as **not planned**, with a comment that names the RFC and the reason.
 6. **Implementation.** Later PRs into `dev` do the work. Each one links the RFC
-   (`Implements RFC NNNN`) and closes the originating issues (`Closes #n`) when
-   the issue is actually done. When the work has shipped, set the RFC status to
-   Implemented.
+   (`Implements RFC NNNN`). The PR that completes the feature uses `Closes #N`
+   for the source issues. Feature PRs merge into `dev`, which is not the
+   default branch (`main`), so GitHub will not auto-close those issues until
+   the `dev` → `main` release merges. Once that final PR has merged into
+   `dev`, close the issues by hand and leave a comment linking the PR. That
+   same completing PR sets the RFC front-matter to Implemented and the label
+   to `rfc:implemented`.
 
 A Saturday review looks at issues labeled `rfc-needed`, open RFC PRs, and
 accepted RFCs that are not yet implemented.
@@ -235,8 +240,27 @@ END
 )"
 ```
 
-Do not close the originating issue when the RFC PR merges. Close it from the
-implementation PR with `Closes #n` once the work has actually shipped.
+Do not close the originating issues when the RFC PR merges. The PR that
+completes the feature should still include `Closes #N` for each source issue,
+so the link is recorded. Because that PR merges into `dev`, not `main`,
+GitHub will not auto-close the issues then. After the completing PR has
+merged into `dev`, close them by hand and comment with the PR link:
+
+```bash
+gh issue close N --repo jackroseman/pushup-counter \
+  --comment "Shipped in <PR url> (merged to dev). GitHub will not auto-close this until the release merges to main."
+```
+
+That same completing PR updates the RFC file to `status: Implemented` and
+switches the label from `rfc:accepted` to `rfc:implemented`.
+
+If the RFC is rejected, close the source issues as not planned, with the
+reason:
+
+```bash
+gh issue close N --repo jackroseman/pushup-counter --reason "not planned" \
+  --comment "Closed as not planned. See RFC NNNN (<RFC PR or file url>): <reason>."
+```
 
 When the write-up is ready, switch the label from `rfc:draft` to `rfc:in-review`
 and mark the PR ready for review. After Sunny decides, set the front-matter and

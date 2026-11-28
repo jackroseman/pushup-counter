@@ -123,23 +123,27 @@ export function ListRow({
           </Text>
         ) : null}
       </View>
-      {value ? (
-        <Text variant="body" tone="secondary" numberOfLines={1}>
-          {value}
-        </Text>
+      {value || trailing || switchValue !== undefined || chevron ? (
+        <View style={styles.trailing}>
+          {value ? (
+            <Text variant="body" tone="secondary" numberOfLines={1}>
+              {value}
+            </Text>
+          ) : null}
+          {trailing}
+          {switchValue !== undefined ? (
+            <Switch
+              value={switchValue}
+              onValueChange={onSwitchChange}
+              trackColor={{ true: color.signal, false: color.fill.switchOff }}
+              ios_backgroundColor={color.fill.switchOff}
+              thumbColor={color.label}
+              accessibilityLabel={title}
+            />
+          ) : null}
+          {chevron ? <Icon name="chev" size={13} color={color.tertiary} /> : null}
+        </View>
       ) : null}
-      {trailing}
-      {switchValue !== undefined ? (
-        <Switch
-          value={switchValue}
-          onValueChange={onSwitchChange}
-          trackColor={{ true: color.signal, false: color.fill.switchOff }}
-          ios_backgroundColor={color.fill.switchOff}
-          thumbColor={color.label}
-          accessibilityLabel={title}
-        />
-      ) : null}
-      {chevron ? <Icon name="chev" size={13} color={color.tertiary} /> : null}
     </>
   );
   if (!onPress) {
@@ -162,8 +166,11 @@ const styles = StyleSheet.create({
   elevated: { backgroundColor: color.elevated },
   separator: { height: 1, backgroundColor: color.separator },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.xl, marginBottom: space.xs, marginHorizontal: space.xxs },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, paddingVertical: 10 },
   pressed: { backgroundColor: color.fill.pressed },
   tile: { width: 30, height: 30, borderRadius: radius.tile, alignItems: 'center', justifyContent: 'center', backgroundColor: color.graphite },
   grow: { flex: 1, minWidth: 0 },
+  // Isolates trailing controls so a child with alignSelf: 'flex-start' (small Button)
+  // stays vertically centered in a tall row, and the title column keeps a stable width.
+  trailing: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 0 },
 });

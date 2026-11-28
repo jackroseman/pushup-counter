@@ -253,7 +253,7 @@ function ChallengeStats({
   const empty = recordIsEmpty(rec);
   return (
     <>
-      <PeriodPicker periods={periods} selected={period} onChange={(p) => onPeriod?.(p)} />
+      <PeriodPicker periods={periods} selected={period} onChange={(p) => onPeriod?.(p)} style={styles.period} />
       <Card padding={16} style={styles.wtlCard}>
         <View style={styles.wtl} accessible accessibilityLabel={`${wins} won, ${ties} tied, ${losses} lost`}>
           <View style={styles.wtlItem}>
@@ -359,8 +359,10 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8 },
   promptTile: { width: 30, height: 30, borderRadius: radius.tile, alignItems: 'center', justifyContent: 'center', backgroundColor: color.elevated },
   promptTitleSmall: { fontSize: 15 },
-  segment: { marginBottom: space.sm },
-  period: { marginBottom: space.sm },
+  // 12 pt under the profile, same gap Compete uses between its title and segments.
+  // Content below (tiles, empty card, period picker) keeps its own top margin.
+  segment: { marginTop: space.sm },
+  period: { marginTop: 18 },
   wtlCard: { marginBottom: space.sm },
   wtl: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   wtlItem: { alignItems: 'center', flex: 1 },
@@ -368,7 +370,7 @@ const styles = StyleSheet.create({
   forfeitNote: { marginBottom: space.md, marginTop: space.xs },
   statsEmptyTitle: { marginTop: space.xl },
   statsEmptyText: { marginTop: 6 },
-  emptyCard: { marginTop: 12, paddingTop: 26, paddingBottom: 26, alignItems: 'center' },
+  emptyCard: { marginTop: 18, paddingTop: 26, paddingBottom: 26, alignItems: 'center' },
   emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: color.elevated, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 14 },
   emptyText: { marginTop: 6 },

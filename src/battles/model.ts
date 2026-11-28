@@ -61,6 +61,11 @@ export interface Battle {
   locked: boolean;
   myOutcome?: string | null;
   myOutcomeLabel?: string | null;
+  resultTitle?: string | null;
+  resultCrowned?: boolean;
+  resultShowcaseUserId?: string | null;
+  detailLayout?: 'head_to_head' | 'standings' | 'team';
+  needsResponse?: boolean;
   participants: Participant[];
   inviteLinks: InviteLink[];
 }
@@ -87,6 +92,8 @@ export interface FriendRecord {
   expired?: number;
   periodFrom?: string;
   periodTo?: string;
+  /** Their best counted set in a best-set challenge with you, in the period. */
+  bestSet?: number | null;
   finished?: {
     challengeId: string;
     kind: ChallengeKind;
@@ -181,48 +188,10 @@ export const me = (b: Battle) => b.participants.find((p) => p.isMe) ?? null;
 
 const time = (iso: string | null | undefined) => (iso ? new Date(iso).getTime() : NaN);
 
-/** Can I still answer the invite? */
-export function canRespond(b: Battle, now: number = Date.now()): boolean {
-  const m = me(b);
-  return !!m && m.status === 'invited' && (b.status === 'pending' || b.status === 'active') && time(b.inviteExpiresAt) > now;
-}
-
-/** Can I start a best-set attempt now? Window kinds have no special session. */
-export function canPlay(b: Battle, now: number = Date.now()): boolean {
-  const m = me(b);
-  if (!m || m.status !== 'accepted') return false;
-  if (b.kind !== 'best_set') return false;
-  if (m.attemptsUsed >= (b.attemptsAllowed ?? 1)) return false;
-  if (b.endsAt && time(b.endsAt) <= now) return false;
-  if (b.status === 'active') return true;
-  return b.status === 'pending' && m.userId === b.createdBy;
-}
-
 export function isOpen(b: Battle) {
   return b.status === 'pending' || b.status === 'active';
 }
 
-export interface BattleGroups {
-  /** Waiting on me: an invite to answer or an attempt to record. */
-  yourMove: Battle[];
-  /** Open, waiting on others. */
-  waiting: Battle[];
-  finished: Battle[];
-}
-
-export function groupBattles(battles: readonly Battle[], now: number = Date.now()): BattleGroups {
-  const g: BattleGroups = { yourMove: [], waiting: [], finished: [] };
-  for (const b of battles) {
-    if (!isOpen(b)) g.finished.push(b);
-    else if (canRespond(b, now) || canPlay(b, now)) g.yourMove.push(b);
-    else g.waiting.push(b);
-  }
-  const byDeadline = (a: Battle, b: Battle) => (time(a.endsAt) || Infinity) - (time(b.endsAt) || Infinity);
-  g.yourMove.sort(byDeadline);
-  g.waiting.sort(byDeadline);
-  g.finished.sort((a, b) => (time(b.finishedAt) || 0) - (time(a.finishedAt) || 0));
-  return g;
-}
 
 /** "3 h 20 m left", "12 m left", "ended". */
 export function timeLeft(iso: string | null | undefined, now: number = Date.now()): string {

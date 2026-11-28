@@ -1,13 +1,8 @@
 import {
-  canAddReps,
-  challengeList,
   challengeName,
   challengesEmpty,
-  detailLine,
   finishedTitle,
   headScore,
-  headToHead,
-  resultOf,
   rematchParams,
   shortTimeLeft,
   standings,
@@ -15,7 +10,6 @@ import {
 import type { Battle, Participant } from '../src/battles/model';
 
 const NOW = Date.parse('2026-11-25T15:00:00Z');
-const TZ = 'America/New_York';
 const iso = (ms: number) => new Date(ms).toISOString();
 const H = 3_600_000;
 
@@ -64,58 +58,6 @@ function battle(over: Partial<Battle>): Battle {
 
 const you = (over: Partial<Participant> = {}) => person({ userId: 'you', displayName: 'Sunny', isMe: true, ...over });
 
-describe('challenge list (frame 20)', () => {
-  it('puts a best set to play under Your move with the score to beat', () => {
-    const b = battle({ participants: [you(), person({ userId: 'brett', attemptsUsed: 1, validReps: 41 })] });
-    const list = challengeList([b], NOW, TZ);
-    expect(list.yourMove).toHaveLength(1);
-    expect(list.yourMove[0]).toMatchObject({ type: 'play', title: 'Best set vs Brett', subtitle: '41 to beat · 1 day left' });
-  });
-
-  it('shows an invite to answer inline', () => {
-    const b = battle({
-      kind: 'total',
-      windowUnit: 'week',
-      createdBy: 'maya',
-      participants: [person({ userId: 'maya' }), you({ status: 'invited' })],
-    });
-    expect(challengeList([b], NOW, TZ).yourMove[0]).toMatchObject({
-      type: 'invite',
-      title: 'Maya invited you',
-      subtitle: 'Most reps this week',
-    });
-  });
-
-  it('lists a team goal in progress with its total and bar', () => {
-    const b = battle({
-      kind: 'team',
-      windowUnit: 'week',
-      targetReps: 1000,
-      participants: [you({ teamTotal: 611, validReps: 300 }), person({ userId: 'leo', teamTotal: 611, validReps: 311 })],
-    });
-    const row = challengeList([b], NOW, TZ).inProgress[0];
-    expect(row).toMatchObject({ type: 'progress', title: 'Team week', right: '611 of 1,000', subtitle: 'You, Leo' });
-    expect(row.type === 'progress' && row.progress).toBeCloseTo(0.611);
-  });
-
-  it('marks a finished win', () => {
-    const b = battle({
-      status: 'completed',
-      finishedAt: iso(NOW - 3 * 24 * H),
-      participants: [
-        you({ attemptsUsed: 1, validReps: 52, rank: 1, isWinner: true }),
-        person({ userId: 'jack', attemptsUsed: 1, validReps: 40, rank: 2 }),
-      ],
-    });
-    expect(challengeList([b], NOW, TZ).finished[0]).toMatchObject({
-      type: 'finished',
-      won: true,
-      title: 'Won vs Jack · Best set',
-      day: 'Sun',
-    });
-  });
-});
-
 describe('empty states (E10, E11)', () => {
   it('waits for friends to load, then picks the right one', () => {
     expect(challengesEmpty(null, 0)).toBeNull();
@@ -126,17 +68,8 @@ describe('empty states (E10, E11)', () => {
   });
 });
 
-describe('detail (frame 23)', () => {
-  it('builds the head-to-head card and the line under it', () => {
-    const b = battle({ participants: [you(), person({ userId: 'brett', attemptsUsed: 1, validReps: 48 })] });
-    const duel = headToHead(b)!;
-    expect(duel.them.userId).toBe('brett');
-    expect(headScore(b, duel.you)).toBe('–');
-    expect(headScore(b, duel.them)).toBe('48');
-    expect(detailLine(b, NOW)).toBe('Brett leads · 1 day left');
-  });
-
-  it('uses standings for three or more players', () => {
+describe('standings', () => {
+  it('uses server ranks and notes invited people', () => {
     const b = battle({
       kind: 'total',
       windowUnit: 'week',
@@ -146,23 +79,29 @@ describe('detail (frame 23)', () => {
         person({ userId: 'tara', status: 'invited' }),
       ],
     });
-    expect(headToHead(b)).toBeNull();
     expect(standings(b).map((r) => [r.name, r.score, r.note])).toEqual([
       ['Jack', '200', null],
       ['You', '120', null],
       ['Tara', '–', 'Invited'],
     ]);
+    const duel = battle({ participants: [you(), person({ userId: 'brett', attemptsUsed: 1, validReps: 48 })] });
+    expect(headScore(duel, you())).toBe('–');
+    expect(headScore(duel, person({ userId: 'brett', attemptsUsed: 1, validReps: 48 }))).toBe('48');
   });
 });
 
-describe('results (frame 25)', () => {
-  it('names the winner, a draw, and team goals', () => {
-    const lost = battle({ status: 'completed', participants: [you({ rank: 2 }), person({ userId: 'brett', rank: 1, isWinner: true })] });
-    expect(resultOf(lost)).toMatchObject({ kind: 'lost', title: 'Brett won' });
-    const draw = battle({ status: 'completed', participants: [you({ isWinner: true }), person({ userId: 'brett', isWinner: true })] });
-    expect(resultOf(draw).title).toBe('Draw');
-    const team = battle({ kind: 'team', windowUnit: 'week', status: 'completed', participants: [you(), person({ userId: 'leo' })] });
+describe('results', () => {
+  it('uses the RPC outcome label on a finished title', () => {
+    const team = battle({
+      kind: 'team',
+      windowUnit: 'week',
+      status: 'completed',
+      myOutcomeLabel: 'Missed the goal',
+      participants: [you(), person({ userId: 'leo' })],
+    });
     expect(finishedTitle(team)).toBe('Missed the goal · Team week');
+    const won = battle({ status: 'completed', myOutcomeLabel: 'Won', participants: [you({ isWinner: true }), person({ userId: 'brett' })] });
+    expect(finishedTitle(won)).toBe('Won · Best set');
   });
 
   it('rematches the same people with the same settings', () => {
@@ -191,29 +130,3 @@ describe('labels', () => {
   });
 });
 
-describe('adding reps to an open challenge', () => {
-  const bot = person({ userId: 'bot', displayName: 'Pushup Bot', status: 'invited' });
-  const win = (over: Partial<Battle> = {}) =>
-    battle({ kind: 'total', windowUnit: 'day', startsAt: iso(NOW - 23 * H), endsAt: iso(NOW + H), createdBy: 'you', ...over });
-
-  it('is on for a pending most-reps challenge while the opponent has not accepted (the bot case)', () => {
-    const b = win({ status: 'pending', participants: [you({ validReps: 2 }), bot] });
-    expect(canAddReps(b, NOW)).toBe(true);
-  });
-
-  it('is on for active most-reps, streak and team challenges', () => {
-    for (const kind of ['total', 'streak', 'team'] as const) {
-      const b = win({ kind, status: 'active', participants: [you(), person({ userId: 'jack' })] });
-      expect(canAddReps(b, NOW)).toBe(true);
-    }
-  });
-
-  it('is off for a best set (it has Play), finished, not started, ended, or not joined', () => {
-    const ps = [you(), person({ userId: 'jack' })];
-    expect(canAddReps(win({ kind: 'best_set', participants: ps }), NOW)).toBe(false);
-    expect(canAddReps(win({ status: 'completed', participants: ps }), NOW)).toBe(false);
-    expect(canAddReps(win({ startsAt: iso(NOW + H), participants: ps }), NOW)).toBe(false);
-    expect(canAddReps(win({ endsAt: iso(NOW - 1), participants: ps }), NOW)).toBe(false);
-    expect(canAddReps(win({ participants: [you({ status: 'invited' }), person({ userId: 'jack' })] }), NOW)).toBe(false);
-  });
-});

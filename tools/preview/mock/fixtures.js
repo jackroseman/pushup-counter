@@ -182,7 +182,21 @@ function build(now = FIXED_NOW) {
       participants: [part(MEP, { validReps: 34, rank: 1, attemptsUsed: 1 }), part(P(2), { validReps: null, rank: null, attemptsUsed: 0 })] },
     { ...base, id: 'c-done', kind: 'total', windowUnit: 'day', status: 'completed', startsAt: isoTime(now - 4 * DAY), endsAt: isoTime(now - 3 * DAY), finishedAt: isoTime(now - 3 * DAY),
       participants: [part(MEP, { validReps: 74, rank: 1, isWinner: true }), part(P(0), { validReps: 61, rank: 2 })] },
-  ];
+  ].map((c) => {
+    const accepted = c.participants.filter((p) => ['accepted', 'invited', 'forfeited'].includes(p.status));
+    const layout = c.kind === 'team' ? 'team' : (c.kind === 'best_set' || c.kind === 'total') && accepted.length === 2 ? 'head_to_head' : 'standings';
+    const done = c.status === 'completed';
+    return {
+      ...c,
+      needsResponse: c.participants.some((p) => p.isMe && p.status === 'invited'),
+      detailLayout: layout,
+      myOutcome: done ? 'win' : null,
+      myOutcomeLabel: done ? 'Won' : null,
+      resultTitle: done ? 'You won' : null,
+      resultCrowned: done,
+      resultShowcaseUserId: done ? ME : null,
+    };
+  });
 
 
   const left = (ends) => {
@@ -244,6 +258,16 @@ function build(now = FIXED_NOW) {
       waitingOn: [{ userId: people[2][0], displayName: 'Maya R' }],
     }),
   ];
+  const startToday = Date.parse('2026-11-25T00:00:00-05:00');
+  const recordPeriods = [
+    { key: 'last_30_days', label: 'Last 30 days', from: isoTime(startToday - 30 * DAY), to: isoTime(now), isDefault: true },
+    { key: 'last_month', label: 'Last month', from: '2026-10-01T04:00:00.000Z', to: '2026-11-01T04:00:00.000Z', isDefault: false },
+    { key: 'this_month', label: 'This month', from: '2026-11-01T04:00:00.000Z', to: isoTime(now), isDefault: false },
+    { key: 'last_3_months', label: 'Last 3 months', from: isoTime(startToday - 90 * DAY), to: isoTime(now), isDefault: false },
+    { key: 'this_year', label: 'This year', from: '2026-01-01T05:00:00.000Z', to: isoTime(now), isDefault: false },
+    { key: 'last_year', label: 'Last year', from: '2025-01-01T05:00:00.000Z', to: '2026-01-01T05:00:00.000Z', isDefault: false },
+    { key: 'all_time', label: 'All time', from: '1970-01-01T00:00:00.000Z', to: isoTime(now), isDefault: false },
+  ];
   const challengeRecord = {
     periodFrom: isoTime(now - 30 * DAY), periodTo: isoTime(now),
     wins: 3, ties: 1, losses: 2, forfeits: 1, cancelled: 0, expired: 0, declined: 0,
@@ -263,6 +287,7 @@ function build(now = FIXED_NOW) {
     played: 5, won: 3, drawn: 0, lost: 2,
     wins: 3, ties: 0, losses: 2, forfeits: 0, cancelled: 0, expired: 0,
     periodFrom: isoTime(now - 30 * DAY), periodTo: isoTime(now),
+    bestSet: 48,
     finished: [{ challengeId: 'c-done', kind: 'total', title: 'Most reps today', outcome: 'win', outcomeLabel: 'Won', finishedAt: isoTime(now - 3 * DAY), myReps: 74, theirReps: 61, sortRank: 1 }],
     recent: [{ challengeId: 'c-done', finishedAt: isoTime(now - 3 * DAY), kind: 'total', windowUnit: 'day', metric: 'rep_count', durationS: null, players: 2,
       me: { rank: 1, validReps: 74, metricValue: null, isWinner: true }, them: { rank: 2, validReps: 61, metricValue: null, isWinner: false } }],
@@ -277,7 +302,7 @@ function build(now = FIXED_NOW) {
   const maya = { id: '77777777-7777-4777-8777-777777777777', username: 'maya', display_name: 'Maya', time_zone: TZ };
   return {
     now, ME, history, enrollment, progress, emptyProgress, league, challenges, friends, friendRecord, profile,
-    inviteCode, inviteCodeAfterReset, inviter, maya, openChallenges, challengeRecord,
+    inviteCode, inviteCodeAfterReset, inviter, maya, openChallenges, challengeRecord, recordPeriods,
   };
 }
 

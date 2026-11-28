@@ -14,7 +14,7 @@ import { deviceTimeZone } from '../../backend/profile';
 import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
 import type { OpenChallenge } from '../../battles/openChallenges';
-import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
+import { rememberBattles } from '../../battles/battleCache';
 import type { Battle } from '../../battles/model';
 import {
   REFRESH_FAILED,
@@ -38,7 +38,7 @@ import type { TabProps } from '../types';
 export function TodayRoute({ navigation }: TabProps<'Today'>) {
   const { enrollments, remote, refreshRemote } = useAppState();
   const gateReady = useOnboardingGate(navigation);
-  const { session, appSettings } = useBackend();
+  const { session } = useBackend();
   const { profile } = useIdentity();
   const userId = session?.user.id ?? null;
   const askedFor = useRef<string | null>(null);
@@ -135,21 +135,6 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
   });
   const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
 
-  const play = (battleId: string) => {
-    const b = battles?.find((x) => x.id === battleId) ?? rememberedBattle(battleId);
-    if (!b) return;
-    const d = appSettings.asyncBattleDefaults;
-    navigation.navigate('Session', {
-      battle: {
-        battleId: b.id,
-        format: b.durationS ? 'timed' : 'max_reps',
-        durationS: b.durationS,
-        idleEndS: d.maxRepsIdleEndS,
-        capS: d.maxRepsCapS,
-      },
-    });
-  };
-
   // Blank (black) for the moment the first-run check takes, so Today doesn't flash before Welcome.
   if (!gateReady) return <Frame kind="tab">{null}</Frame>;
   return (
@@ -165,7 +150,6 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
         onGoal={() => navigation.navigate('GoalSetup')}
         onLeague={() => navigation.navigate('Compete', { segment: 'league' })}
         onChallenge={(challengeId) => navigation.navigate('Battle', { challengeId, battle: battles?.find((b) => b.id === challengeId) })}
-        onPlay={play}
         onNewChallenge={() => navigation.navigate('NewBattle')}
         onInvite={() => (session ? navigation.navigate('Friends') : navigation.navigate('Compete', { segment: 'league' }))}
         onHowItWorks={() => navigation.navigate('HowItWorks')}

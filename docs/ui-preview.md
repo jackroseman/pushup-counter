@@ -61,7 +61,7 @@ Run these from the repo root.
 | `npm --prefix tools/preview run build` | Builds the preview into `tools/preview/out/web` (about 10 s). Rebuild after changing app code. |
 | `npm --prefix tools/preview run capture -- set-flow` | Runs one or more flows: screenshots and an `.mp4` per flow. |
 | `npm --prefix tools/preview run capture -- all` | Runs every flow. |
-| `npm --prefix tools/preview run screens` | Builds, then takes screenshots only of the screens a UX review needs: Today, Compete (League and Challenges), You, the empty states, and the busy, none, friend and finished challenge states. About a minute and a half. |
+| `npm --prefix tools/preview run screens` | Builds, then takes screenshots only of the screens a UX review needs: Today, Compete, You, empty states, and the dedicated `challenges` flow (tour, empty, none, busy, plus friend and finished). About two minutes. |
 | `npm --prefix tools/preview run capture -- set-flow --reduce-motion` | Same flow with iOS Reduce Motion on. |
 | `npm --prefix tools/preview run capture -- today compete --no-video` | Screenshots only (faster). |
 | `npm --prefix tools/preview run flows` | Lists the flows. |
@@ -80,12 +80,16 @@ failed and saves `zz-failed.png` beside that flow's other screenshots.
 | `phone-moved` | Push-ups, then the phone is picked up: the set ends on its own |
 | `summary` | A 38-rep set (a new best set, checked) → summary → Set details → All sets |
 | `compete` | League board, "How the league works", Challenges, a challenge, the New challenge sheet |
-| `you-settings` | You tab and Settings |
+| `you-settings` | You tab, You > Challenges (including the period picker), and Settings |
 | `onboarding` | Fresh install, signed out: Welcome → Pick a daily goal → How it works → Today |
 | `empty` | Today, Compete, Challenges and You with no data |
-| `challenges-states-busy` | Today and Compete > Challenges with four moves waiting on you, an invite, and a long Finished list (won, lost, draw, cancelled) |
-| `challenges-states-none` | Compete > Challenges with friends but no challenges yet |
-| `challenges-states-friend` | Compete > Friends, then a friend's page (this week, best set, your record together, challenges) |
+| `challenges-tour` | Dedicated challenges flow (`flows/challenges.js`): Your turn on Today and Compete (including See all), an invite to accept or decline, a playable detail, a team goal, Waiting, New challenge for each type and length, You > Challenges with the period picker, a friend's head-to-head record and period picker, and a finished result. This is the flow to record for a PR. |
+| `challenges-empty` | Challenge empty states: Today, Compete with no friends (E11), You Sets and You > Challenges (with the period picker) |
+| `challenges-none` | Compete > Challenges with friends but no open challenges yet (E10) |
+| `challenges-busy` | Today and Compete > Challenges with more than three action rows (See all, scrolled list) |
+| `challenges-states-busy` | Older variant of the busy list (kept for the same screenshots). Prefer `challenges-busy`. |
+| `challenges-states-none` | Older E10 variant. Prefer `challenges-none`. |
+| `challenges-states-friend` | Compete > Friends, then a friend's page (this week, best set, your record together, challenges, period picker) |
 | `challenges-states-finished` | A finished challenge: result, standings, Rematch |
 | `invite-share` … `invite-first-run` | Friend invite links (`flows/invite.js`, 9 variants): share sheet, Copied, QR, Settings row, New friend on Friends, Add friend / added / already friends / own link / invalid link, signed out → Sign in with Apple → Pick a username, first run → Welcome with "invited you". Open with a path such as `i/k7m2qx9p` (no leading slash). |
 
@@ -126,7 +130,7 @@ data shapes the app doesn't have.
 3. Put the real screenshot next to the proposed design in the review. Mock only what changes, and
    label every mockup MOCKUP.
 4. For a state the fixtures don't cover, add a flow with an `rpc` override (see
-   `flows/challenges-states.js`) instead of editing the shared fixtures.
+   `flows/challenges.js` or `flows/challenges-states.js`) instead of editing the shared fixtures.
 
 Mockups drawn from the style guide Page and these screenshots will match, with the gaps listed
 in "What it is, and what it isn't": the web has no status bar, no home indicator, and a flat

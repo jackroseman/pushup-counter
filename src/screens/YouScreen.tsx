@@ -5,7 +5,8 @@ import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, Progr
 import { formatCount } from '../progress';
 import { formatSetDateTime } from '../progress/format';
 import type { YouModel, YouRecentRow } from '../progress/you';
-import { recordIsEmpty, type ChallengeFriendRow, type MyChallengeRecord } from '../battles/openChallenges';
+import { recordIsEmpty, type ChallengeFriendRow, type ChallengeRecordPeriod, type MyChallengeRecord } from '../battles/openChallenges';
+import { PeriodPicker } from './PeriodPicker';
 
 export interface YouIdentity {
   name: string;
@@ -32,6 +33,9 @@ export function YouScreen({
   challengeRecord,
   onOpenChallenge,
   onOpenFriend,
+  recordPeriods,
+  recordPeriod,
+  onRecordPeriod,
 }: {
   model: YouModel;
   /** Signed in with a username. */
@@ -53,6 +57,9 @@ export function YouScreen({
   challengeRecord?: MyChallengeRecord | null;
   onOpenChallenge?: (id: string) => void;
   onOpenFriend?: (friend: ChallengeFriendRow) => void;
+  recordPeriods?: readonly ChallengeRecordPeriod[];
+  recordPeriod?: ChallengeRecordPeriod | null;
+  onRecordPeriod?: (period: ChallengeRecordPeriod) => void;
 }) {
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
@@ -101,7 +108,7 @@ export function YouScreen({
       ) : null}
 
       {segment === 'challenges' ? (
-        <ChallengeStats rec={challengeRecord ?? null} onOpen={onOpenChallenge} onOpenFriend={onOpenFriend} />
+        <ChallengeStats rec={challengeRecord ?? null} onOpen={onOpenChallenge} onOpenFriend={onOpenFriend} periods={recordPeriods ?? []} period={recordPeriod ?? null} onPeriod={onRecordPeriod} />
       ) : model.empty ? (
         <Card padding={20} style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
@@ -228,10 +235,16 @@ function ChallengeStats({
   rec,
   onOpen,
   onOpenFriend,
+  periods,
+  period,
+  onPeriod,
 }: {
   rec: MyChallengeRecord | null;
   onOpen?: (id: string) => void;
   onOpenFriend?: (friend: ChallengeFriendRow) => void;
+  periods: readonly ChallengeRecordPeriod[];
+  period: ChallengeRecordPeriod | null;
+  onPeriod?: (period: ChallengeRecordPeriod) => void;
 }) {
   const wins = rec?.wins ?? 0;
   const ties = rec?.ties ?? 0;
@@ -240,9 +253,7 @@ function ChallengeStats({
   const empty = recordIsEmpty(rec);
   return (
     <>
-      <Text variant="footnote" style={styles.period}>
-        Last 30 days
-      </Text>
+      <PeriodPicker periods={periods} selected={period} onChange={(p) => onPeriod?.(p)} />
       <Card padding={16} style={styles.wtlCard}>
         <View style={styles.wtl} accessible accessibilityLabel={`${wins} won, ${ties} tied, ${losses} lost`}>
           <View style={styles.wtlItem}>

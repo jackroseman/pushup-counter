@@ -372,12 +372,18 @@ when a PR touches UI.
 ```bash
 npm ci
 npm --prefix tools/preview run setup     # once
-npm --prefix tools/preview run screens   # Today, Compete, You, empty and busy challenge states
+npm --prefix tools/preview run screens   # Today, Compete, You, empty states, and the challenges flow
+npm --prefix tools/preview run capture -- challenges-tour   # same tour, with an .mp4 recording
 ```
 
-Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). Other flows (a full set with
-simulated push-ups, onboarding, invite links) and `.mp4` recordings are covered in
-[docs/ui-preview.md](ui-preview.md), which is also the place for flows, fixtures and adding your own.
+Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). The dedicated challenges
+flow (`tools/preview/flows/challenges.js`) walks Your turn on Today and Compete, an invite,
+Waiting, challenge detail, New challenge for each type and length, You > Challenges with the
+period picker, a friend's head-to-head record, a finished result, and the empty states
+(`challenges-empty`, `challenges-none`, `challenges-busy`). Record the tour with
+`capture -- challenges-tour` (omit `--no-video`); the `.mp4` lands next to the screenshots.
+Other flows (a full set with simulated push-ups, onboarding, invite links) are covered in
+[docs/ui-preview.md](ui-preview.md), which is also the place for fixtures and adding your own.
 
 Things to know:
 
@@ -452,17 +458,21 @@ These helpers implement product rules in TypeScript that should move into views 
 RPCs, so the app can just display what the database returns. Tracked here so new
 work does not add to them.
 
-Resolved in the open-challenge work (`my_open_challenges`, `my_challenge_record`,
-and the upgraded `friend_challenge_record`):
+Resolved in the open-challenge work (`my_open_challenges`, `challenge_record_periods`,
+`my_challenge_record`, and the upgraded `friend_challenge_record` / `my_challenges`):
 
 * Challenge list sections, sort order, `can_do_push_ups`, and call to action — the
-  app now lays out `my_open_challenges` (`YourTurnList` on Today and Compete).
-  `groupBattles` / `challengeList` are no longer used to build those screens.
-* Period and friend records (W-T-L, forfeits as a footnote, declined invites
-  omitted) come from the record RPCs. `headToHeadRecord` is unused by the friend
-  page.
-* Result wording on a finished challenge prefers `myOutcome` / `myOutcomeLabel`
-  from `my_challenges`. `resultOf` remains a fallback for older rows.
+  app lays out `my_open_challenges` (`YourTurnList` on Today and Compete). Today's
+  leftover "your move" card is gone; without action rows, only "Challenge a friend"
+  remains when the person has friends.
+* Period picker options and ranges come from `challenge_record_periods`. The app
+  passes the chosen `from` / `to` into the record RPCs. W-T-L, forfeits as a
+  footnote, and declined invites omitted are computed in the record RPCs.
+  `friend_challenge_record` also returns `bestSet`.
+* Result wording, whether to crown a winner, whose score to showcase, and whether
+  the detail is a head-to-head card, standings, or a team goal come from
+  `my_challenges` (`resultTitle`, `resultCrowned`, `resultShowcaseUserId`,
+  `detailLayout`, `needsResponse`, `myOutcome`, `myOutcomeLabel`).
 * New most-reps and team challenges use `durationDays` (1 / 7 / 14 / 30) starting
   at the creator's local midnight, so the "Today" / "This week" / "This month"
   labels are gone from the New challenge sheet.
@@ -472,10 +482,3 @@ Still open:
 * **Rematch defaults.** `rematchParams` maps a stored `durationDays` or leftover
   calendar window onto the create form. A rematch RPC should return the
   `create_challenge` payload directly.
-* **Head-to-head card on the challenge detail.** `headToHead` and `headScore` in
-  `src/battles/challengeView.ts` still decide when a two-person score card appears
-  on the detail screen. The RPC should return that card ready to render.
-* **Legacy list helpers.** `groupBattles`, `canPlay`, `canRespond`, `canAddReps`,
-  `challengeList`, `challengeRow`, and `resultOf` remain for tests and as fallbacks
-  when an open-challenge row is not loaded. New UI should not take a dependency
-  on them.

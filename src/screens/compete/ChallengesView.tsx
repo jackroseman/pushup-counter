@@ -13,7 +13,7 @@ import type { OpenChallenge } from '../../battles/openChallenges';
 import { flushBattleUploads, onBattleUploads } from '../../battles/uploader';
 import { ChallengeNotifications } from '../../components/NotificationPrompt';
 import { REFRESH_FAILED } from '../../progress';
-import { EmptyState, Text, color, gutter, space } from '../../ui';
+import { EmptyState, Icon, Text, color, gutter, space } from '../../ui';
 import { YourTurnList } from './YourTurnList';
 
 /** Challenges segment of Compete (frame 20, E10, E11). Signed in with a username (the caller gates). */
@@ -158,7 +158,7 @@ export function ChallengesView({
           <Text variant="body" style={styles.grow}>
             See challenge stats
           </Text>
-          <Text variant="footnote">Last 30 days</Text>
+          <Icon name="chev" size={13} color={color.tertiary} />
         </Pressable>
       ) : null}
     </ScrollView>

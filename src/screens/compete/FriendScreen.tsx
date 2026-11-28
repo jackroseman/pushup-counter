@@ -5,8 +5,9 @@ import { fetchMyLeague } from '../../backend/leagueClient';
 import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
 import { friendBestSet, friendChallengeRows } from '../../battles/friendsView';
-import { Battle, Friend, FriendRecord, friendlyError, personName } from '../../battles/model';
-import type { OpenChallenge } from '../../battles/openChallenges';
+import type { ChallengeRecordPeriod, OpenChallenge } from '../../battles/openChallenges';
+import { PeriodPicker } from '../PeriodPicker';
+import { Friend, FriendRecord, friendlyError, personName } from '../../battles/model';
 import { formatCount } from '../../progress';
 import { Avatar, Button, Card, Icon, ListGroup, SectionHeader, Text, color, gutter, space } from '../../ui';
 
@@ -31,21 +32,33 @@ export function FriendScreen({
 }) {
   const name = personName(friend);
   const [rec, setRec] = useState<FriendRecord | null>(null);
-  const [battles, setBattles] = useState<Battle[]>([]);
   const [open, setOpen] = useState<OpenChallenge[]>([]);
   const [week, setWeek] = useState<number | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
+  const [periods, setPeriods] = useState<ChallengeRecordPeriod[]>([]);
+  const [period, setPeriod] = useState<ChallengeRecordPeriod | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
-    api.friendRecord(supabase, friend.userId).then((r) => (r.ok ? setRec(r.data) : setError(friendlyError(r.message))));
-    api.myBattles(supabase).then((r) => r.ok && setBattles(r.data ?? []));
+    api.challengeRecordPeriods(supabase).then((r) => {
+      if (!r.ok) return;
+      const list = r.data ?? [];
+      setPeriods(list);
+      setPeriod((cur) => (cur && list.find((x) => x.key === cur.key)) || list.find((x) => x.isDefault) || list[0] || null);
+    });
     api.myOpenChallenges(supabase).then((r) => r.ok && setOpen(r.data ?? []));
     fetchMyLeague(supabase)
       .then((board) => setWeek(board.total.find((row) => row.userId === friend.userId)?.reps ?? null))
       .catch(() => setWeek(null));
   }, [friend.userId]);
+
+  useEffect(() => {
+    if (!supabase || !period) return;
+    api.friendRecord(supabase, friend.userId, period.from ?? undefined, period.to).then((r) =>
+      r.ok ? setRec(r.data) : setError(friendlyError(r.message)),
+    );
+  }, [friend.userId, period]);
 
   const leave = useCallback(
     async (fn: () => Promise<{ ok: boolean; message?: string }>) => {
@@ -79,7 +92,7 @@ export function FriendScreen({
     ]);
   }, [friend.userId, name, onHeader, leave]);
 
-  const rows = useMemo(() => friendChallengeRows(friend.userId, battles, rec, now, timeZone(), open), [friend.userId, battles, rec, now, open]);
+  const rows = useMemo(() => friendChallengeRows(friend.userId, rec, now, timeZone(), open), [friend.userId, rec, now, open]);
   const wins = rec?.wins ?? rec?.won ?? 0;
   const ties = rec?.ties ?? rec?.drawn ?? 0;
   const losses = rec?.losses ?? rec?.lost ?? 0;
@@ -110,11 +123,7 @@ export function FriendScreen({
         ) : null}
         {!rec && !error ? <ActivityIndicator style={styles.loading} color={color.secondary} /> : null}
 
-        {rec && together > 0 ? (
-          <Text variant="footnote" style={styles.period}>
-            Last 30 days
-          </Text>
-        ) : null}
+        {rec ? <PeriodPicker periods={periods} selected={period} onChange={setPeriod} /> : null}
         {rec && together > 0 ? (
           <Card padding={0} style={styles.record}>
             <View style={styles.recordRow}>

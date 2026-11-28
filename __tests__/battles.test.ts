@@ -1,17 +1,12 @@
 import {
-  Battle,
   battleTitle,
   streakDayCount,
-  canPlay,
-  canRespond,
   creatorAttemptCue,
   Friend,
   friendlyError,
-  groupBattles,
   groupFriends,
   inviteShareMessage,
   inviteUrl,
-  Participant,
   personName,
   scoreLabel,
   timeLeft,
@@ -34,92 +29,14 @@ const NOW = Date.parse('2026-11-01T12:00:00Z');
 const iso = (msFromNow: number) => new Date(NOW + msFromNow).toISOString();
 const H = 3600_000;
 
-const person = (userId: string, extra: Partial<Participant> = {}): Participant => ({
-  userId,
-  username: userId,
-  displayName: null,
-  status: 'accepted',
-  isMe: false,
-  attemptsUsed: 0,
-  validReps: null,
-  metricValue: null,
-  avgDepthPct: null,
-  tempoScore: null,
-  rank: null,
-  isWinner: false,
-  ...extra,
-});
-
-const battle = (extra: Partial<Battle> = {}, participants?: Participant[]): Battle => ({
-  id: 'b1',
-  mode: 'async',
-  kind: 'best_set',
-  windowUnit: null,
-  metric: 'rep_count',
-  status: 'active',
-  durationS: null,
-  attemptsAllowed: 1,
-  targetReps: null,
-  maxParticipants: 8,
-  minQuality: 'good',
-  inviteExpiresAt: iso(10 * H),
-  startsAt: null,
-  endsAt: iso(20 * H),
-  createdAt: iso(-H),
-  finishedAt: null,
-  createdBy: 'alice',
-  locked: false,
-  participants: participants ?? [person('alice', { attemptsUsed: 1, validReps: 20 }), person('me', { isMe: true })],
-  inviteLinks: [],
-  ...extra,
-});
-
 describe('battle model', () => {
-  it('lets an accepted player play once before the deadline', () => {
-    expect(canPlay(battle(), NOW)).toBe(true);
-    expect(canPlay(battle({ endsAt: iso(-1) }), NOW)).toBe(false);
-    expect(canPlay(battle({}, [person('alice'), person('me', { isMe: true, attemptsUsed: 1 })]), NOW)).toBe(false);
-    expect(canPlay(battle({}, [person('alice'), person('me', { isMe: true, status: 'invited' })]), NOW)).toBe(false);
-    expect(canPlay(battle({ status: 'completed' }), NOW)).toBe(false);
-  });
-
-  it('does not start a special session for a total', () => {
-    const md = battle({ kind: 'total', windowUnit: 'week', metric: null, attemptsAllowed: null }, [person('alice'), person('me', { isMe: true, attemptsUsed: 3 })]);
-    expect(canPlay(md, NOW)).toBe(false);
-    expect(canPlay(battle({ kind: 'total', windowUnit: 'day', endsAt: iso(H) }, [person('me', { isMe: true })]), NOW)).toBe(false);
+  it('names kinds and streak lengths', () => {
     expect(battleTitle({ kind: 'total', windowUnit: 'week', durationS: null })).toBe('Most reps this week');
     expect(battleTitle({ kind: 'best_set', durationS: 60 })).toBe('Best set · 60 s');
     expect(battleTitle({ kind: 'total', windowUnit: 'custom', durationS: null })).toBe('Most reps');
     expect(battleTitle({ kind: 'streak', durationS: null, startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-16T00:00:00Z' })).toBe('Streak · 14 days');
     expect(battleTitle({ kind: 'team', durationS: null, targetReps: 500 })).toBe('Team · 500');
     expect(streakDayCount({ startsAt: '2026-11-02T00:00:00Z', endsAt: '2026-11-09T00:00:00Z' })).toBe(7);
-    expect(canPlay(battle({ kind: 'streak', metric: null, attemptsAllowed: null }), NOW)).toBe(false);
-    expect(canPlay(battle({ kind: 'team', metric: null, attemptsAllowed: null, targetReps: 500 }), NOW)).toBe(false);
-  });
-
-  it('only the creator may go first while a battle is pending', () => {
-    const pending = (meId: string) => battle({ status: 'pending', createdBy: 'me' === meId ? 'me' : 'alice' }, [person('alice'), person('me', { isMe: true })]);
-    expect(canPlay(pending('me'), NOW)).toBe(true);
-    expect(canPlay(pending('other'), NOW)).toBe(false);
-  });
-
-  it('invitees can answer until the invite expires', () => {
-    const invited = (exp: number) => battle({ inviteExpiresAt: iso(exp) }, [person('alice'), person('me', { isMe: true, status: 'invited' })]);
-    expect(canRespond(invited(H), NOW)).toBe(true);
-    expect(canRespond(invited(-1), NOW)).toBe(false);
-    expect(canRespond(battle(), NOW)).toBe(false);
-  });
-
-  it('groups battles into your move / waiting / results', () => {
-    const mine = battle({ id: 'mine', endsAt: iso(5 * H) });
-    const soon = battle({ id: 'soon', endsAt: iso(H) });
-    const waiting = battle({ id: 'waiting' }, [person('alice'), person('me', { isMe: true, attemptsUsed: 1 })]);
-    const old = battle({ id: 'old', status: 'completed', finishedAt: iso(-5 * H) });
-    const recent = battle({ id: 'recent', status: 'completed', finishedAt: iso(-H) });
-    const g = groupBattles([old, mine, waiting, recent, soon], NOW);
-    expect(g.yourMove.map((b) => b.id)).toEqual(['soon', 'mine']);
-    expect(g.waiting.map((b) => b.id)).toEqual(['waiting']);
-    expect(g.finished.map((b) => b.id)).toEqual(['recent', 'old']);
   });
 
   it('formats time left and scores', () => {

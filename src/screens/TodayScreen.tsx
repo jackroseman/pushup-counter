@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, AvatarStack, Button, Card, Icon, Ring, RollingNumber, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
+import { AvatarStack, Button, Card, Icon, Ring, RollingNumber, StreakChip, TabHeader, Text, WeekStrip } from '../ui';
 import { color, gutter, radius } from '../ui/tokens';
 import { todayActionRows, type OpenChallenge } from '../battles/openChallenges';
 import { YourTurnList } from './compete/YourTurnList';
@@ -20,7 +20,6 @@ export function TodayScreen({
   onGoal,
   onLeague,
   onChallenge,
-  onPlay,
   onNewChallenge,
   onInvite,
   onHowItWorks,
@@ -41,7 +40,6 @@ export function TodayScreen({
   onGoal: () => void;
   onLeague: () => void;
   onChallenge: (battleId: string) => void;
-  onPlay: (battleId: string) => void;
   onNewChallenge: () => void;
   onInvite: () => void;
   onHowItWorks: () => void;
@@ -136,8 +134,6 @@ export function TodayScreen({
             <ChallengeRow
               card={view.challenge}
               first={!view.league}
-              onChallenge={onChallenge}
-              onPlay={onPlay}
               onNewChallenge={onNewChallenge}
             />
           );
@@ -236,56 +232,31 @@ function Hero({ hero, onGoal }: { hero: TodayHero; onGoal: () => void }) {
 function ChallengeRow({
   card,
   first,
-  onChallenge,
-  onPlay,
   onNewChallenge,
 }: {
   card: TodayChallengeCard;
   first: boolean;
-  onChallenge: (battleId: string) => void;
-  onPlay: (battleId: string) => void;
   onNewChallenge: () => void;
 }) {
   const style = first ? styles.firstCard : styles.card;
-  if (card.kind === 'challenge_friend') {
-    return (
-      <Card padding={0} style={style}>
-        <View style={styles.row}>
-          <View style={styles.circle}>
-            <Icon name="bolt" size={18} />
-          </View>
-          <View style={styles.grow}>
-            <Text variant="headline" style={styles.small}>
-              {card.title}
-            </Text>
-            <Text variant="footnote">{card.detail}</Text>
-          </View>
-          <Button title="New" kind="tinted" size="small" onPress={onNewChallenge} accessibilityLabel="New challenge" />
-        </View>
-      </Card>
-    );
-  }
-  const play = card.kind === 'your_move';
   return (
-    <Card padding={0} style={style} onPress={() => onChallenge(card.battleId)} accessibilityLabel={`${card.title}. ${card.detail}`}>
+    <Card padding={0} style={style}>
       <View style={styles.row}>
-        <Avatar name={card.opponent} size={36} />
+        <View style={styles.circle}>
+          <Icon name="bolt" size={18} />
+        </View>
         <View style={styles.grow}>
           <Text variant="headline" style={styles.small}>
             {card.title}
           </Text>
           <Text variant="footnote">{card.detail}</Text>
         </View>
-        <Button
-          title={play ? 'Play' : 'View'}
-          kind="tinted"
-          size="small"
-          onPress={() => (play ? onPlay(card.battleId) : onChallenge(card.battleId))}
-        />
+        <Button title="New" kind="tinted" size="small" onPress={onNewChallenge} accessibilityLabel="New challenge" />
       </View>
     </Card>
   );
 }
+
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },

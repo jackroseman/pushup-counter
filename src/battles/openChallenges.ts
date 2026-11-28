@@ -91,6 +91,14 @@ export interface ChallengeRecordEvent {
   sortRank: number;
 }
 
+export interface ChallengeRecordPeriod {
+  key: string;
+  label: string;
+  from: string | null;
+  to: string;
+  isDefault: boolean;
+}
+
 export interface MyChallengeRecord {
   periodFrom: string;
   periodTo: string;

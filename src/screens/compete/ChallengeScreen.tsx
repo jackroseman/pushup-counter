@@ -11,23 +11,18 @@ import { api } from '../../battles/api';
 import type { OpenChallenge } from '../../battles/openChallenges';
 import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
 import {
-  canAddReps,
   challengeName,
-  detailLine,
   headScore,
-  headToHead,
   kindLabel,
   lengthLabel,
-  resultOf,
   resultSubtitle,
   standings,
   teamProgress,
   type StandingRow,
 } from '../../battles/challengeView';
+import { formatStatusLine } from '../../battles/openChallenges';
 import {
   Battle,
-  canPlay,
-  canRespond,
   creatorAttemptCue,
   friendlyError,
   inviteShareMessage,
@@ -212,7 +207,7 @@ export function ChallengeScreen({
   }, [share, b, profile?.id, shareLink]);
 
   // Header: "Invite" while answering, "Result" once over, else the kind. ••• for the creator's actions.
-  const invited = !!b && (openRow?.needsResponse ?? canRespond(b, now));
+  const invited = !!b && (openRow?.needsResponse ?? b.needsResponse) === true;
   const over = !!b && !isOpen(b);
   const isCreator = !!b && b.createdBy === profile?.id;
   useLayoutEffect(() => {
@@ -349,11 +344,11 @@ export function ChallengeScreen({
 
   // ---- Result (frame 25) -----------------------------------------------------------------
   if (over) {
-    const result = resultOf(b);
     const completed = b.status === 'completed';
-    const showcase = result.winner ?? mine;
-    const crowned = completed && (result.kind === 'won' || result.kind === 'lost' || result.kind === 'goal');
-    const title = b.myOutcomeLabel || (b.status === 'cancelled' ? 'Cancelled' : b.status === 'expired' ? 'Ended early' : result.title);
+    const showcase =
+      (b.resultShowcaseUserId ? b.participants.find((p) => p.userId === b.resultShowcaseUserId) : null) ?? mine;
+    const crowned = !!b.resultCrowned;
+    const title = b.resultTitle || b.myOutcomeLabel || (b.status === 'cancelled' ? 'Cancelled' : b.status === 'expired' ? 'Expired' : 'Finished');
     const rows = standings(b);
     const team = b.kind === 'team' ? teamProgress(b) : null;
     return (
@@ -412,13 +407,14 @@ export function ChallengeScreen({
     justPlayed: !!justPlayed,
     attemptsUsed: mine?.attemptsUsed ?? 0,
     uploadPending: queued.pending,
-    canPlay: openRow?.ctaType === 'play' || canPlay(b, now),
+    canPlay: openRow?.ctaType === 'play',
   });
-  const duel = headToHead(b);
-  const line = detailLine(b, now);
-  const team = b.kind === 'team' ? teamProgress(b) : null;
-  const playable = ((openRow ? openRow.ctaType === 'play' : canPlay(b, now))) && !queued.pending;
-  const counting = openRow ? openRow.canDoPushUps && openRow.ctaType === 'start_set' : canAddReps(b, now);
+  const them = b.participants.find((p) => !p.isMe && (p.status === 'accepted' || p.status === 'invited' || p.status === 'forfeited'));
+  const duel = b.detailLayout === 'head_to_head' && mine && them ? { you: mine, them } : null;
+  const line = openRow ? formatStatusLine(openRow) : '';
+  const team = b.kind === 'team' || b.detailLayout === 'team' ? teamProgress(b) : null;
+  const playable = openRow?.ctaType === 'play' && !queued.pending;
+  const counting = !!(openRow?.canDoPushUps && openRow?.ctaType === 'start_set');
   return (
     <View style={styles.root}>
       {notifications}

@@ -1627,6 +1627,29 @@ steps.push(
       friend_challenge_record('${B}') ? 'periodFrom' as has_period
     ; reset role;
   `],
+  ['open: challenge_record_periods lists default last 30 days and all time', `
+    ${as(A)} select
+      jsonb_array_length(challenge_record_periods()) as n,
+      challenge_record_periods()->0->>'key' as first_key,
+      (challenge_record_periods()->0->>'isDefault')::boolean as first_default,
+      challenge_record_periods()->0->>'label' as first_label,
+      (select p->>'key' from jsonb_array_elements(challenge_record_periods()) p where (p->>'isDefault')::boolean limit 1) as default_key,
+      (select p->>'from' is not null from jsonb_array_elements(challenge_record_periods()) p where p->>'key' = 'last_30_days') as has_from,
+      (select p->>'from' from jsonb_array_elements(challenge_record_periods()) p where p->>'key' = 'all_time') as all_from,
+      (select (p->>'to') is not null from jsonb_array_elements(challenge_record_periods()) p where p->>'key' = 'this_year') as year_to
+    ; reset role;
+  `],
+  ['open: a finished most-reps detail uses a result title and head-to-head layout', `
+    ${as(A)} select
+      c->>'resultTitle' as result_title,
+      c->>'detailLayout' as layout,
+      (c->>'resultCrowned')::boolean as crowned,
+      c->>'myOutcome' as outcome,
+      (c->>'needsResponse')::boolean as needs_response,
+      c->>'status' as status
+      from jsonb_array_elements(my_challenges('11111111-1111-4111-8111-111111111111'::uuid)) c;
+    reset role;
+  `],
 );
 Object.assign(checks, {
   'open: a 7-day challenge starts at local midnight and stays open until it ends': (r) => {
@@ -1671,5 +1694,13 @@ Object.assign(checks, {
   'open: friend record still reports a last-30-days score': (r) => {
     const x = r.find((row) => row[0] && 'played' in row[0])[0];
     ok(Number(x.played) >= 0 && x.recent_type === 'array' && x.has_wins === true && x.has_period === true, 'friend rec ' + JSON.stringify(x));
+  },
+  'open: challenge_record_periods lists default last 30 days and all time': (r) => {
+    const x = r[0][0];
+    ok(Number(x.n) === 7 && x.first_key === 'last_30_days' && x.first_default === true && x.first_label === 'Last 30 days' && x.default_key === 'last_30_days' && x.has_from === true && x.all_from != null && x.year_to === true, 'periods ' + JSON.stringify(x));
+  },
+  'open: a finished most-reps detail uses a result title and head-to-head layout': (r) => {
+    const x = r.find((row) => row[0] && 'result_title' in row[0])[0];
+    ok(x.result_title === 'You won' && x.layout === 'head_to_head' && x.crowned === true && x.outcome === 'win' && x.needs_response === false, 'detail ' + JSON.stringify(x));
   },
 });

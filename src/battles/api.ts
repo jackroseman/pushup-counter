@@ -1,6 +1,6 @@
 /** Supabase calls for friends and battles (thin wrappers around the phase-3 RPCs). */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MyChallengeRecord, OpenChallenge } from './openChallenges';
+import type { ChallengeRecordPeriod, MyChallengeRecord, OpenChallenge } from './openChallenges';
 import type { Battle, Friend, FriendRecord, FriendRelation, InvitePreview } from './model';
 import type { SubmitResult } from './uploadQueue';
 
@@ -83,7 +83,9 @@ export const api = {
   removeFriend: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'remove_friend', { p_user: userId }),
   blockUser: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'block_user', { p_user: userId }),
   unblockUser: (c: SupabaseClient, userId: string) => rpc<unknown>(c, 'unblock_user', { p_user: userId }),
-  friendRecord: (c: SupabaseClient, userId: string) => rpc<FriendRecord>(c, 'friend_challenge_record', { p_user: userId }),
+  challengeRecordPeriods: (c: SupabaseClient) => rpc<ChallengeRecordPeriod[]>(c, 'challenge_record_periods'),
+  friendRecord: (c: SupabaseClient, userId: string, from?: string, to?: string) =>
+    rpc<FriendRecord>(c, 'friend_challenge_record', { p_user: userId, p_from: from ?? null, p_to: to ?? null }),
 
   /** Ask the notify function to send queued pushes now (cron does it within a minute anyway). */
   kickNotify(c: SupabaseClient): void {

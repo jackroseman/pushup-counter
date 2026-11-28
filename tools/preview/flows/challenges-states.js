@@ -104,6 +104,8 @@ module.exports = {
         await shot('friends');
         await tap('Brett', { last: true, wait: 2000 });
         await shot('friend');
+        await tap('Period: Last 30 days', { label: true, last: true, wait: 800 });
+        await shot('friend-period');
       },
     },
     {
@@ -120,3 +122,6 @@ module.exports = {
     },
   ],
 };
+
+module.exports.busyChallenges = busyChallenges;
+module.exports.busyOpen = busyOpen;

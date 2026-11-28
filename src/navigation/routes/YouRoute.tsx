@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { YouScreen } from '../../screens/YouScreen';
 import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
-import type { MyChallengeRecord } from '../../battles/openChallenges';
+import type { ChallengeRecordPeriod, MyChallengeRecord } from '../../battles/openChallenges';
 import { useBackend } from '../../backend/BackendProvider';
 import { useIdentity } from '../../backend/IdentityProvider';
 import { isAppleSignInAvailable, signInWithApple } from '../../backend/auth';
@@ -26,7 +26,11 @@ export function YouRoute({ navigation, route }: TabProps<'You'>) {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
   const [challengeRecord, setChallengeRecord] = useState<MyChallengeRecord | null>(null);
+  const [recordPeriods, setRecordPeriods] = useState<ChallengeRecordPeriod[]>([]);
+  const [recordPeriod, setRecordPeriod] = useState<ChallengeRecordPeriod | null>(null);
   const segment = route.params?.segment === 'challenges' ? 'challenges' : 'sets';
+  const pickPeriod = (list: ChallengeRecordPeriod[], cur: ChallengeRecordPeriod | null) =>
+    (cur && list.find((p) => p.key === cur.key)) || list.find((p) => p.isDefault) || list[0] || null;
   const reload = useCallback(() => {
     refreshRemote();
     historyStore
@@ -34,8 +38,11 @@ export function YouRoute({ navigation, route }: TabProps<'You'>) {
       .then(setRecords)
       .catch(() => {});
     if (supabase) {
-      api.myChallengeRecord(supabase).then((r) => {
-        if (r.ok) setChallengeRecord(r.data);
+      api.challengeRecordPeriods(supabase).then((r) => {
+        if (!r.ok) return;
+        const list = r.data ?? [];
+        setRecordPeriods(list);
+        setRecordPeriod((cur) => pickPeriod(list, cur));
       });
     }
   }, [refreshRemote]);
@@ -43,6 +50,12 @@ export function YouRoute({ navigation, route }: TabProps<'You'>) {
     reload();
     return navigation.addListener('focus', reload);
   }, [navigation, reload]);
+  useEffect(() => {
+    if (!supabase || !recordPeriod) return;
+    api.myChallengeRecord(supabase, recordPeriod.from ?? undefined, recordPeriod.to).then((r) => {
+      if (r.ok) setChallengeRecord(r.data);
+    });
+  }, [recordPeriod]);
   useEffect(() => {
     isAppleSignInAvailable().then(setAppleAvailable);
   }, []);
@@ -100,6 +113,9 @@ export function YouRoute({ navigation, route }: TabProps<'You'>) {
         onOpenFriend={(f) =>
           navigation.navigate('Friend', { friend: { userId: f.userId, username: f.username, displayName: f.displayName, relation: 'friend' } })
         }
+        recordPeriods={recordPeriods}
+        recordPeriod={recordPeriod}
+        onRecordPeriod={setRecordPeriod}
         onOpenSet={(id) => {
           const record = records.find((r) => r.id === id);
           if (record) navigation.navigate('Summary', { record, from: 'history' });

@@ -85,8 +85,14 @@ above is preferred.
 
 ## Open questions
 
-Unresolved choices that should be settled before acceptance. Remove or move
-them to the decision log as they are answered.
+Numbered unresolved choices that should be settled before acceptance. For each
+question, list the options and a recommended answer. The RFC PR description
+repeats these under **Questions for you**. Remove or move them to the decision
+log as they are answered.
+
+1. **Short question?** One or two sentences of context.
+   - Options: option a; option b
+   - Recommended: option a, and why
 
 ## Decision log
 

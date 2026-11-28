@@ -37,6 +37,9 @@ Feedback, feature request, or bug issue
    prompted it. Do not start implementation in the RFC PR.
 4. **Review.** Status moves from Draft to In review when the write-up is ready
    for Sunny. Keep the same status in the RFC front-matter and in the PR labels.
+   The PR description is the reading copy (see below). Sunny can answer the
+   numbered questions in one PR comment (for example, "1 library only, 2 no")
+   or comment inline on the file.
 5. **Decision.** Sunny accepts or rejects the RFC. Update the front-matter and
    labels, then merge the RFC PR (including rejected RFCs, so the number and the
    decision stay in the repo). If the RFC is rejected, close its source issues
@@ -221,6 +224,29 @@ PARSE_RFCS
 Work in a **new worktree** off `origin/dev`. Do not switch or commit in the
 shared `/workspace/PushupCounter` checkout.
 
+### PR description (the reading copy)
+
+The markdown file is the source of truth. The PR description is the reading
+copy, so the reviewer never has to read raw markdown in the diff.
+
+Write the description in this order, and pass it with `--body-file` when you
+open or update the PR:
+
+1. `Refs #N` lines for each source issue (not `Closes`, because merging the
+   RFC does not ship the feature).
+2. A one-line note that the markdown file is the source of truth and that this
+   description mirrors it, plus how to review: answer the numbered questions in
+   one PR comment (for example, "1 library only, 2 no"), or comment inline on
+   the file.
+3. The full RFC body, pasted from the file without the YAML front-matter, so
+   it renders in the conversation.
+4. A **Questions for you** section that repeats the numbered open questions,
+   each with the options and a recommended answer.
+
+Whenever the RFC file changes, re-sync the description from it so they never
+disagree. After a question is answered, move the answer into the decision log,
+update the file, and re-sync the description.
+
 ```bash
 git fetch origin dev
 NEXT=0001  # or the next number from the commands above
@@ -232,18 +258,34 @@ cp docs/rfcs/0000-template.md docs/rfcs/${NEXT}-${SLUG}.md
 git add docs/rfcs/${NEXT}-${SLUG}.md
 git commit -m "docs(rfc): ${NEXT} <title>"
 git push -u origin rfc/${NEXT}-${SLUG}
+# Build the PR description from the RFC file, then open the PR.
+# Fill in the Questions for you section in /tmp/rfc-pr-body.md before creating
+# the PR. After later file edits, rebuild the body and run:
+#   gh pr edit <n> --repo jackroseman/pushup-counter --body-file /tmp/rfc-pr-body.md
+export NEXT SLUG
+export RFC_ISSUE=<n>  # source issue number, or a comma-separated list in the header
+python3 - <<'PY' > /tmp/rfc-pr-body.md
+from pathlib import Path
+import os
+next_num = os.environ["NEXT"]
+slug = os.environ["SLUG"]
+issue = os.environ.get("RFC_ISSUE", "<n>")
+path = Path(f"docs/rfcs/{next_num}-{slug}.md")
+body = path.read_text().split("---", 2)[2].lstrip("\n")
+print(f"""Refs #{issue}
+
+`{path}` is the source of truth; this description mirrors it. To review, answer the numbered questions in one PR comment, e.g. "1 library only, 2 no", or comment inline on the file.
+
+{body}
+## Questions for you
+
+Repeat each numbered open question here, with its options and a recommended answer.
+""")
+PY
 gh pr create --repo jackroseman/pushup-counter --base dev \
   --title "RFC ${NEXT}: <Title>" \
   --label rfc --label rfc:draft \
-  --body "$(cat <<END
-Adds \`docs/rfcs/${NEXT}-${SLUG}.md\`.
-
-Related issues: #<n>
-
-Status: Draft. Move to In review (label \`rfc:in-review\`, mark the PR ready)
-when the write-up is complete.
-END
-)"
+  --body-file /tmp/rfc-pr-body.md
 ```
 
 Do not close the originating issues when the RFC PR merges, and do not close

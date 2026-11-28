@@ -1,0 +1,45 @@
+name: Feedback
+description: Log something a user said about the app.
+title: "Feedback: "
+labels: [feedback]
+body:
+  - type: input
+    id: who
+    attributes:
+      label: Who gave it
+      description: Name or handle.
+      placeholder: Lizzy
+    validations:
+      required: true
+  - type: input
+    id: channel
+    attributes:
+      label: Where / channel
+      description: How it came in.
+      placeholder: TestFlight, text, in person, App Store, email
+    validations:
+      required: true
+  - type: textarea
+    id: quote
+    attributes:
+      label: Verbatim quote
+      description: Their words, as close as possible. Paraphrase only if the original is gone.
+      placeholder: >
+        I wish I could see last week's best set without opening the challenge.
+    validations:
+      required: true
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      description: If you know it.
+      placeholder: 1.2.0 (build 42), or unknown
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Optional. Paste or drag in images.
+    validations:
+      required: false

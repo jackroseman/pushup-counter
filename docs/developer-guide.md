@@ -450,10 +450,22 @@ files. Secret *names* and where they live are listed in
 [CONTRIBUTING.md](../CONTRIBUTING.md#10-secrets). This guide does not repeat values
 or identifiers.
 
+## Feedback, issues, and RFCs
+
+User feedback is logged as a GitHub issue (feedback, feature request, or bug).
+Ideas that are worth a design pass are labeled `rfc-needed` and written up as an
+RFC in [`docs/rfcs/`](rfcs/README.md). The RFC is reviewed as a PR into `dev`
+before implementation starts. Saturday reviews look at open RFC PRs, accepted
+RFCs that have not shipped, and issues still waiting for a write-up.
+
+The lifecycle, template, labels, and `gh` commands are in
+[docs/rfcs/README.md](rfcs/README.md).
+
 ## Where to read more
 
 * [CONTRIBUTING.md](../CONTRIBUTING.md) — branches, PRs, CI, the dev client, rollbacks,
   secrets.
+* [docs/rfcs/README.md](rfcs/README.md) — feedback issues, RFC lifecycle, and the RFC template.
 * [docs/RELEASING.md](RELEASING.md) — what happens after a merge, OTA vs a native
   build, the `dev` → `main` recipe, the build budget, by-hand commands.
 * [docs/notification-experience.md](notification-experience.md) — the living contract

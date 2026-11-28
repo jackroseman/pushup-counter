@@ -19,9 +19,11 @@ Feedback, feature request, or bug issue
         ↓
   Draft → In review → Accepted or Rejected
         ↓
-  Implementation PRs link the RFC
+  Implementation PRs link the RFC (Closes #N, RFC becomes Implemented)
         ↓
-  Implemented
+  dev → main release PR also lists Closes #N
+        ↓
+  Issues close when that PR merges to main (prod)
 ```
 
 1. **Issue.** Log what you heard or found. Use the Feedback, Feature request, or
@@ -41,15 +43,19 @@ Feedback, feature request, or bug issue
    as **not planned**, with a comment that names the RFC and the reason.
 6. **Implementation.** Later PRs into `dev` do the work. Each one links the RFC
    (`Implements RFC NNNN`). The PR that completes the feature uses `Closes #N`
-   for the source issues. Feature PRs merge into `dev`, which is not the
-   default branch (`main`), so GitHub will not auto-close those issues until
-   the `dev` → `main` release merges. Once that final PR has merged into
-   `dev`, close the issues by hand and leave a comment linking the PR. That
-   same completing PR sets the RFC front-matter to Implemented and the label
-   to `rfc:implemented`.
+   for the source issues, and that same PR sets the RFC front-matter to
+   Implemented and the label to `rfc:implemented`. Do not close the issues by
+   hand when that PR merges into `dev`. Issues stay open until the work reaches
+   `main` (production), so an open issue means it is not in prod yet.
+7. **Release.** The `dev` → `main` release PR must also list `Closes #N` for
+   every issue it ships. GitHub only auto-closes issues from PRs merged into
+   the default branch, and it does not reliably chain those keywords through a
+   merge commit. The release-PR workflow copies the lines from the included
+   feature PRs. See [docs/RELEASING.md](../RELEASING.md).
 
 A Saturday review looks at issues labeled `rfc-needed`, open RFC PRs, and
-accepted RFCs that are not yet implemented.
+accepted RFCs that have not shipped. Open issues, including those whose
+completing PR has already merged to `dev`, are not in production yet.
 
 ## Statuses and labels
 
@@ -240,19 +246,16 @@ END
 )"
 ```
 
-Do not close the originating issues when the RFC PR merges. The PR that
-completes the feature should still include `Closes #N` for each source issue,
-so the link is recorded. Because that PR merges into `dev`, not `main`,
-GitHub will not auto-close the issues then. After the completing PR has
-merged into `dev`, close them by hand and comment with the PR link:
-
-```bash
-gh issue close N --repo jackroseman/pushup-counter \
-  --comment "Shipped in <PR url> (merged to dev). GitHub will not auto-close this until the release merges to main."
-```
-
-That same completing PR updates the RFC file to `status: Implemented` and
-switches the label from `rfc:accepted` to `rfc:implemented`.
+Do not close the originating issues when the RFC PR merges, and do not close
+them by hand when the completing PR merges into `dev`. The completing PR
+includes `Closes #N` for each source issue, updates the RFC file to
+`status: Implemented`, and switches the label from `rfc:accepted` to
+`rfc:implemented`. The issues stay open until the `dev` → `main` release
+PR also lists those `Closes #N` lines and is merged.
+`.github/workflows/release-pr-closes.yml` copies the lines onto the
+release PR when it is opened or edited. If you open that PR by hand, add
+the lines yourself, or edit the body to trigger the workflow, or run
+`.github/scripts/release-closes.sh --apply <pr>`.
 
 If the RFC is rejected, close the source issues as not planned, with the
 reason:

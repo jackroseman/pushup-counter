@@ -1,0 +1,47 @@
+# When a dev -> main release PR is opened or its title/body is edited, copy
+# Closes #N from the feature PRs in that range onto the release PR body.
+# GitHub only auto-closes issues from PRs merged into the default branch, and
+# does not reliably chain keywords through a merge commit.
+#
+# Intentionally not on synchronize (every push). This should not spend CI
+# minutes on ordinary commits. Editing the PR body, or running
+# `.github/scripts/release-closes.sh --apply <pr>`, refreshes the list if more
+# work has landed on dev.
+name: Release PR issue closes
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+    branches: [main]
+
+concurrency:
+  group: release-closes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  close-refs:
+    name: Add Closes lines to the release PR
+    if: >
+      github.event.pull_request.head.ref == 'dev' &&
+      (github.event.action != 'edited' || github.actor != 'github-actions[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main and dev
+        run: git fetch origin main dev
+
+      - name: Refresh Closes lines
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BASE: origin/main
+          HEAD: origin/dev
+        run: .github/scripts/release-closes.sh --apply "${{ github.event.pull_request.number }}"

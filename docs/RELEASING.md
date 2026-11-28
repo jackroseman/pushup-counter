@@ -65,7 +65,19 @@ The EAS workflows in `.eas/workflows/` have **no push trigger**. They only run w
    merging would do (needs `eas login` or `EXPO_TOKEN`).
 3. `scripts/release.sh`: opens (or reuses) the PR `dev` -> `main`, lists the commits, and
    brings the PR up to date with `main` if it is BEHIND. It never merges.
-4. Wait for `checks`, then merge it (**merge commit**, not squash).
+   After the release PR is opened (or if you edit its title or body), a small
+   workflow (`.github/workflows/release-pr-closes.yml`) copies `Closes #N` from
+   the feature PRs in the range onto the release PR body. It does not run on
+   every push, so it does not spend CI minutes on ordinary commits. GitHub only
+   auto-closes issues from PRs merged into `main` (the default branch), and it
+   does not reliably chain those keywords through a merge commit, so the
+   release PR has to list them itself. Open issues mean the work is not in
+   production yet. To refresh the list later, edit the PR body, or run
+   `.github/scripts/release-closes.sh --apply <pr>`. If you open the release
+   PR by hand, include the `Closes #N` lines, or edit the body to trigger the
+   workflow.
+4. Wait for `checks`, then merge it (**merge commit**, not squash). Issues listed in
+   `Closes #N` close automatically when this merge lands on `main`.
 5. Watch **Actions -> CI** (the merge commit's `checks`, then `ship` if the change is
    shippable) and **Actions -> EAS ship** on GitHub. If `checks` is red, nothing is
    published and no build is started.

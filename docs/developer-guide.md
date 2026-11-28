@@ -456,7 +456,9 @@ User feedback is logged as a GitHub issue (feedback, feature request, or bug).
 Ideas that are worth a design pass are labeled `rfc-needed` and written up as an
 RFC in [`docs/rfcs/`](rfcs/README.md). The RFC is reviewed as a PR into `dev`
 before implementation starts. Saturday reviews look at open RFC PRs, accepted
-RFCs that have not shipped, and issues still waiting for a write-up.
+RFCs that have not shipped, and issues still waiting for a write-up. Issues
+stay open until the work reaches `main`, so an open issue means it is not in
+production yet.
 
 The lifecycle, template, labels, and `gh` commands are in
 [docs/rfcs/README.md](rfcs/README.md).

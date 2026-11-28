@@ -325,8 +325,41 @@ web invite-page check, and the `expo export` bundle smoke test, which CI also ru
 Before you push, `npm run ci` should be green. Database work also needs new or
 updated steps in `supabase/tests/cases.mjs`.
 
-To look at UI without a phone, use the web preview and capture tooling in
-[docs/ui-preview.md](ui-preview.md).
+To look at UI without a phone, see "Rendering screens" below.
+
+### Rendering screens
+
+You can see the real app on any computer, with no phone, simulator or Mac. The web preview in
+`tools/preview/` builds the app's own screens for the browser and screenshots them in an
+iPhone-sized window (402 × 874 points), using canned data in place of Supabase. Use it before
+designing a change to an existing screen, so the "before" is the app and not a drawing of it, and
+when a PR touches UI.
+
+```bash
+npm ci
+npm --prefix tools/preview run setup     # once
+npm --prefix tools/preview run screens   # Today, Compete, You, empty and busy challenge states
+```
+
+Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). Other flows (a full set with
+simulated push-ups, onboarding, invite links) and `.mp4` recordings are covered in
+[docs/ui-preview.md](ui-preview.md), which is also the place for flows, fixtures and adding your own.
+
+Things to know:
+
+* **The data is a fixture.** The shapes mirror the RPCs the app calls (`my_challenges`,
+  `my_league`, `friend_challenge_record` and so on). When a back end change alters a shape, update
+  `tools/preview/mock/fixtures.js`, or that screen renders empty. A flow can override one RPC to
+  show a state the defaults don't, such as many challenges waiting on you.
+* **It is not an iPhone.** The web has no status bar or home indicator, uses a flat tab bar
+  instead of the native iOS 26 one, SVG icons instead of SF Symbols, and Inter instead of the
+  system font. Sensors, haptics, native sheets and performance still need a check on a phone.
+* **It never reaches a real back end.** Every request goes to the fixture, and the build refuses
+  to start without its stand-ins. Nothing from `tools/preview/` is in the app bundle, and a unit
+  test fails if app code imports it. Do not add a preview script to the root `package.json`: it
+  would change the native fingerprint.
+* **Mockups start from it.** Take the real screenshot, then draw only what changes, label it
+  MOCKUP, and keep it in the app's style (the style guide Page).
 
 ## Conventions
 

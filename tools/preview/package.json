@@ -8,6 +8,7 @@
     "web": "node web.js",
     "capture": "node capture.js",
     "flows": "node capture.js --list",
+    "screens": "node build.js && node capture.js today compete you-settings empty challenges-states-busy challenges-states-none challenges-states-friend challenges-states-finished --no-video",
     "capture:web": "node web-pages.js"
   },
   "dependencies": {

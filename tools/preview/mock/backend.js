@@ -26,6 +26,43 @@ function sessionFor(me) {
   return { user, session: { access_token: jwt, token_type: 'bearer', expires_in: 3600, expires_at: 1900000000, refresh_token: 'preview', user } };
 }
 
+
+function rematchDefaults(F, challengeId) {
+  const c = (F.challenges || []).find((row) => row.id === challengeId);
+  if (!c) return null;
+  const friendIds = (c.participants || [])
+    .filter((p) => !p.isMe && p.status !== 'declined' && p.status !== 'expired')
+    .map((p) => p.userId);
+  const kindLabel = c.kind === 'best_set' ? 'Best set' : c.kind === 'total' ? 'Most reps' : c.kind === 'streak' ? 'Streak' : 'Team goal';
+  const daysLabel = (n) => (n === 1 ? '1 day' : `${n} days`);
+  if (c.kind === 'best_set') {
+    const created = Date.parse(c.createdAt);
+    const ends = Date.parse(c.endsAt);
+    const raw = Number.isFinite(created) && Number.isFinite(ends) ? Math.round((ends - created) / 3600000) : 24;
+    const options = [24, 72, 168];
+    const deadlineHours = options.reduce((best, h) => (Math.abs(h - raw) < Math.abs(best - raw) ? h : best), options[0]);
+    const lengthLabel = deadlineHours === 168 ? '1 week' : deadlineHours === 24 ? '1 day' : `${deadlineHours / 24} days`;
+    return { kind: 'best_set', durationS: c.durationS ?? null, deadlineHours, friendIds, kindLabel, lengthLabel };
+  }
+  if (c.kind === 'streak') {
+    const starts = Date.parse(c.startsAt);
+    const ends = Date.parse(c.endsAt);
+    const streakDays = Number.isFinite(starts) && Number.isFinite(ends) ? Math.max(1, Math.round((ends - starts) / 86400000)) : 7;
+    return { kind: 'streak', streakDays, friendIds, kindLabel, lengthLabel: daysLabel(streakDays) };
+  }
+  let durationDays = c.durationDays ?? (c.windowUnit === 'day' ? 1 : c.windowUnit === 'month' ? 30 : c.windowUnit === 'week' ? 7 : null);
+  if (durationDays == null && c.startsAt && c.endsAt) {
+    durationDays = Math.max(1, Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 86400000));
+  }
+  if (![1, 7, 14, 30].includes(durationDays)) {
+    const raw = durationDays || 7;
+    durationDays = [1, 7, 14, 30].reduce((best, n) => (Math.abs(n - raw) < Math.abs(best - raw) ? n : best), 7);
+  }
+  const out = { kind: c.kind, durationDays, friendIds, kindLabel, lengthLabel: daysLabel(durationDays) };
+  if (c.kind === 'team') out.targetReps = c.targetReps;
+  return out;
+}
+
 function createBackend(options = {}) {
   const user = options.user || 'regular';
   const empty = user !== 'regular';
@@ -37,9 +74,22 @@ function createBackend(options = {}) {
     my_progress: () => (empty ? F.emptyProgress : F.progress),
     my_league: () => (empty ? { ...F.league, total: [], improvement: [] } : F.league),
     my_challenges: (args) => (args && args.p_battle ? F.challenges.filter((c) => c.id === args.p_battle) : empty ? [] : F.challenges),
+    my_open_challenges: () => (empty ? [] : F.openChallenges),
+    challenge_record_periods: () => F.recordPeriods,
+    my_challenge_record: (args) => {
+      const rec = empty
+        ? { periodFrom: F.now, periodTo: F.now, wins: 0, ties: 0, losses: 0, forfeits: 0, cancelled: 0, expired: 0, declined: 0, friends: [], otherEvents: [] }
+        : F.challengeRecord;
+      return { ...rec, periodFrom: (args && args.p_from) || rec.periodFrom, periodTo: (args && args.p_to) || rec.periodTo };
+    },
+    rematch_defaults: (args) => rematchDefaults(F, args && args.p_challenge_id),
     my_friends: () => (empty ? [] : F.friends),
     search_users: () => F.friends.slice(0, 2),
-    friend_challenge_record: () => F.friendRecord,
+    friend_challenge_record: (args) => ({
+      ...F.friendRecord,
+      periodFrom: (args && args.p_from) || F.friendRecord.periodFrom,
+      periodTo: (args && args.p_to) || F.friendRecord.periodTo,
+    }),
     my_recap_ranks: () => null,
     register_device: () => 'preview-device',
     username_available: () => true,

@@ -1,6 +1,19 @@
 import type { AsyncBattleDefaults, StreakLengths, TeamTargets } from '../backend/appSettings';
 import type { ChallengeKind } from './model';
 
+/** Prefill settings from `rematch_defaults`. The client only displays these. */
+export interface RematchDefaults {
+  kind: ChallengeKind;
+  durationS?: number | null;
+  deadlineHours?: number;
+  durationDays?: 1 | 7 | 14 | 30;
+  streakDays?: number;
+  targetReps?: number;
+  friendIds: string[];
+  kindLabel?: string;
+  lengthLabel?: string | null;
+}
+
 /** The New challenge sheet's choices (frame 21). */
 export interface NewChallengeForm {
   kind: ChallengeKind;
@@ -8,8 +21,8 @@ export interface NewChallengeForm {
   durationS: number | null;
   /** Best set: hours everyone has to play. */
   deadlineHours: number;
-  /** Most reps / team: the calendar window. */
-  window: 'day' | 'week' | 'month';
+  /** Most reps / team: local days from the start of today. */
+  durationDays: 1 | 7 | 14 | 30;
   /** Streak: length in days. */
   streakDays: number;
   /** Team: the shared goal. */
@@ -36,11 +49,12 @@ export function hoursLabel(h: number): string {
   return h === 1 ? '1 hour' : `${h} hours`;
 }
 
-const WINDOWS = [
-  { key: 'day', label: 'Today' },
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-] as const;
+const DURATIONS: { key: '1' | '7' | '14' | '30'; label: string; days: 1 | 7 | 14 | 30 }[] = [
+  { key: '1', label: '1 day', days: 1 },
+  { key: '7', label: '7 days', days: 7 },
+  { key: '14', label: '14 days', days: 14 },
+  { key: '30', label: '30 days', days: 30 },
+];
 
 /** The Length segments for a kind. Values come from app settings, so they can change without a release. */
 export function lengthOptions(kind: ChallengeKind, s: { battle: AsyncBattleDefaults; streak: StreakLengths }): LengthOption[] {
@@ -51,21 +65,21 @@ export function lengthOptions(kind: ChallengeKind, s: { battle: AsyncBattleDefau
     return hours.map((h) => ({ key: String(h), label: hoursLabel(h) }));
   }
   if (kind === 'streak') return s.streak.optionsDays.map((d) => ({ key: String(d), label: `${d} days` }));
-  return WINDOWS.map((w) => ({ key: w.key, label: w.label }));
+  return DURATIONS.map((w) => ({ key: w.key, label: w.label }));
 }
 
 /** Which Length segment is on. */
 export function lengthKey(form: NewChallengeForm): string {
   if (form.kind === 'best_set') return String(form.deadlineHours);
   if (form.kind === 'streak') return String(form.streakDays);
-  return form.window;
+  return String(form.durationDays);
 }
 
 /** Apply a Length segment. */
 export function withLength(form: NewChallengeForm, key: string): NewChallengeForm {
   if (form.kind === 'best_set') return { ...form, deadlineHours: Number(key) };
   if (form.kind === 'streak') return { ...form, streakDays: Number(key) };
-  return { ...form, window: key as NewChallengeForm['window'] };
+  return { ...form, durationDays: Number(key) as NewChallengeForm['durationDays'] };
 }
 
 /** "60 s", "2 min", "No limit". */
@@ -74,10 +88,10 @@ export function timeLimitLabel(durationS: number | null): string {
   return durationS % 60 === 0 && durationS >= 120 ? `${durationS / 60} min` : `${durationS} s`;
 }
 
-/** First form: rematch / from-set settings if given, else the mockup defaults (best set, 60 s). */
+/** First form: from-set settings if given, else the mockup defaults (best set, 60 s). */
 export function initialForm(
   s: { battle: AsyncBattleDefaults; streak: StreakLengths; team: TeamTargets },
-  offer?: { kind: ChallengeKind; durationS?: number | null; window?: 'day' | 'week' | 'month' },
+  offer?: { kind: ChallengeKind; durationS?: number | null; durationDays?: 1 | 7 | 14 | 30 },
   friendIds?: string[],
   setTimerS?: number | null,
 ): NewChallengeForm {
@@ -88,17 +102,33 @@ export function initialForm(
     kind,
     durationS,
     deadlineHours: s.battle.deadlineHours,
-    window: offer?.window ?? (kind === 'team' ? s.team.defaultWindow : 'week'),
+    durationDays: offer?.durationDays ?? 7,
     streakDays: s.streak.optionsDays[0] ?? s.streak.minDays,
     targetReps: s.team.defaultTarget,
     friendIds: friendIds ?? [],
   };
 }
 
-/** Switching kind keeps friends; most reps defaults to this week, team to its default window. */
+/** Prefill the create form from `rematch_defaults`. */
+export function formFromRematch(
+  s: { battle: AsyncBattleDefaults; streak: StreakLengths; team: TeamTargets },
+  d: RematchDefaults,
+): NewChallengeForm {
+  return {
+    kind: d.kind,
+    durationS: d.kind === 'best_set' ? (d.durationS ?? null) : (s.battle.timedDurationsS[0] ?? null),
+    deadlineHours: d.deadlineHours ?? s.battle.deadlineHours,
+    durationDays: d.durationDays ?? 7,
+    streakDays: d.streakDays ?? s.streak.optionsDays[0] ?? s.streak.minDays,
+    targetReps: d.targetReps ?? s.team.defaultTarget,
+    friendIds: [...d.friendIds],
+  };
+}
+
+/** Switching kind keeps friends; most reps and team keep the current length. */
 export function withKind(form: NewChallengeForm, kind: ChallengeKind, team: TeamTargets): NewChallengeForm {
   if (kind === form.kind) return form;
-  return { ...form, kind, window: kind === 'team' ? team.defaultWindow : kind === 'total' ? 'week' : form.window };
+  return { ...form, kind, durationDays: kind === 'team' || kind === 'total' ? form.durationDays || 7 : form.durationDays };
 }
 
 /** The `create_challenge` payload. No `metric`: every new challenge counts reps. No invite link from the sheet. */
@@ -107,7 +137,7 @@ export function newChallengePayload(form: NewChallengeForm) {
     kind: form.kind,
     durationS: form.kind === 'best_set' ? (form.durationS ?? undefined) : undefined,
     deadlineHours: form.kind === 'best_set' ? form.deadlineHours : undefined,
-    window: form.kind === 'total' || form.kind === 'team' ? form.window : undefined,
+    durationDays: form.kind === 'total' || form.kind === 'team' ? form.durationDays : undefined,
     streakDays: form.kind === 'streak' ? form.streakDays : undefined,
     targetReps: form.kind === 'team' ? form.targetReps : undefined,
     friendIds: [...form.friendIds],

@@ -13,7 +13,8 @@ import { faceTrackingSupported } from '../../sensors';
 import { deviceTimeZone } from '../../backend/profile';
 import { supabase } from '../../backend/supabase';
 import { api } from '../../battles/api';
-import { rememberBattles, rememberedBattle } from '../../battles/battleCache';
+import type { OpenChallenge } from '../../battles/openChallenges';
+import { rememberBattles } from '../../battles/battleCache';
 import type { Battle } from '../../battles/model';
 import {
   REFRESH_FAILED,
@@ -37,7 +38,7 @@ import type { TabProps } from '../types';
 export function TodayRoute({ navigation }: TabProps<'Today'>) {
   const { enrollments, remote, refreshRemote } = useAppState();
   const gateReady = useOnboardingGate(navigation);
-  const { session, appSettings } = useBackend();
+  const { session } = useBackend();
   const { profile } = useIdentity();
   const userId = session?.user.id ?? null;
   const askedFor = useRef<string | null>(null);
@@ -45,8 +46,10 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
   // Keyed by account: a reply that lands after a sign-out or account switch is never shown.
   const [boardFor, setBoardFor] = useState<{ userId: string; board: LeagueBoard } | null>(null);
   const [battlesFor, setBattlesFor] = useState<{ userId: string; battles: Battle[] } | null>(null);
+  const [openFor, setOpenFor] = useState<{ userId: string; rows: OpenChallenge[] } | null>(null);
   const board = userId && boardFor?.userId === userId ? boardFor.board : null;
   const battles = userId && battlesFor?.userId === userId ? battlesFor.battles : null;
+  const openRows = userId && openFor?.userId === userId ? openFor.rows : null;
   const [now, setNow] = useState(() => Date.now());
 
   // Last board for this account first, so the card paints before the refresh.
@@ -71,6 +74,10 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
       const rows = r.data ?? [];
       rememberBattles(rows);
       setBattlesFor({ userId, battles: rows });
+    });
+    api.myOpenChallenges(supabase).then((r) => {
+      if (!r.ok) return;
+      setOpenFor({ userId, rows: r.data ?? [] });
     });
   }, [userId, profile]);
   // One my_progress, one my_league and one my_challenges call per focus. The league and
@@ -128,21 +135,6 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
   });
   const banner = session && remote.status === 'error' ? REFRESH_FAILED : null;
 
-  const play = (battleId: string) => {
-    const b = battles?.find((x) => x.id === battleId) ?? rememberedBattle(battleId);
-    if (!b) return;
-    const d = appSettings.asyncBattleDefaults;
-    navigation.navigate('Session', {
-      battle: {
-        battleId: b.id,
-        format: b.durationS ? 'timed' : 'max_reps',
-        durationS: b.durationS,
-        idleEndS: d.maxRepsIdleEndS,
-        capS: d.maxRepsCapS,
-      },
-    });
-  };
-
   // Blank (black) for the moment the first-run check takes, so Today doesn't flash before Welcome.
   if (!gateReady) return <Frame kind="tab">{null}</Frame>;
   return (
@@ -158,10 +150,11 @@ export function TodayRoute({ navigation }: TabProps<'Today'>) {
         onGoal={() => navigation.navigate('GoalSetup')}
         onLeague={() => navigation.navigate('Compete', { segment: 'league' })}
         onChallenge={(challengeId) => navigation.navigate('Battle', { challengeId, battle: battles?.find((b) => b.id === challengeId) })}
-        onPlay={play}
         onNewChallenge={() => navigation.navigate('NewBattle')}
         onInvite={() => (session ? navigation.navigate('Friends') : navigation.navigate('Compete', { segment: 'league' }))}
         onHowItWorks={() => navigation.navigate('HowItWorks')}
+        onSeeAll={() => navigation.navigate('Compete', { segment: 'challenges' })}
+        openRows={progress.empty && day.reps === 0 ? null : openRows}
         optInBanner={<NotificationOptInBanner />}
       />
     </Frame>

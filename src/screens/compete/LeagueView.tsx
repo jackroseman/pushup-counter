@@ -1,7 +1,7 @@
 import React from 'react';
-import { ActionSheetIOS, ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Avatar, Button, Card, EmptyState, Icon, LeaderRow, ListGroup, Podium, Text, color, gutter, space } from '../../ui';
+import { Avatar, Button, Card, EmptyState, Icon, LeaderRow, ListGroup, MenuPicker, Podium, Text, color, gutter, space } from '../../ui';
 import { formatCount } from '../../progress';
 import { LEAGUE_MODE_LABEL, hasCrown, type LeagueMode, type LeaguePerson, type LeagueView as Model } from '../../progress/leagueView';
 
@@ -171,32 +171,16 @@ export function LeagueView({
   );
 }
 
-/** "Total ⌄": a native menu to switch between the two boards. */
+/** "Total ⌄": a native pull-down menu to switch between the two boards. */
 function ModePicker({ mode, onMode }: { mode: LeagueMode; onMode: (mode: LeagueMode) => void }) {
-  const open = () => {
-    if (Platform.OS === 'ios') {
-      const options = [...MODES.map((m) => LEAGUE_MODE_LABEL[m]), 'Cancel'];
-      ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: MODES.length }, (index) => {
-        if (index < MODES.length) onMode(MODES[index]);
-      });
-    } else {
-      onMode(mode === 'total' ? 'improvement' : 'total');
-    }
-  };
   return (
-    <Pressable
-      accessibilityRole="button"
+    <MenuPicker
+      options={MODES.map((m) => ({ key: m, label: LEAGUE_MODE_LABEL[m] }))}
+      value={mode}
+      onChange={onMode}
       accessibilityLabel={`Board: ${LEAGUE_MODE_LABEL[mode]}`}
-      accessibilityHint="Switches between Total and Improvement"
-      onPress={open}
-      hitSlop={12}
       style={styles.picker}
-    >
-      <Text variant="footnote" weight="500" tone="label">
-        {LEAGUE_MODE_LABEL[mode]}
-      </Text>
-      <Icon name="chev" size={10} color={color.label} style={styles.down} />
-    </Pressable>
+    />
   );
 }
 
@@ -255,8 +239,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  picker: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  down: { transform: [{ rotate: '90deg' }] },
+  picker: { alignSelf: 'center' },
   podium: { marginTop: space.md },
   attached: { borderTopLeftRadius: 0, borderTopRightRadius: 0 },
   podiumBase: { height: 1, backgroundColor: color.separator },

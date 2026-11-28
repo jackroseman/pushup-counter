@@ -4,7 +4,6 @@ import { ActionSheetIOS, Alert, Platform } from 'react-native';
 import { ChallengeScreen, type ChallengeMenuItem } from '../../screens/compete/ChallengeScreen';
 import { CompeteGate } from '../../screens/compete/Gate';
 import { LinkInviteScreen } from '../../screens/compete/LinkInviteScreen';
-import { rematchParams } from '../../battles/challengeView';
 import { IconButton } from '../../ui';
 import { NewChallengeSheet } from '../../screens/compete/NewChallengeSheet';
 import { LeagueInfoSheet } from '../../screens/compete/LeagueInfoSheet';
@@ -63,7 +62,7 @@ export function BattleRoute({ navigation, route }: Props<'Battle'>) {
           onHeader={onHeader}
           onClosed={onClosed}
           onStartSet={() => navigation.navigate('Session')}
-          onRematch={(b) => navigation.navigate('NewBattle', rematchParams(b))}
+          onRematch={(challengeId) => navigation.navigate('NewBattle', { rematchChallengeId: challengeId })}
           onPlay={(b) =>
             navigation.navigate('Session', {
               battle: {
@@ -90,6 +89,7 @@ export function NewBattleRoute({ navigation, route }: Props<'NewBattle'>) {
           friendIds={route.params?.friendIds}
           fromSet={route.params?.fromSet}
           offer={route.params?.offer}
+          rematchChallengeId={route.params?.rematchChallengeId}
           hasGoal={openGoal(enrollments)}
           onNeedGoal={() => navigation.navigate('GoalSetup')}
           onInvite={() => navigation.navigate('InviteLink')}

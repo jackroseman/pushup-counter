@@ -12,7 +12,7 @@ export type CompeteSegment = 'league' | 'challenges';
 export type TabParamList = {
   Today: undefined;
   Compete: { segment?: CompeteSegment } | undefined;
-  You: undefined;
+  You: { segment?: 'sets' | 'challenges' } | undefined;
 };
 
 export type RootStackParamList = {
@@ -37,7 +37,7 @@ export type RootStackParamList = {
     /** Created, accepted, or joined this challenge on the way here. */
     promptNotifications?: boolean;
   };
-  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
+  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer; rematchChallengeId?: string } | undefined;
   /** The league's (i) sheet: how Total and Improvement work. */
   LeagueInfo: undefined;
   Friends: { search?: boolean } | undefined;

@@ -116,6 +116,7 @@ export function ChallengesBody({ navigation }: Pick<TabProps<'Compete'>, 'naviga
         onOpen={(battle) => navigation.navigate('Battle', { challengeId: battle.id, battle })}
         onNew={() => navigation.navigate('NewBattle')}
         onInvite={() => navigation.navigate('InviteLink')}
+        onStats={() => navigation.navigate('You', { segment: 'challenges' })}
       />
     </CompeteGate>
   );

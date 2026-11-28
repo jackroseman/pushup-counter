@@ -123,13 +123,11 @@ describe('frame 4: Today', () => {
     });
     expect(v.betterWithFriends).toBe(false);
   });
-  it('shows the your-move card', () => {
+  it('keeps Challenge a friend for when the Your turn list is empty', () => {
     expect(v.challenge).toEqual({
-      kind: 'your_move',
-      battleId: 'c1',
-      opponent: 'Brett',
-      title: 'Your move vs Brett',
-      detail: 'Best set · 31 to beat · 1 day left',
+      kind: 'challenge_friend',
+      title: 'Challenge a friend',
+      detail: 'Best set, most reps, streak or team',
     });
   });
   it('shows the week strip: done days, today partial, a rest day off', () => {
@@ -238,23 +236,7 @@ describe('league card rules', () => {
 });
 
 describe('challenge card rules', () => {
-  it('leaves out "to beat" before anyone else has played', () => {
-    const c = challengeCard([battle({ participants: [person(ME, 'Sunny'), person('b', 'Brett')] })], true, NOW);
-    expect(c).toMatchObject({ kind: 'your_move', detail: 'Best set · 1 day left' });
-  });
-  it('an invite opens the challenge instead of playing', () => {
-    const c = challengeCard(
-      [battle({ kind: 'total', windowUnit: 'week', participants: [person(ME, 'Sunny', { status: 'invited' }), person('b', 'Brett')] })],
-      true,
-      NOW,
-    );
-    expect(c).toEqual({ kind: 'invite', battleId: 'c1', opponent: 'Brett', title: 'Brett challenged you', detail: 'Most reps this week · 2 days left' });
-  });
-  it('a group names the first opponent plus the rest', () => {
-    const c = challengeCard([battle({ participants: [person(ME, 'Sunny'), person('b', 'Brett'), person('j', 'Jack')] })], true, NOW);
-    expect(c?.kind === 'your_move' && c.title).toBe('Your move vs Brett +1');
-  });
-  it('without a move waiting: Challenge a friend, only with friends', () => {
+  it('shows Challenge a friend only when the person has friends', () => {
     const done = battle({ participants: [person(ME, 'Sunny', { attemptsUsed: 1, validReps: 20 }), person('b', 'Brett')] });
     expect(challengeCard([done], true, NOW)?.kind).toBe('challenge_friend');
     expect(challengeCard([done], false, NOW)).toBeNull();

@@ -5,13 +5,14 @@ const now = Date.parse('2026-11-02T15:00:00Z');
 const opts = { timedDurationsS: presets, claimMaxAgeS: 1800, now };
 
 describe('challengeOffers', () => {
-  it('offers best single set and the three windows for a fresh untimed set', () => {
+  it('offers best single set and the duration windows for a fresh untimed set', () => {
     const offers = challengeOffers({ timerDurationS: null, endedAt: now - 60_000 }, opts);
     expect(offers).toEqual([
       { kind: 'best_set', durationS: null },
-      { kind: 'total', window: 'day' },
-      { kind: 'total', window: 'week' },
-      { kind: 'total', window: 'month' },
+      { kind: 'total', durationDays: 1 },
+      { kind: 'total', durationDays: 7 },
+      { kind: 'total', durationDays: 14 },
+      { kind: 'total', durationDays: 30 },
       { kind: 'streak' },
       { kind: 'team' },
     ]);
@@ -23,11 +24,12 @@ describe('challengeOffers', () => {
     expect(challengeOffers({ timerDurationS: 120, endedAt: now }, { ...opts, timedDurationsS: [60] }).some((o) => o.kind === 'best_set')).toBe(false);
   });
 
-  it('hides best single set when the set is already linked or too old, and keeps the windows', () => {
+  it('hides best single set when the set is already linked or too old, and keeps the duration options', () => {
     const windows = [
-      { kind: 'total', window: 'day' },
-      { kind: 'total', window: 'week' },
-      { kind: 'total', window: 'month' },
+      { kind: 'total', durationDays: 1 },
+      { kind: 'total', durationDays: 7 },
+      { kind: 'total', durationDays: 14 },
+      { kind: 'total', durationDays: 30 },
       { kind: 'streak' },
       { kind: 'team' },
     ];
@@ -43,8 +45,8 @@ describe('summaryChallengeOffer', () => {
     expect(summaryChallengeOffer({ timerDurationS: 60, endedAt: now }, opts)).toEqual({ kind: 'best_set', durationS: 60 });
   });
 
-  it('opens most reps today when the set cannot be claimed, so create does not take it as a best set', () => {
-    const today = { kind: 'total', window: 'day' };
+  it('opens most reps · 1 day when the set cannot be claimed, so create does not take it as a best set', () => {
+    const today = { kind: 'total', durationDays: 1 };
     expect(summaryChallengeOffer({ timerDurationS: 60, endedAt: now, challengeId: 'c1' }, opts)).toEqual(today);
     expect(summaryChallengeOffer({ timerDurationS: null, endedAt: now - 1800_000 - 1 }, opts)).toEqual(today);
     expect(summaryChallengeOffer({ timerDurationS: 45, endedAt: now }, opts)).toEqual(today);

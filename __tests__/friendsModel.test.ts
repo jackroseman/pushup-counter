@@ -1,23 +1,43 @@
-import { friendBestSet, friendChallengeRows, friendRowSubtitle, headToHeadRecord, recentOutcome } from '../src/battles/friendsView';
-import type { Battle, FriendRecord } from '../src/battles/model';
+import { friendBestSet, friendChallengeRows, friendRowSubtitle } from '../src/battles/friendsView';
+import type { FriendRecord } from '../src/battles/model';
+import type { OpenChallenge } from '../src/battles/openChallenges';
 
 const NOW = Date.parse('2026-11-25T21:30:00Z');
 const TZ = 'America/New_York';
-type Recent = FriendRecord['recent'][number];
-const side = (o: Partial<Recent['me']> = {}) => ({ rank: null, validReps: null, metricValue: null, isWinner: false, ...o });
-const recent = (o: Partial<Recent>): Recent => ({
-  challengeId: 'r1',
-  finishedAt: '2026-11-16T20:00:00Z',
-  kind: 'best_set',
-  windowUnit: null,
-  metric: null,
-  durationS: 60,
-  players: 2,
-  me: side(),
-  them: side(),
-  ...o,
+
+const record = (over: Partial<FriendRecord> = {}): FriendRecord => ({
+  played: 2,
+  won: 1,
+  drawn: 0,
+  lost: 1,
+  recent: [],
+  bestSet: 31,
+  finished: [
+    {
+      challengeId: 'a',
+      kind: 'best_set',
+      title: 'Best set',
+      outcome: 'win',
+      outcomeLabel: 'Won',
+      finishedAt: '2026-11-16T20:00:00Z',
+      myReps: 40,
+      theirReps: 31,
+      sortRank: 1,
+    },
+    {
+      challengeId: 'b',
+      kind: 'total',
+      title: 'Most reps',
+      outcome: 'loss',
+      outcomeLabel: 'Lost',
+      finishedAt: '2026-11-09T20:00:00Z',
+      myReps: null,
+      theirReps: 300,
+      sortRank: 2,
+    },
+  ],
+  ...over,
 });
-const record = (rows: Recent[]): FriendRecord => ({ played: 9, won: 4, drawn: 0, lost: 5, recent: rows });
 
 describe('friends rows (frame 26, plan §5 #12 v1)', () => {
   it("shows this week's reps", () => {
@@ -29,50 +49,41 @@ describe('friends rows (frame 26, plan §5 #12 v1)', () => {
 });
 
 describe('friend page (frame 27, E14)', () => {
-  const rows = [
-    recent({ challengeId: 'a', me: side({ isWinner: true, rank: 1, validReps: 40 }), them: side({ rank: 2, validReps: 31 }) }),
-    recent({
-      challengeId: 'b',
-      kind: 'total',
-      windowUnit: 'week',
-      finishedAt: '2026-11-09T20:00:00Z',
-      me: side({ rank: 2 }),
-      them: side({ rank: 1, isWinner: true, validReps: 300 }),
-    }),
-    recent({ challengeId: 'c', players: 4, me: side({ rank: 2, validReps: 30 }), them: side({ rank: 3, validReps: 41 }) }),
-  ];
-
-  it('counts your record together from the finished challenges', () => {
-    expect(rows.map(recentOutcome)).toEqual(['won', 'lost', 'ahead']);
-    expect(headToHeadRecord(record(rows))).toEqual({ youWon: 2, theyWon: 1, together: 3 });
-    expect(headToHeadRecord(record([]))).toEqual({ youWon: 0, theyWon: 0, together: 0 });
-  });
-
-  it('takes their best set from best-set challenges only', () => {
-    expect(friendBestSet(record(rows))).toBe(41);
-    expect(friendBestSet(record([]))).toBeNull();
+  it('takes their best set from the record RPC', () => {
+    expect(friendBestSet(record())).toBe(31);
+    expect(friendBestSet(record({ bestSet: null }))).toBeNull();
     expect(friendBestSet(null)).toBeNull();
   });
 
-  it('lists open challenges with them first, then finished ones', () => {
-    const open = {
-      id: 'open',
-      kind: 'best_set',
-      status: 'active',
-      attemptsAllowed: 1,
-      endsAt: '2026-11-27T00:00:00Z',
-      inviteExpiresAt: '2026-11-27T00:00:00Z',
-      createdBy: 'brett',
-      participants: [
-        { userId: 'me', isMe: true, status: 'accepted', attemptsUsed: 0 },
-        { userId: 'brett', isMe: false, status: 'accepted', attemptsUsed: 1 },
-      ],
-    } as unknown as Battle;
-    const other = { ...open, id: 'other', participants: [open.participants[0], { ...open.participants[1], userId: 'jack' }] } as Battle;
-    expect(friendChallengeRows('brett', [open, other], record(rows.slice(0, 2)), NOW, TZ)).toEqual([
-      { challengeId: 'open', title: 'Best set', status: 'Your move' },
-      { challengeId: 'a', title: 'Best set', status: 'Won · Nov 16' },
-      { challengeId: 'b', title: 'Most reps', status: 'Lost · Nov 9' },
+  it('lists open RPC rows first, then finished events from the record', () => {
+    const open = [
+      {
+        challengeId: 'open',
+        title: 'Best set vs Brett',
+        isMyTurn: true,
+        needsResponse: false,
+        statusLabel: '28 to beat',
+        people: [
+          { userId: 'me', username: 'me', displayName: 'Me', status: 'accepted', isMe: true },
+          { userId: 'brett', username: 'brett', displayName: 'Brett', status: 'accepted', isMe: false },
+        ],
+      },
+      {
+        challengeId: 'other',
+        title: 'Best set vs Jack',
+        isMyTurn: true,
+        needsResponse: false,
+        statusLabel: '20 to beat',
+        people: [
+          { userId: 'me', username: 'me', displayName: 'Me', status: 'accepted', isMe: true },
+          { userId: 'jack', username: 'jack', displayName: 'Jack', status: 'accepted', isMe: false },
+        ],
+      },
+    ] as unknown as OpenChallenge[];
+    expect(friendChallengeRows('brett', record(), NOW, TZ, open)).toEqual([
+      { challengeId: 'open', title: 'Best set vs Brett', status: 'Your turn', section: 'open' },
+      { challengeId: 'a', title: 'Best set', status: 'Won · Nov 16', section: 'finished' },
+      { challengeId: 'b', title: 'Most reps', status: 'Lost · Nov 9', section: 'finished' },
     ]);
   });
 });

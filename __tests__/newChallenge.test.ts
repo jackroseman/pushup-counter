@@ -2,6 +2,7 @@ import { DEFAULT_APP_SETTINGS } from '../src/backend/appSettings';
 import {
   KIND_TILES,
   canSend,
+  formFromRematch,
   hoursLabel,
   initialForm,
   lengthKey,
@@ -31,9 +32,39 @@ describe('new challenge sheet (frame 21)', () => {
     expect(initialForm(s, undefined, [], 120).durationS).toBe(120);
   });
 
-  it('prefills a rematch', () => {
-    expect(initialForm(s, { kind: 'total', window: 'day' })).toMatchObject({ kind: 'total', window: 'day' });
-    expect(initialForm(s, { kind: 'best_set', durationS: null }).durationS).toBeNull();
+  it('prefills a rematch from the RPC fields', () => {
+    expect(
+      formFromRematch(s, {
+        kind: 'total',
+        durationDays: 1,
+        friendIds: ['jack'],
+        kindLabel: 'Most reps',
+        lengthLabel: '1 day',
+      }),
+    ).toMatchObject({ kind: 'total', durationDays: 1, friendIds: ['jack'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'best_set',
+        durationS: null,
+        deadlineHours: 72,
+        friendIds: ['jack'],
+      }),
+    ).toMatchObject({ kind: 'best_set', durationS: null, deadlineHours: 72, friendIds: ['jack'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'streak',
+        streakDays: 14,
+        friendIds: ['jack', 'tara'],
+      }),
+    ).toMatchObject({ kind: 'streak', streakDays: 14, friendIds: ['jack', 'tara'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'team',
+        durationDays: 30,
+        targetReps: 1000,
+        friendIds: ['jack'],
+      }),
+    ).toMatchObject({ kind: 'team', durationDays: 30, targetReps: 1000 });
   });
 
   it('has four kind tiles with plain lines', () => {
@@ -42,7 +73,7 @@ describe('new challenge sheet (frame 21)', () => {
 
   it('offers a length per kind from app settings', () => {
     expect(lengthOptions('best_set', s).map((o) => o.label)).toEqual(['1 day', '3 days', '1 week']);
-    expect(lengthOptions('total', s).map((o) => o.label)).toEqual(['Today', 'This week', 'This month']);
+    expect(lengthOptions('total', s).map((o) => o.label)).toEqual(['1 day', '7 days', '14 days', '30 days']);
     expect(lengthOptions('streak', s).map((o) => o.label)).toEqual(['7 days', '14 days', '30 days']);
     const f = withLength(initialForm(s), '72');
     expect(f.deadlineHours).toBe(72);
@@ -61,7 +92,7 @@ describe('create payload', () => {
       kind: 'best_set',
       durationS: 60,
       deadlineHours: 24,
-      window: undefined,
+      durationDays: undefined,
       streakDays: undefined,
       targetReps: undefined,
       friendIds: ['jack'],
@@ -74,12 +105,12 @@ describe('create payload', () => {
     const base = { ...initialForm(s), friendIds: ['jack', 'tara'] };
     expect(newChallengePayload(withKind(base, 'total', s.team))).toMatchObject({
       kind: 'total',
-      window: 'week',
+      durationDays: 7,
       durationS: undefined,
       deadlineHours: undefined,
     });
-    expect(newChallengePayload(withKind(base, 'streak', s.team))).toMatchObject({ kind: 'streak', streakDays: 7, window: undefined });
-    expect(newChallengePayload(withKind(base, 'team', s.team))).toMatchObject({ kind: 'team', window: 'week', targetReps: 500 });
+    expect(newChallengePayload(withKind(base, 'streak', s.team))).toMatchObject({ kind: 'streak', streakDays: 7, durationDays: undefined });
+    expect(newChallengePayload(withKind(base, 'team', s.team))).toMatchObject({ kind: 'team', durationDays: 7, targetReps: 500 });
     expect(newChallengePayload({ ...base, durationS: null }).durationS).toBeUndefined();
   });
 });

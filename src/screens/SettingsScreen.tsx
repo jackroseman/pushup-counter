@@ -86,7 +86,7 @@ export function SettingsScreen({
           title="Notifications"
           subtitle={notificationsValue === 'Off' ? NOTIFICATION_PROMPT_COPY.line : undefined}
           subtitleNumberOfLines={3}
-          value={notificationsValue}
+          value={notificationsValue === 'Off' ? undefined : notificationsValue}
           trailing={
             notificationsValue === 'Off' ? (
               <Button title={NOTIFICATION_PROMPT_COPY.bannerTurnOn} kind="tinted" size="small" onPress={onNotifications} />

@@ -3,7 +3,6 @@
  * See docs/rebrand/IMPLEMENTATION_PLAN.md §3 (frame 4) and the empty-state table.
  */
 import type { Battle } from '../../battles/model';
-import { canPlay, canRespond, battleTitle, groupBattles } from '../../battles/model';
 import type { LeagueBoard, LeagueTotalRow } from '../../backend/leagueClient';
 import { addCalendarDays, weekStart, weekdayName } from '../../progress/calendar';
 import type { DayBucket } from '../../progress/progress';
@@ -27,16 +26,7 @@ export interface TodayLeagueCard {
   people: { name: string; me: boolean }[];
 }
 
-export type TodayChallengeCard =
-  | {
-      kind: 'your_move';
-      battleId: string;
-      opponent: string;
-      title: string;
-      detail: string;
-    }
-  | { kind: 'invite'; battleId: string; opponent: string; title: string; detail: string }
-  | { kind: 'challenge_friend'; title: string; detail: string };
+export type TodayChallengeCard = { kind: 'challenge_friend'; title: string; detail: string };
 
 export interface TodayView {
   hero: TodayHero;
@@ -181,41 +171,13 @@ export function leftLabel(endsAt: string | null | undefined, now: number): strin
   return `${days} day${days === 1 ? '' : 's'} left`;
 }
 
-const joinParts = (parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join(' · ');
 
-/** Your-move card for the first challenge waiting on the user, else the "Challenge a friend" row (needs friends). */
+/** "Challenge a friend" when the Your turn list is empty and the person has friends. Open rows come from the RPC. */
 export function challengeCard(
-  battles: readonly Battle[] | null,
+  _battles: readonly Battle[] | null,
   hasFriends: boolean,
-  now: number,
+  _now: number,
 ): TodayChallengeCard | null {
-  const first = groupBattles(battles ?? [], now).yourMove[0];
-  if (first) {
-    const others = first.participants.filter((p) => !p.isMe);
-    const lead = others[0];
-    const opponent = lead ? shortName(lead) : 'Someone';
-    const name = others.length > 1 ? `${opponent} +${others.length - 1}` : opponent;
-    const kindTitle = battleTitle({ ...first, durationS: null });
-    if (canPlay(first, now)) {
-      const best = Math.max(0, ...others.filter((p) => p.attemptsUsed > 0).map((p) => p.validReps ?? 0));
-      return {
-        kind: 'your_move',
-        battleId: first.id,
-        opponent: name,
-        title: `Your move vs ${name}`,
-        detail: joinParts([kindTitle, best > 0 ? `${best} to beat` : null, leftLabel(first.endsAt, now)]),
-      };
-    }
-    if (canRespond(first, now)) {
-      return {
-        kind: 'invite',
-        battleId: first.id,
-        opponent: name,
-        title: `${name} challenged you`,
-        detail: joinParts([kindTitle, leftLabel(first.inviteExpiresAt, now)]),
-      };
-    }
-  }
   if (!hasFriends) return null;
   return { kind: 'challenge_friend', title: 'Challenge a friend', detail: 'Best set, most reps, streak or team' };
 }

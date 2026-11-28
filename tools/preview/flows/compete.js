@@ -16,5 +16,7 @@ module.exports = {
     await back();
     await tap('New challenge', { label: true, last: true, wait: 2000 });
     await shot('new-challenge');
+    await tap('Most reps', { last: true, wait: 1000 });
+    await shot('new-challenge-most-reps');
   },
 };

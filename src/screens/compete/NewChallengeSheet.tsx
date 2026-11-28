@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { supabase } from '../../backend/supabase';
 import { useBackend } from '../../backend/BackendProvider';
@@ -11,6 +11,7 @@ import { Friend, friendlyError, personName, type ChallengeKind } from '../../bat
 import {
   KIND_TILES,
   canSend,
+  formFromRematch,
   initialForm,
   lengthKey,
   lengthOptions,
@@ -60,6 +61,7 @@ export function NewChallengeSheet({
   friendIds,
   fromSet,
   offer,
+  rematchChallengeId,
   hasGoal,
   onNeedGoal,
   onInvite,
@@ -70,6 +72,8 @@ export function NewChallengeSheet({
   /** The set that just finished. A best set with the same timer uses it as the creator's try. */
   fromSet?: SessionRecord;
   offer?: ChallengeOffer;
+  /** Load prefilled settings from `rematch_defaults`. */
+  rematchChallengeId?: string;
   /** False until this phone has an open daily goal. A streak sends them to set one. */
   hasGoal: boolean;
   onNeedGoal: () => void;
@@ -92,6 +96,7 @@ export function NewChallengeSheet({
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rematchReady, setRematchReady] = useState(!rematchChallengeId);
 
   useEffect(() => {
     if (!supabase) return;
@@ -99,6 +104,21 @@ export function NewChallengeSheet({
       .friends(supabase)
       .then((r) => (r.ok ? setFriends(r.data.filter((f) => f.relation === 'friend')) : setError(friendlyError(r.message))));
   }, []);
+
+  useEffect(() => {
+    if (!rematchChallengeId || !supabase) return;
+    let cancelled = false;
+    const s = { battle: appSettings.asyncBattleDefaults, streak: appSettings.streakLengths, team: appSettings.teamTargets };
+    api.rematchDefaults(supabase, rematchChallengeId).then((r) => {
+      if (cancelled) return;
+      if (r.ok && r.data) setForm(formFromRematch(s, r.data));
+      else setError(friendlyError(r.ok ? 'challenge not found' : r.message));
+      setRematchReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rematchChallengeId, appSettings]);
 
   const toggle = (id: string) =>
     setForm((f) => {
@@ -113,7 +133,7 @@ export function NewChallengeSheet({
   const noFriends = friends !== null && friends.length === 0;
 
   const send = async () => {
-    if (!supabase || busy) return;
+    if (!supabase || busy || !rematchReady) return;
     if (needsGoal) return onNeedGoal();
     if (!canSend(form)) return;
     setBusy(true);
@@ -161,6 +181,10 @@ export function NewChallengeSheet({
         </Text>
         <View style={styles.cancel} />
       </View>
+      {!rematchReady ? (
+        <ActivityIndicator color={color.secondary} style={styles.loading} />
+      ) : (
+      <>
       <ScrollView contentContainerStyle={styles.content}>
         <SectionHeader title="Kind" style={styles.firstSection} />
         <View style={styles.tiles}>
@@ -289,6 +313,8 @@ export function NewChallengeSheet({
           </View>
         )}
       </View>
+      </>
+      )}
     </View>
   );
 }
@@ -324,4 +350,5 @@ const styles = StyleSheet.create({
   note: { marginTop: 10, marginHorizontal: space.xxs },
   sendOff: { height: 56, borderRadius: 999, backgroundColor: color.elevated, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingHorizontal: gutter, paddingTop: space.xs, paddingBottom: space.md },
+  loading: { flex: 1, marginTop: space.xl },
 });

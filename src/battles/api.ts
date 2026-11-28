@@ -1,6 +1,7 @@
 /** Supabase calls for friends and battles (thin wrappers around the phase-3 RPCs). */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ChallengeRecordPeriod, MyChallengeRecord, OpenChallenge } from './openChallenges';
+import type { RematchDefaults } from './newChallenge';
 import type { Battle, Friend, FriendRecord, FriendRelation, InvitePreview } from './model';
 import type { SubmitResult } from './uploadQueue';
 
@@ -49,6 +50,8 @@ export const api = {
       inviteLink: boolean;
     },
   ) => rpc<{ challengeId: string; inviteToken: string | null }>(c, 'create_challenge', { p }),
+  rematchDefaults: (c: SupabaseClient, challengeId: string) =>
+    rpc<RematchDefaults>(c, 'rematch_defaults', { p_challenge_id: challengeId }),
   async respond(c: SupabaseClient, challengeId: string, userId: string, accept: boolean): Promise<Res<null>> {
     const { error } = await c
       .from('challenge_participants')

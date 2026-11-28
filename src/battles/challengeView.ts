@@ -1,9 +1,8 @@
 /**
- * Challenge labels, standings formatting, rematch defaults, and empty states.
+ * Challenge labels, standings formatting, and empty states.
  * Turn state, results, and whether to show a head-to-head card come from the RPCs.
  */
 import { formatCount, formatFriendlyDay } from '../progress';
-import type { ChallengeOffer } from './challengeFromSet';
 import { Battle, isOpen, Participant, personName, streakDayCount } from './model';
 
 const DAY = 86_400_000;
@@ -163,14 +162,3 @@ export function headScore(b: Battle, p: Participant): string {
   return formatCount(p.validReps ?? 0);
 }
 
-/** Rematch: same people, same kind and length (create_challenge with the same settings). */
-export function rematchParams(b: Battle): { friendIds: string[]; offer: ChallengeOffer } {
-  const friendIds = b.participants.filter((p) => !p.isMe && p.status !== 'declined' && p.status !== 'expired').map((p) => p.userId);
-  let offer: ChallengeOffer;
-  if (b.kind === 'best_set') offer = { kind: 'best_set', durationS: b.durationS };
-  else if (b.kind === 'total' || b.kind === 'team') {
-    const days = (b.durationDays ?? (b.windowUnit === 'day' ? 1 : b.windowUnit === 'month' ? 30 : 7)) as 1 | 7 | 14 | 30;
-    offer = { kind: b.kind, durationDays: days };
-  } else offer = { kind: b.kind };
-  return { friendIds, offer };
-}

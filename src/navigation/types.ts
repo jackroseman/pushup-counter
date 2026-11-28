@@ -37,7 +37,7 @@ export type RootStackParamList = {
     /** Created, accepted, or joined this challenge on the way here. */
     promptNotifications?: boolean;
   };
-  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer } | undefined;
+  NewBattle: { friendIds?: string[]; fromSet?: SessionRecord; offer?: ChallengeOffer; rematchChallengeId?: string } | undefined;
   /** The league's (i) sheet: how Total and Improvement work. */
   LeagueInfo: undefined;
   Friends: { search?: boolean } | undefined;

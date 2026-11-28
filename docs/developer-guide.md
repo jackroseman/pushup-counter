@@ -60,7 +60,7 @@ TypeScript, that rule belongs in a migration first.
    Cover the rule, the RLS case (a user cannot see or change someone else's row), and
    the invalid transition. Migrations that end in `_cron.sql` need `pg_cron` and are
    skipped by the in-process tests; keep them thin wrappers around functions that the
-   other tests already cover.
+   other tests already cover. See [Testing philosophy](#testing-philosophy).
 6. **Keep the migration backwards compatible** with the app version already installed:
    add columns and functions first, remove them in a later release. Database changes
    and app changes ship through different pipelines (see [Release flow](#branches-and-release-flow)).
@@ -359,6 +359,23 @@ web invite-page check, and the `expo export` bundle smoke test, which CI also ru
 Before you push, `npm run ci` should be green. Database work also needs new or
 updated steps in `supabase/tests/cases.mjs`.
 
+### Testing philosophy
+
+Test the decisions, not the plumbing.
+
+The database owns outcomes, turn, sort, eligibility, windows, and access. A good
+database test asserts one of those: who can leave, whether a forfeit sits outside
+W-T-L, which period a result falls in, who is denied. A test that only calls a
+function so the suite can say it was touched does not count.
+
+`npm run test:db` ends with a coverage check (`supabase/tests/coverage.mjs`). After
+migrations it lists every public function and view and fails if any lacks a
+behavioral test: a `checks[title]` assertion or an `expect ERR` step that names it.
+Triggers, scoring helpers, and views that exist only as sources for an already-tested
+RPC are listed in that file with a reason; they are intentionally not tested
+directly. PGlite does not increment `pg_stat_user_functions`, so the check uses the
+live catalog plus the cases file rather than Postgres call counts.
+
 To look at UI without a phone, see "Rendering screens" below.
 
 ### Rendering screens
@@ -379,7 +396,7 @@ npm --prefix tools/preview run capture -- challenges-tour   # same tour, with an
 Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). The dedicated challenges
 flow (`tools/preview/flows/challenges.js`) walks Your turn on Today and Compete, an invite,
 Waiting, challenge detail, New challenge for each type and length, You > Challenges with the
-period picker, a friend's head-to-head record, a finished result, and the empty states
+period picker, a friend's head-to-head record, a finished result, Rematch into the prefilled New challenge sheet, and the empty states
 (`challenges-empty`, `challenges-none`, `challenges-busy`). Record the tour with
 `capture -- challenges-tour` (omit `--no-video`); the `.mp4` lands next to the screenshots.
 Other flows (a full set with simulated push-ups, onboarding, invite links) are covered in
@@ -459,7 +476,8 @@ RPCs, so the app can just display what the database returns. Tracked here so new
 work does not add to them.
 
 Resolved in the open-challenge work (`my_open_challenges`, `challenge_record_periods`,
-`my_challenge_record`, and the upgraded `friend_challenge_record` / `my_challenges`):
+`my_challenge_record`, the upgraded `friend_challenge_record` / `my_challenges`,
+and `rematch_defaults`):
 
 * Challenge list sections, sort order, `can_do_push_ups`, and call to action — the
   app lays out `my_open_challenges` (`YourTurnList` on Today and Compete). Today's
@@ -476,9 +494,8 @@ Resolved in the open-challenge work (`my_open_challenges`, `challenge_record_per
 * New most-reps and team challenges use `durationDays` (1 / 7 / 14 / 30) starting
   at the creator's local midnight, so the "Today" / "This week" / "This month"
   labels are gone from the New challenge sheet.
+* Rematch prefills come from `rematch_defaults`. The app opens the create sheet
+  with the kind, length, goal, and people the RPC returns. Leftover calendar
+  windows (`day` / `week` / `month`) map to 1 / 7 / 30 days there.
 
-Still open:
-
-* **Rematch defaults.** `rematchParams` maps a stored `durationDays` or leftover
-  calendar window onto the create form. A rematch RPC should return the
-  `create_challenge` payload directly.
+There are no remaining challenge opinions in the app. This list is empty.

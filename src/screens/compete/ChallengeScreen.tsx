@@ -94,7 +94,7 @@ export function ChallengeScreen({
   onNeedGoal: () => void;
   onPlay: (b: Battle) => void;
   onStartSet: () => void;
-  onRematch: (b: Battle) => void;
+  onRematch: (challengeId: string) => void;
   /** After cancelling: leave the screen. */
   onClosed: () => void;
   onHeader: (header: { title: string; menu: ChallengeMenuItem[] }) => void;
@@ -394,7 +394,7 @@ export function ChallengeScreen({
         </ScrollView>
         {completed && b.participants.some((p) => !p.isMe) ? (
           <View style={styles.footer}>
-            <Button title="Rematch" onPress={() => onRematch(b)} />
+            <Button title="Rematch" onPress={() => onRematch(b.id)} />
           </View>
         ) : null}
       </View>

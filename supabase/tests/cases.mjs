@@ -1650,6 +1650,50 @@ steps.push(
       from jsonb_array_elements(my_challenges('11111111-1111-4111-8111-111111111111'::uuid)) c;
     reset role;
   `],
+  ['open: rematch_defaults prefills a finished best set', `
+    ${as(A)} select
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->>'kind' as kind,
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->>'durationS' as duration_s,
+      (rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->>'deadlineHours')::int as deadline_hours,
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->'friendIds' as friend_ids,
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->>'kindLabel' as kind_label,
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->>'lengthLabel' as length_label
+    ; reset role;
+  `],
+  ['open: rematch_defaults is only for participants (expect ERR)', `
+    ${as(C)} select rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid); reset role;
+  `],
+  ['open: rematch_defaults prefills most reps, a leftover week, a streak, and a team goal', `
+    ${as(A)}
+    ${create('rmtot', { kind: 'total', durationDays: 14 }, [B])}
+    ${create('rmweek', { kind: 'total', durationDays: 7 }, [B])}
+    ${create('rmteam', { kind: 'team', durationDays: 30, targetReps: 1000 }, [B])}
+    reset role;
+    update challenges set duration_days = null, window_unit = 'week' where id = ${ctx('rmweek')}::uuid;
+    ${as(A)} select
+      rematch_defaults(${ctx('rmtot')}::uuid)->>'kind' as tot_kind,
+      (rematch_defaults(${ctx('rmtot')}::uuid)->>'durationDays')::int as tot_days,
+      rematch_defaults(${ctx('rmtot')}::uuid)->'friendIds' as tot_friends,
+      rematch_defaults(${ctx('rmtot')}::uuid)->>'lengthLabel' as tot_label,
+      (rematch_defaults(${ctx('rmweek')}::uuid)->>'durationDays')::int as week_days,
+      rematch_defaults(${ctx('stk')}::uuid)->>'kind' as stk_kind,
+      (rematch_defaults(${ctx('stk')}::uuid)->>'streakDays')::int as stk_days,
+      rematch_defaults(${ctx('rmteam')}::uuid)->>'kind' as team_kind,
+      (rematch_defaults(${ctx('rmteam')}::uuid)->>'durationDays')::int as team_days,
+      (rematch_defaults(${ctx('rmteam')}::uuid)->>'targetReps')::int as team_target,
+      rematch_defaults(${ctx('rmteam')}::uuid)->>'kindLabel' as team_label
+    ; reset role;
+  `],
+  ['open: rematch_defaults omits a declined invite and keeps a forfeit', `
+    ${as(A)} ${create('rmdecl', { kind: 'total', durationDays: 1 }, [B])} reset role;
+    ${as(B)} update challenge_participants set status = 'declined', responded_at = now()
+      where challenge_id = ${ctx('rmdecl')}::uuid and user_id = '${B}'; reset role;
+    ${as(A)} select
+      jsonb_array_length(rematch_defaults(${ctx('rmdecl')}::uuid)->'friendIds') as declined_n,
+      jsonb_array_length(rematch_defaults(${ctx('oleave')}::uuid)->'friendIds') as forfeit_n,
+      rematch_defaults(${ctx('oleave')}::uuid)->'friendIds' as forfeit_friends
+    ; reset role;
+  `],
 );
 Object.assign(checks, {
   'open: a 7-day challenge starts at local midnight and stays open until it ends': (r) => {
@@ -1702,5 +1746,252 @@ Object.assign(checks, {
   'open: a finished most-reps detail uses a result title and head-to-head layout': (r) => {
     const x = r.find((row) => row[0] && 'result_title' in row[0])[0];
     ok(x.result_title === 'You won' && x.layout === 'head_to_head' && x.crowned === true && x.outcome === 'win' && x.needs_response === false, 'detail ' + JSON.stringify(x));
+  },
+  'open: rematch_defaults prefills a finished best set': (r) => {
+    const x = r.find((row) => row[0] && 'deadline_hours' in row[0])[0];
+    const ids = x.friend_ids;
+    ok(x.kind === 'best_set' && x.duration_s == null && Number(x.deadline_hours) === 24 && x.kind_label === 'Best set' && x.length_label === '1 day' && Array.isArray(ids) && ids.length === 1 && ids[0] === B, 'best set ' + JSON.stringify(x));
+  },
+  'open: rematch_defaults prefills most reps, a leftover week, a streak, and a team goal': (r) => {
+    const x = r.find((row) => row[0] && 'tot_kind' in row[0])[0];
+    ok(x.tot_kind === 'total' && Number(x.tot_days) === 14 && Array.isArray(x.tot_friends) && x.tot_friends.length === 1 && x.tot_friends[0] === B && x.tot_label === '14 days', 'total ' + JSON.stringify(x));
+    ok(Number(x.week_days) === 7, 'week ' + JSON.stringify(x));
+    ok(x.stk_kind === 'streak' && Number(x.stk_days) === 7, 'streak ' + JSON.stringify(x));
+    ok(x.team_kind === 'team' && Number(x.team_days) === 30 && Number(x.team_target) === 1000 && x.team_label === 'Team goal', 'team ' + JSON.stringify(x));
+  },
+  'open: rematch_defaults omits a declined invite and keeps a forfeit': (r) => {
+    const x = r.find((row) => row[0] && 'declined_n' in row[0])[0];
+    ok(Number(x.declined_n) === 0 && Number(x.forfeit_n) === 1 && Array.isArray(x.forfeit_friends) && x.forfeit_friends[0] === B, 'invitees ' + JSON.stringify(x));
+  },
+});
+
+
+// Coverage of leave, records, rematch edges, sort, and invite-link rules.
+// Record fixtures are stamped into isolated periods so the rest of the suite
+// does not change the counts.
+const MARCH_FROM = '2025-03-01T00:00:00+00';
+const MARCH_TO = '2025-04-01T00:00:00+00';
+const JUNE_FROM = '2025-06-01T00:00:00+00';
+const JUNE_TO = '2025-07-01T00:00:00+00';
+const stamp = (k, at) => `update challenges set finished_at = '${at}' where id = ${ctx(k)}::uuid;`;
+const accept = (k, user) => `${as(user)} update challenge_participants set status = 'accepted', responded_at = now() where challenge_id = ${ctx(k)}::uuid and user_id = '${user}'; reset role;`;
+
+steps.push(
+  ['cov: an invited person cannot leave (expect ERR)', `
+    ${as(A)} ${create('lv_inv', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    ${as(B)} select leave_challenge(${ctx('lv_inv')}::uuid); reset role;
+  `],
+  ['cov: a non-participant cannot leave (expect ERR)', `
+    ${as(C)} select leave_challenge(${ctx('lv_inv')}::uuid); reset role;
+  `],
+  ['cov: a declined invite cannot leave (expect ERR)', `
+    ${as(A)} ${create('lv_dec', { kind: 'best_set' }, [B])} reset role;
+    ${as(B)} update challenge_participants set status = 'declined', responded_at = now()
+      where challenge_id = ${ctx('lv_dec')}::uuid and user_id = '${B}'; reset role;
+    ${as(B)} select leave_challenge(${ctx('lv_dec')}::uuid); reset role;
+  `],
+  ['cov: only an accepted participant can leave, and only once', `
+    ${as(A)} ${create('lv_ok', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    ${accept('lv_ok', B)}
+    ${as(B)} select leave_challenge(${ctx('lv_ok')}::uuid); reset role;
+    select status as left_status from challenge_participants
+      where challenge_id = ${ctx('lv_ok')}::uuid and user_id = '${B}';
+    ${as(A)} select
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('lv_ok')}) as a_can_do,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('lv_ok')}) as a_turn
+    ; reset role;
+    ${as(B)} select
+      (select count(*) from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('lv_ok')}) as b_open
+    ; reset role;
+  `],
+  ['cov: leaving a second time is rejected (expect ERR)', `
+    ${as(B)} select leave_challenge(${ctx('lv_ok')}::uuid); reset role;
+  `],
+  ['cov: the creator cannot cancel after someone has joined (expect ERR)', `
+    ${as(A)} select cancel_challenge(${ctx('lv_ok')}::uuid); reset role;
+  `],
+  ['cov: records count a win, a tie, a forfeit, a cancel, and an expiry in one period', `
+    ${as(A)} ${create('rwin', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;
+    ${accept('rwin', B)}
+    ${battleSet('rwin-a', 20, 'rwin', A)}
+    ${battleSet('rwin-b', 8, 'rwin', B)}
+    select finalize_challenges();
+    ${stamp('rwin', '2025-03-15T12:00:00+00')}
+
+    ${as(A)} ${create('rtie', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;
+    ${accept('rtie', B)}
+    ${battleSet('rtie-a', 10, 'rtie', A)}
+    ${battleSet('rtie-b', 10, 'rtie', B)}
+    select finalize_challenges();
+    ${stamp('rtie', '2025-03-16T12:00:00+00')}
+
+    ${as(A)} ${create('rfor', { kind: 'total', window: 'custom', customStartsAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), customEndsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString() }, [B])} reset role;
+    ${accept('rfor', B)}
+    ${solo('rfor-a', 12, A)}
+    ${solo('rfor-b', 4, B)}
+    ${as(B)} select leave_challenge(${ctx('rfor')}::uuid); reset role;
+    update sets
+       set started_at = now() - interval '40 minutes',
+           ended_at = (now() - interval '40 minutes') + (ended_at - started_at),
+           received_at = now() - interval '30 minutes'
+     where client_set_id in ('rfor-a', 'rfor-b');
+    update challenges set ends_at = now() - interval '16 minutes' where id = ${ctx('rfor')}::uuid;
+    select finalize_challenges();
+    ${stamp('rfor', '2025-03-17T12:00:00+00')}
+
+    ${as(A)} ${create('rcan', { kind: 'best_set' }, [B])} reset role;
+    ${as(A)} select cancel_challenge(${ctx('rcan')}::uuid); reset role;
+    ${stamp('rcan', '2025-03-18T12:00:00+00')}
+
+    ${as(A)} ${create('rexp', { kind: 'best_set' }, [B])} reset role;
+    update challenges set
+      status = 'expired',
+      created_at = '2025-03-10T12:00:00+00',
+      invite_expires_at = '2025-03-10T13:00:00+00',
+      ends_at = '2025-03-10T14:00:00+00',
+      finished_at = '2025-03-19T12:00:00+00'
+     where id = ${ctx('rexp')}::uuid;
+
+    ${as(A)} select
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'wins')::int as a_wins,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'ties')::int as a_ties,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'losses')::int as a_losses,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'forfeits')::int as a_forfeits,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'cancelled')::int as a_cancelled,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'expired')::int as a_expired,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'declined')::int as a_declined,
+      (select f from jsonb_array_elements(my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->'friends') f
+        where f->>'userId' = '${B}') as a_friend,
+      (select jsonb_agg(e->>'outcome' order by e->>'outcome')
+         from jsonb_array_elements(my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->'otherEvents') e) as a_other,
+      (select status from challenges where id = ${ctx('rfor')}::uuid) as forfeit_status,
+      (select r.is_winner from challenge_results r
+        where r.challenge_id = ${ctx('rfor')}::uuid and r.user_id = '${A}') as a_forfeit_win
+    ; reset role;
+    ${as(B)} select
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'wins')::int as b_wins,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'ties')::int as b_ties,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'losses')::int as b_losses,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'forfeits')::int as b_forfeits,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'cancelled')::int as b_cancelled,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'expired')::int as b_expired,
+      (my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->>'declined')::int as b_declined,
+      (select f from jsonb_array_elements(my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->'friends') f
+        where f->>'userId' = '${A}') as b_friend,
+      jsonb_array_length(coalesce(my_challenge_record('${MARCH_FROM}', '${MARCH_TO}')->'otherEvents', '[]'::jsonb)) as b_other_n
+    ; reset role;
+  `],
+  ['cov: period bounds are half-open and the default window uses the profile time zone', `
+    ${as(A)} ${create('rbefore', { kind: 'best_set' }, [B])} reset role;
+    ${as(A)} select cancel_challenge(${ctx('rbefore')}::uuid); reset role;
+    ${stamp('rbefore', '2025-05-31T23:59:59+00')}
+    ${as(A)} ${create('ron', { kind: 'best_set' }, [B])} reset role;
+    ${as(A)} select cancel_challenge(${ctx('ron')}::uuid); reset role;
+    ${stamp('ron', '2025-06-01T00:00:00+00')}
+    ${as(A)} ${create('rafter', { kind: 'best_set' }, [B])} reset role;
+    ${as(A)} select cancel_challenge(${ctx('rafter')}::uuid); reset role;
+    ${stamp('rafter', '2025-07-01T00:00:00+00')}
+    ${as(A)} select
+      (my_challenge_record('${JUNE_FROM}', '${JUNE_TO}')->>'cancelled')::int as june_cancelled,
+      (select e->>'challengeId' = ${ctx('ron')}
+         from jsonb_array_elements(my_challenge_record('${JUNE_FROM}', '${JUNE_TO}')->'otherEvents') e) as june_is_on,
+      (my_challenge_record(null, '2026-07-15T16:00:00+00')->>'periodFrom')::timestamptz = '2026-06-15T04:00:00+00' as ny_from_ok,
+      (my_challenge_record(null, '2026-07-15T16:00:00+00')->>'periodTo')::timestamptz = '2026-07-15T16:00:00+00' as ny_to_ok
+    ; reset role;
+    ${as(C)} select
+      (my_challenge_record(null, '2026-07-15T16:00:00+00')->>'periodFrom')::timestamptz = '2026-06-15T00:00:00+00' as utc_from_ok
+    ; reset role;
+  `],
+  ['cov: Your turn lists invites first, then other action, then waiting, by sooner end', `
+    ${as(B)} ${create('so_inv', { kind: 'best_set', deadlineHours: 24 }, [A])} reset role;
+    ${as(A)} ${create('so_act', { kind: 'total', durationDays: 7 }, [B])} reset role;
+    ${accept('so_act', B)}
+    ${as(A)} ${create('so_wait', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;
+    ${accept('so_wait', B)}
+    ${battleSet('so-wait-a', 6, 'so_wait', A)}
+    update challenges set ends_at = now() + interval '10 days' where id = ${ctx('so_act')}::uuid;
+    update challenges set ends_at = now() + interval '12 hours' where id = ${ctx('so_wait')}::uuid;
+    ${as(A)} select
+      (select array_agg(x->>'challengeId' order by ord)
+         from jsonb_array_elements(my_open_challenges()) with ordinality as t(x, ord)
+        where x->>'challengeId' in (${ctx('so_inv')}, ${ctx('so_act')}, ${ctx('so_wait')}))
+        = array[${ctx('so_inv')}, ${ctx('so_act')}, ${ctx('so_wait')}] as order_ok,
+      (select x->>'needsResponse' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('so_inv')}) as inv_needs,
+      (select x->>'canDoPushUps' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('so_act')}) as act_can,
+      (select x->>'isMyTurn' from jsonb_array_elements(my_open_challenges()) x where x->>'challengeId' = ${ctx('so_wait')}) as wait_turn
+    ; reset role;
+  `],
+  ['cov: rematch_defaults is the other participant, a timed best set, and a leftover month', `
+    ${as(B)} select
+      rematch_defaults('11111111-1111-4111-8111-111111111111'::uuid)->'friendIds' as b_friends
+    ; reset role;
+    ${as(A)} ${create('rmtimed', { kind: 'best_set', durationS: 60, deadlineHours: 72 }, [B])} reset role;
+    ${as(A)} ${create('rmmonth', { kind: 'total', durationDays: 30 }, [B])} reset role;
+    reset role;
+    update challenges set duration_days = null, window_unit = 'month' where id = ${ctx('rmmonth')}::uuid;
+    ${as(A)} select
+      rematch_defaults(${ctx('rmtimed')}::uuid)->>'kind' as timed_kind,
+      (rematch_defaults(${ctx('rmtimed')}::uuid)->>'durationS')::int as timed_s,
+      (rematch_defaults(${ctx('rmtimed')}::uuid)->>'deadlineHours')::int as timed_h,
+      rematch_defaults(${ctx('rmtimed')}::uuid)->>'lengthLabel' as timed_label,
+      (rematch_defaults(${ctx('rmmonth')}::uuid)->>'durationDays')::int as month_days
+    ; reset role;
+  `],
+  ['cov: only the creator can add an invite link on an open challenge', `
+    ${as(A)} ${create('ilink', { kind: 'best_set', deadlineHours: 24 }, [B])} reset role;
+    ${as(A)}
+      insert into test_ctx(k, v)
+      select 'ilink_tok', create_invite_link(${ctx('ilink')}::uuid)
+      on conflict (k) do update set v = excluded.v;
+    reset role;
+    select invite_preview((select v from test_ctx where k = 'ilink_tok'))->>'status' as preview;
+  `],
+  ['cov: a participant who did not create it cannot add a link (expect ERR)', `
+    ${as(B)} select create_invite_link(${ctx('ilink')}::uuid); reset role;
+  `],
+);
+
+Object.assign(checks, {
+  'cov: only an accepted participant can leave, and only once': (r) => {
+    const left = r.find((row) => row[0] && 'left_status' in row[0])[0];
+    const a = r.find((row) => row[0] && 'a_can_do' in row[0])[0];
+    const b = r.find((row) => row[0] && 'b_open' in row[0])[0];
+    ok(left.left_status === 'forfeited', 'status ' + JSON.stringify(left));
+    ok(a.a_can_do === 'true' && a.a_turn === 'true', 'creator still plays ' + JSON.stringify(a));
+    ok(Number(b.b_open) === 0, 'leaver is off the open list ' + JSON.stringify(b));
+  },
+  'cov: records count a win, a tie, a forfeit, a cancel, and an expiry in one period': (r) => {
+    const a = r.find((row) => row[0] && 'a_wins' in row[0])[0];
+    const b = r.find((row) => row[0] && 'b_wins' in row[0])[0];
+    ok(Number(a.a_wins) === 2 && Number(a.a_ties) === 1 && Number(a.a_losses) === 0 && Number(a.a_forfeits) === 0 && Number(a.a_cancelled) === 1 && Number(a.a_expired) === 1 && Number(a.a_declined) === 0, 'A header ' + JSON.stringify(a));
+    ok(a.forfeit_status === 'completed' && a.a_forfeit_win === true, 'forfeit result ' + JSON.stringify({ st: a.forfeit_status, win: a.a_forfeit_win }));
+    const af = a.a_friend;
+    ok(af && Number(af.wins) === 2 && Number(af.ties) === 1 && Number(af.losses) === 0 && Number(af.forfeits) === 0, 'A friend ' + JSON.stringify(af));
+    const other = a.a_other;
+    ok(Array.isArray(other) && other.length === 2 && other.includes('cancelled') && other.includes('expired'), 'A other ' + JSON.stringify(other));
+    ok(Number(b.b_wins) === 0 && Number(b.b_ties) === 1 && Number(b.b_losses) === 1 && Number(b.b_forfeits) === 1 && Number(b.b_cancelled) === 0 && Number(b.b_expired) === 0 && Number(b.b_declined) === 0 && Number(b.b_other_n) === 0, 'B header ' + JSON.stringify(b));
+    const bf = b.b_friend;
+    ok(bf && Number(bf.wins) === 0 && Number(bf.ties) === 1 && Number(bf.losses) === 1 && Number(bf.forfeits) === 1, 'B friend ' + JSON.stringify(bf));
+  },
+  'cov: period bounds are half-open and the default window uses the profile time zone': (r) => {
+    const a = r.find((row) => row[0] && 'june_cancelled' in row[0])[0];
+    const c = r.find((row) => row[0] && 'utc_from_ok' in row[0])[0];
+    ok(Number(a.june_cancelled) === 1 && a.june_is_on === true, 'bounds ' + JSON.stringify(a));
+    ok(a.ny_from_ok === true && a.ny_to_ok === true, 'NY period ' + JSON.stringify(a));
+    ok(c.utc_from_ok === true, 'UTC period ' + JSON.stringify(c));
+  },
+  'cov: Your turn lists invites first, then other action, then waiting, by sooner end': (r) => {
+    const x = r.find((row) => row[0] && 'order_ok' in row[0])[0];
+    ok(x.order_ok === true && x.inv_needs === 'true' && x.act_can === 'true' && x.wait_turn === 'false', 'sort ' + JSON.stringify(x));
+  },
+  'cov: rematch_defaults is the other participant, a timed best set, and a leftover month': (r) => {
+    const b = r.find((row) => row[0] && 'b_friends' in row[0])[0];
+    const a = r.find((row) => row[0] && 'timed_kind' in row[0])[0];
+    ok(Array.isArray(b.b_friends) && b.b_friends.length === 1 && b.b_friends[0] === A, 'B friends ' + JSON.stringify(b));
+    ok(a.timed_kind === 'best_set' && Number(a.timed_s) === 60 && Number(a.timed_h) === 72 && a.timed_label === '3 days' && Number(a.month_days) === 30, 'prefill ' + JSON.stringify(a));
+  },
+  'cov: only the creator can add an invite link on an open challenge': (r) => {
+    const x = r.find((row) => row[0] && 'preview' in row[0])[0];
+    ok(x.preview === 'ok', 'preview ' + JSON.stringify(x));
   },
 });

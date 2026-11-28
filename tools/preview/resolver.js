@@ -13,6 +13,8 @@ const REPLACE_FILE = {
   'modules/pushup-sensors/src/PushupSensorsModule.web.ts': path.join(SHIMS, 'PushupSensorsModule.ts'),
   'modules/pushup-sensors/src/FaceMeshView.tsx': path.join(SHIMS, 'FaceMeshView.tsx'),
   'src/invites/native.ts': path.join(SHIMS, 'inviteNative.ts'),
+  'src/ui/MenuPicker.tsx': path.join(SHIMS, 'MenuPicker.tsx'),
+  'src/ui/Segmented.tsx': path.join(SHIMS, 'Segmented.tsx'),
 };
 
 /** Package name -> stand-in, for every importer. */

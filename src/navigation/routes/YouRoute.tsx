@@ -97,6 +97,9 @@ export function YouRoute({ navigation, route }: TabProps<'You'>) {
         onSegment={(key) => navigation.setParams({ segment: key })}
         challengeRecord={challengeRecord}
         onOpenChallenge={(id) => navigation.navigate('Battle', { challengeId: id })}
+        onOpenFriend={(f) =>
+          navigation.navigate('Friend', { friend: { userId: f.userId, username: f.username, displayName: f.displayName, relation: 'friend' } })
+        }
         onOpenSet={(id) => {
           const record = records.find((r) => r.id === id);
           if (record) navigation.navigate('Summary', { record, from: 'history' });

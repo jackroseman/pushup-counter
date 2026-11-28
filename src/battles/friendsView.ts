@@ -46,6 +46,7 @@ export interface FriendChallengeRow {
   challengeId: string;
   title: string;
   status: string;
+  section: 'open' | 'finished';
 }
 
 const OUTCOME_WORD = { won: 'Won', lost: 'Lost', draw: 'Draw', ahead: 'Ahead', behind: 'Behind' } as const;
@@ -65,6 +66,7 @@ export function friendChallengeRows(
       challengeId: r.challengeId,
       title: r.title,
       status: r.isMyTurn ? (r.needsResponse ? 'Invite' : 'Your turn') : r.statusLabel || 'Waiting',
+      section: 'open' as const,
     }));
   const open = fromOpen.length
     ? fromOpen
@@ -74,6 +76,7 @@ export function friendChallengeRows(
           challengeId: b.id,
           title: kindLabel(b),
           status: 'In progress',
+          section: 'open' as const,
         }));
   const done = (rec?.finished ?? rec?.recent ?? []).map((r) => {
     const finishedAt = r.finishedAt;
@@ -82,6 +85,7 @@ export function friendChallengeRows(
       challengeId: r.challengeId,
       title: 'title' in r && r.title ? r.title : kindLabel(r),
       status: `${label} · ${formatShortDate(finishedAt, timeZone, now)}`,
+      section: 'finished' as const,
     };
   });
   return [...open, ...done];

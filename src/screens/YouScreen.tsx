@@ -5,7 +5,7 @@ import { Avatar, Button, Card, Icon, IconButton, ListGroup, ListRow, Pill, Progr
 import { formatCount } from '../progress';
 import { formatSetDateTime } from '../progress/format';
 import type { YouModel, YouRecentRow } from '../progress/you';
-import { recordIsEmpty, type MyChallengeRecord } from '../battles/openChallenges';
+import { recordIsEmpty, type ChallengeFriendRow, type MyChallengeRecord } from '../battles/openChallenges';
 
 export interface YouIdentity {
   name: string;
@@ -31,6 +31,7 @@ export function YouScreen({
   onSegment,
   challengeRecord,
   onOpenChallenge,
+  onOpenFriend,
 }: {
   model: YouModel;
   /** Signed in with a username. */
@@ -51,6 +52,7 @@ export function YouScreen({
   onSegment?: (key: 'sets' | 'challenges') => void;
   challengeRecord?: MyChallengeRecord | null;
   onOpenChallenge?: (id: string) => void;
+  onOpenFriend?: (friend: ChallengeFriendRow) => void;
 }) {
   return (
     <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
@@ -99,7 +101,7 @@ export function YouScreen({
       ) : null}
 
       {segment === 'challenges' ? (
-        <ChallengeStats rec={challengeRecord ?? null} onOpen={onOpenChallenge} />
+        <ChallengeStats rec={challengeRecord ?? null} onOpen={onOpenChallenge} onOpenFriend={onOpenFriend} />
       ) : model.empty ? (
         <Card padding={20} style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
@@ -222,45 +224,55 @@ function PromptCard({
 
 
 
-function ChallengeStats({ rec, onOpen }: { rec: MyChallengeRecord | null; onOpen?: (id: string) => void }) {
-  if (recordIsEmpty(rec)) {
-    return (
-      <Card padding={20} style={styles.emptyCard}>
-        <View style={styles.emptyIcon}>
-          <Icon name="bolt" size={26} color={color.label} />
-        </View>
-        <Text variant="title2" align="center" style={styles.emptyTitle} accessibilityRole="header">
-          No challenges yet
-        </Text>
-        <Text variant="subhead" align="center" style={styles.emptyText}>
-          Wins, ties and losses from the last 30 days will show up here.
-        </Text>
-      </Card>
-    );
-  }
-  if (!rec) return null;
+function ChallengeStats({
+  rec,
+  onOpen,
+  onOpenFriend,
+}: {
+  rec: MyChallengeRecord | null;
+  onOpen?: (id: string) => void;
+  onOpenFriend?: (friend: ChallengeFriendRow) => void;
+}) {
+  const wins = rec?.wins ?? 0;
+  const ties = rec?.ties ?? 0;
+  const losses = rec?.losses ?? 0;
+  const forfeits = rec?.forfeits ?? 0;
+  const empty = recordIsEmpty(rec);
   return (
     <>
-      <View style={styles.wtl} accessible accessibilityLabel={`${rec.wins} wins, ${rec.ties} ties, ${rec.losses} losses`}>
-        <View style={styles.wtlItem}>
-          <Text variant="hero" size={34}>{String(rec.wins)}</Text>
-          <Text variant="footnote">Wins</Text>
+      <Text variant="footnote" style={styles.period}>
+        Last 30 days
+      </Text>
+      <Card padding={16} style={styles.wtlCard}>
+        <View style={styles.wtl} accessible accessibilityLabel={`${wins} won, ${ties} tied, ${losses} lost`}>
+          <View style={styles.wtlItem}>
+            <Text variant="hero" size={34} tone={wins ? undefined : 'secondary'}>
+              {String(wins)}
+            </Text>
+            <Text variant="footnote">Won</Text>
+          </View>
+          <View style={styles.wtlRule} />
+          <View style={styles.wtlItem}>
+            <Text variant="hero" size={34} tone="secondary">
+              {String(ties)}
+            </Text>
+            <Text variant="footnote">Tied</Text>
+          </View>
+          <View style={styles.wtlRule} />
+          <View style={styles.wtlItem}>
+            <Text variant="hero" size={34} tone="secondary">
+              {String(losses)}
+            </Text>
+            <Text variant="footnote">Lost</Text>
+          </View>
         </View>
-        <View style={styles.wtlItem}>
-          <Text variant="hero" size={34} tone="secondary">{String(rec.ties)}</Text>
-          <Text variant="footnote">Ties</Text>
-        </View>
-        <View style={styles.wtlItem}>
-          <Text variant="hero" size={34} tone="secondary">{String(rec.losses)}</Text>
-          <Text variant="footnote">Losses</Text>
-        </View>
-      </View>
-      {rec.forfeits > 0 ? (
+      </Card>
+      {forfeits > 0 ? (
         <Text variant="footnote" align="center" style={styles.forfeitNote}>
-          {rec.forfeits === 1 ? '1 forfeit' : `${rec.forfeits} forfeits`}
+          {forfeits === 1 ? '1 forfeit' : `${forfeits} forfeits`}
         </Text>
       ) : null}
-      {rec.friends.length ? (
+      {rec?.friends.length ? (
         <>
           <SectionHeader title="Friends" />
           <ListGroup>
@@ -269,13 +281,15 @@ function ChallengeStats({ rec, onOpen }: { rec: MyChallengeRecord | null; onOpen
                 key={f.userId}
                 title={f.displayName || f.username}
                 subtitle={`${f.wins}–${f.ties}–${f.losses}`}
-                chevron={false}
+                leading={<Avatar name={f.displayName || f.username} size={36} />}
+                chevron
+                onPress={onOpenFriend ? () => onOpenFriend(f) : undefined}
               />
             ))}
           </ListGroup>
         </>
       ) : null}
-      {rec.otherEvents.length ? (
+      {rec?.otherEvents.length ? (
         <>
           <SectionHeader title="Other" />
           <ListGroup>
@@ -289,6 +303,16 @@ function ChallengeStats({ rec, onOpen }: { rec: MyChallengeRecord | null; onOpen
               />
             ))}
           </ListGroup>
+        </>
+      ) : null}
+      {empty ? (
+        <>
+          <Text variant="title2" align="center" style={styles.statsEmptyTitle} accessibilityRole="header">
+            No challenges yet
+          </Text>
+          <Text variant="subhead" align="center" style={styles.statsEmptyText}>
+            Your record starts with the first one.
+          </Text>
         </>
       ) : null}
     </>
@@ -324,10 +348,15 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8 },
   promptTile: { width: 30, height: 30, borderRadius: radius.tile, alignItems: 'center', justifyContent: 'center', backgroundColor: color.elevated },
   promptTitleSmall: { fontSize: 15 },
-  segment: { marginBottom: space.md },
-  wtl: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: space.sm },
-  wtlItem: { alignItems: 'center', minWidth: 72 },
-  forfeitNote: { marginBottom: space.md },
+  segment: { marginBottom: space.sm },
+  period: { marginBottom: space.sm },
+  wtlCard: { marginBottom: space.sm },
+  wtl: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  wtlItem: { alignItems: 'center', flex: 1 },
+  wtlRule: { width: StyleSheet.hairlineWidth, height: 36, backgroundColor: color.separator },
+  forfeitNote: { marginBottom: space.md, marginTop: space.xs },
+  statsEmptyTitle: { marginTop: space.xl },
+  statsEmptyText: { marginTop: 6 },
   emptyCard: { marginTop: 12, paddingTop: 26, paddingBottom: 26, alignItems: 'center' },
   emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: color.elevated, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 14 },

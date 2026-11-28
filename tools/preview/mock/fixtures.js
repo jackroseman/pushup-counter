@@ -178,6 +178,8 @@ function build(now = FIXED_NOW) {
       participants: [MEP, P(1), P(0), P(2)].map((p, i) => part(p, { validReps: [168, 212, 131, 100][i], teamTotal: 611, teamTarget: 1000 })) },
     { ...base, id: 'c-invite', kind: 'total', windowUnit: 'day', status: 'pending', startsAt: null, endsAt: null, createdBy: people[1][0],
       participants: [part(P(1), {}), part(MEP, { status: 'invited', attemptsUsed: 0 })] },
+    { ...base, id: 'c-wait', kind: 'best_set', windowUnit: null, durationS: 60, attemptsAllowed: 1, status: 'active', startsAt: isoTime(now - DAY), endsAt: isoTime(now + 2 * DAY), createdBy: ME,
+      participants: [part(MEP, { validReps: 34, rank: 1, attemptsUsed: 1 }), part(P(2), { validReps: null, rank: null, attemptsUsed: 0 })] },
     { ...base, id: 'c-done', kind: 'total', windowUnit: 'day', status: 'completed', startsAt: isoTime(now - 4 * DAY), endsAt: isoTime(now - 3 * DAY), finishedAt: isoTime(now - 3 * DAY),
       participants: [part(MEP, { validReps: 74, rank: 1, isWinner: true }), part(P(0), { validReps: 61, rank: 2 })] },
   ];
@@ -233,6 +235,13 @@ function build(now = FIXED_NOW) {
       sortRank: 0, myValidReps: 168, leaderUserId: null, leaderDisplayName: null, leaderReps: null,
       teamTotal: 611, teamTarget: 1000, progressFrac: 611 / 1000,
       primaryOpponentUserId: people[1][0], primaryOpponentDisplayName: 'Jack',
+    }),
+    openBase(challenges[5], { // c-wait: already played, waiting on Maya
+      title: 'Best set vs Maya R', canDoPushUps: false, needsResponse: false, isMyTurn: false,
+      turnReason: 'waiting', ctaType: 'none', ctaLabel: null, statusKey: 'waiting_on', statusLabel: 'Waiting on Maya R',
+      sortRank: 1, myValidReps: 34, leaderUserId: ME, leaderDisplayName: 'Sunny', leaderReps: 34,
+      primaryOpponentUserId: people[2][0], primaryOpponentDisplayName: 'Maya R',
+      waitingOn: [{ userId: people[2][0], displayName: 'Maya R' }],
     }),
   ];
   const challengeRecord = {

@@ -111,6 +111,11 @@ export function FriendScreen({
         {!rec && !error ? <ActivityIndicator style={styles.loading} color={color.secondary} /> : null}
 
         {rec && together > 0 ? (
+          <Text variant="footnote" style={styles.period}>
+            Last 30 days
+          </Text>
+        ) : null}
+        {rec && together > 0 ? (
           <Card padding={0} style={styles.record}>
             <View style={styles.recordRow}>
               <View style={styles.recordSide} accessible accessibilityLabel={`${wins} wins`}>
@@ -154,25 +159,27 @@ export function FriendScreen({
           </Card>
         ) : null}
 
-        {rows.length > 0 ? (
+        {rows.some((r) => r.section === 'open') ? (
           <>
-            <SectionHeader title="Challenges" />
+            <SectionHeader title="In progress" />
             <ListGroup>
-              {rows.map((r) => (
-                <Pressable
-                  key={r.challengeId}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${r.title}, ${r.status}`}
-                  onPress={() => onOpenBattle(r.challengeId)}
-                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-                >
-                  <Text variant="body" style={styles.grow} numberOfLines={1}>
-                    {r.title}
-                  </Text>
-                  <Text variant="footnote">{r.status}</Text>
-                  <Icon name="chev" size={13} color={color.tertiary} />
-                </Pressable>
-              ))}
+              {rows
+                .filter((r) => r.section === 'open')
+                .map((r) => (
+                  <FriendChallengeItem key={r.challengeId} row={r} onOpen={onOpenBattle} />
+                ))}
+            </ListGroup>
+          </>
+        ) : null}
+        {rows.some((r) => r.section === 'finished') ? (
+          <>
+            <SectionHeader title="Finished" />
+            <ListGroup>
+              {rows
+                .filter((r) => r.section === 'finished')
+                .map((r) => (
+                  <FriendChallengeItem key={r.challengeId} row={r} onOpen={onOpenBattle} />
+                ))}
             </ListGroup>
           </>
         ) : null}
@@ -181,6 +188,29 @@ export function FriendScreen({
         <Button title={`Challenge ${name}`} onPress={() => onChallenge(friend)} />
       </View>
     </View>
+  );
+}
+
+function FriendChallengeItem({
+  row,
+  onOpen,
+}: {
+  row: { challengeId: string; title: string; status: string };
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${row.title}, ${row.status}`}
+      onPress={() => onOpen(row.challengeId)}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
+      <Text variant="body" style={styles.grow} numberOfLines={1}>
+        {row.title}
+      </Text>
+      <Text variant="footnote">{row.status}</Text>
+      <Icon name="chev" size={13} color={color.tertiary} />
+    </Pressable>
   );
 }
 
@@ -207,6 +237,7 @@ const styles = StyleSheet.create({
   tileValue: { marginTop: 6 },
   note: { marginTop: space.sm },
   loading: { marginTop: 32 },
+  period: { marginTop: space.md, marginBottom: space.xs },
   record: { marginTop: 10 },
   recordRow: { flexDirection: 'row', justifyContent: 'space-around', padding: space.md },
   recordSide: { alignItems: 'center', flex: 1 },

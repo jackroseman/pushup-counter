@@ -11,5 +11,7 @@ module.exports = {
     await shot('challenges-empty');
     await tap('You', { last: true, wait: 2000 });
     await shot('you-empty');
+    await tap('Challenges', { last: true, wait: 1500 });
+    await shot('you-challenges-empty');
   },
 };

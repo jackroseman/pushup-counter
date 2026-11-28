@@ -6,6 +6,8 @@ module.exports = {
   run: async ({ shot, tap }) => {
     await tap('You', { last: true, wait: 2000 });
     await shot('you');
+    await tap('Challenges', { last: true, wait: 1800 });
+    await shot('you-challenges');
     await tap('Settings', { label: true, last: true, wait: 2000 });
     await shot('settings');
   },

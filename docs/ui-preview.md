@@ -61,6 +61,7 @@ Run these from the repo root.
 | `npm --prefix tools/preview run build` | Builds the preview into `tools/preview/out/web` (about 10 s). Rebuild after changing app code. |
 | `npm --prefix tools/preview run capture -- set-flow` | Runs one or more flows: screenshots and an `.mp4` per flow. |
 | `npm --prefix tools/preview run capture -- all` | Runs every flow. |
+| `npm --prefix tools/preview run screens` | Builds, then takes screenshots only of the screens a UX review needs: Today, Compete (League and Challenges), You, the empty states, and the busy, none, friend and finished challenge states. About a minute and a half. |
 | `npm --prefix tools/preview run capture -- set-flow --reduce-motion` | Same flow with iOS Reduce Motion on. |
 | `npm --prefix tools/preview run capture -- today compete --no-video` | Screenshots only (faster). |
 | `npm --prefix tools/preview run flows` | Lists the flows. |
@@ -82,6 +83,10 @@ failed and saves `zz-failed.png` beside that flow's other screenshots.
 | `you-settings` | You tab and Settings |
 | `onboarding` | Fresh install, signed out: Welcome → Pick a daily goal → How it works → Today |
 | `empty` | Today, Compete, Challenges and You with no data |
+| `challenges-states-busy` | Today and Compete > Challenges with four moves waiting on you, an invite, and a long Finished list (won, lost, draw, cancelled) |
+| `challenges-states-none` | Compete > Challenges with friends but no challenges yet |
+| `challenges-states-friend` | Compete > Friends, then a friend's page (this week, best set, your record together, challenges) |
+| `challenges-states-finished` | A finished challenge: result, standings, Rematch |
 | `invite-share` … `invite-first-run` | Friend invite links (`flows/invite.js`, 9 variants): share sheet, Copied, QR, Settings row, New friend on Friends, Add friend / added / already friends / own link / invalid link, signed out → Sign in with Apple → Pick a username, first run → Welcome with "invited you". Open with a path such as `i/k7m2qx9p` (no leading slash). |
 
 
@@ -107,6 +112,26 @@ loop, about 15-20 a second, so the phone fills the frame; Playwright's own recor
 in a quarter of the frame). While recording, each screenshot is held for a moment and taps show a
 touch dot. `PREVIEW_KEEP_FRAMES=1` keeps the raw frames in `<flow>/.video/`. The browser clock starts at Wednesday 25 November
 2026, 4:30 PM Eastern, so every run renders the same dates and numbers.
+
+## Using it for UX review and mockups
+
+Before designing a change to an existing screen, render the screen as it is today and start from
+that picture. Don't redraw it from memory: a hand-drawn "before" tends to invent rows, labels and
+data shapes the app doesn't have.
+
+1. `npm --prefix tools/preview run screens` (after `setup` once). Screenshots land in
+   `tools/preview/out/captures/<flow>/`.
+2. Read the screenshots next to the code that draws them, and the fixture next to the RPC. The
+   screen shows what the app does with the data; the fixture shows the data it gets.
+3. Put the real screenshot next to the proposed design in the review. Mock only what changes, and
+   label every mockup MOCKUP.
+4. For a state the fixtures don't cover, add a flow with an `rpc` override (see
+   `flows/challenges-states.js`) instead of editing the shared fixtures.
+
+Mockups drawn from the style guide Page and these screenshots will match, with the gaps listed
+in "What it is, and what it isn't": the web has no status bar, no home indicator, and a flat
+tab bar where iOS 26 has the native floating one. Copy and layout inside the screen are the
+app's own.
 
 ## Attaching recordings to a PR
 

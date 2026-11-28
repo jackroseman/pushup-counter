@@ -28,6 +28,7 @@ export function Segmented<K extends string>({
             accessibilityLabel={o.label}
             accessibilityState={{ selected: on }}
             onPress={() => onChange(o.key)}
+            hitSlop={5}
             style={[styles.item, on && styles.itemOn]}
           >
             <Text style={[styles.label, on && styles.labelOn]} numberOfLines={1}>

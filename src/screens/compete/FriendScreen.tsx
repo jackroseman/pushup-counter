@@ -123,7 +123,7 @@ export function FriendScreen({
         ) : null}
         {!rec && !error ? <ActivityIndicator style={styles.loading} color={color.secondary} /> : null}
 
-        {rec ? <PeriodPicker periods={periods} selected={period} onChange={setPeriod} /> : null}
+        {rec ? <PeriodPicker periods={periods} selected={period} onChange={setPeriod} style={styles.period} /> : null}
         {rec && together > 0 ? (
           <Card padding={0} style={styles.record}>
             <View style={styles.recordRow}>

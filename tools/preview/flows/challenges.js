@@ -1,7 +1,7 @@
 // Dedicated challenges flow for UX review and PR recordings.
 // Covers create (each type/length), Your turn on Today and Compete, invites,
 // Waiting, detail, finished result, You > Challenges with the period picker,
-// a friend's head-to-head page, and empty states.
+// a friend's head-to-head page, Rematch into the prefilled create sheet, and empty states.
 //
 //   npm --prefix tools/preview run capture -- challenges-tour
 //   npm --prefix tools/preview run capture -- challenges-empty challenges-none challenges-busy
@@ -19,7 +19,7 @@ module.exports = {
     {
       id: 'tour',
       description:
-        'Challenges tour: Your turn, invite, Waiting, detail, New challenge types and lengths, You period picker, friend record, finished result',
+        'Challenges tour: Your turn, invite, Waiting, detail, New challenge types and lengths, You period picker, friend record, finished result, rematch sheet',
       options: { user: 'regular' },
       timeoutMs: 240000,
       run: async (ctx) => {
@@ -80,6 +80,8 @@ module.exports = {
         await tap('Period: Last 30 days', { label: true, last: true, wait: 400 });
         await tap('Most reps today', { last: true, wait: 2000 });
         await shot('finished-result');
+        await tap('Rematch', { wait: 2000 });
+        await shot('rematch-sheet');
       },
     },
     {

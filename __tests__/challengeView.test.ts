@@ -3,7 +3,6 @@ import {
   challengesEmpty,
   finishedTitle,
   headScore,
-  rematchParams,
   shortTimeLeft,
   standings,
 } from '../src/battles/challengeView';
@@ -104,19 +103,6 @@ describe('results', () => {
     expect(finishedTitle(won)).toBe('Won · Best set');
   });
 
-  it('rematches the same people with the same settings', () => {
-    const b = battle({
-      kind: 'total',
-      windowUnit: 'day',
-      status: 'completed',
-      participants: [you(), person({ userId: 'jack' }), person({ userId: 'tara', status: 'declined' })],
-    });
-    expect(rematchParams(b)).toEqual({ friendIds: ['jack'], offer: { kind: 'total', durationDays: 1 } });
-    expect(rematchParams(battle({ durationS: 90, participants: [you(), person({ userId: 'jack' })] }))).toEqual({
-      friendIds: ['jack'],
-      offer: { kind: 'best_set', durationS: 90 },
-    });
-  });
 });
 
 describe('labels', () => {

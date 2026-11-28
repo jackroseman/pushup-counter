@@ -1,6 +1,19 @@
 import type { AsyncBattleDefaults, StreakLengths, TeamTargets } from '../backend/appSettings';
 import type { ChallengeKind } from './model';
 
+/** Prefill settings from `rematch_defaults`. The client only displays these. */
+export interface RematchDefaults {
+  kind: ChallengeKind;
+  durationS?: number | null;
+  deadlineHours?: number;
+  durationDays?: 1 | 7 | 14 | 30;
+  streakDays?: number;
+  targetReps?: number;
+  friendIds: string[];
+  kindLabel?: string;
+  lengthLabel?: string | null;
+}
+
 /** The New challenge sheet's choices (frame 21). */
 export interface NewChallengeForm {
   kind: ChallengeKind;
@@ -75,10 +88,10 @@ export function timeLimitLabel(durationS: number | null): string {
   return durationS % 60 === 0 && durationS >= 120 ? `${durationS / 60} min` : `${durationS} s`;
 }
 
-/** First form: rematch / from-set settings if given, else the mockup defaults (best set, 60 s). */
+/** First form: from-set settings if given, else the mockup defaults (best set, 60 s). */
 export function initialForm(
   s: { battle: AsyncBattleDefaults; streak: StreakLengths; team: TeamTargets },
-  offer?: { kind: ChallengeKind; durationS?: number | null; durationDays?: 1 | 7 | 14 | 30; window?: 'day' | 'week' | 'month' },
+  offer?: { kind: ChallengeKind; durationS?: number | null; durationDays?: 1 | 7 | 14 | 30 },
   friendIds?: string[],
   setTimerS?: number | null,
 ): NewChallengeForm {
@@ -89,14 +102,30 @@ export function initialForm(
     kind,
     durationS,
     deadlineHours: s.battle.deadlineHours,
-    durationDays: offer?.durationDays ?? (offer?.window === 'day' ? 1 : offer?.window === 'month' ? 30 : 7),
+    durationDays: offer?.durationDays ?? 7,
     streakDays: s.streak.optionsDays[0] ?? s.streak.minDays,
     targetReps: s.team.defaultTarget,
     friendIds: friendIds ?? [],
   };
 }
 
-/** Switching kind keeps friends; most reps defaults to this week, team to its default window. */
+/** Prefill the create form from `rematch_defaults`. */
+export function formFromRematch(
+  s: { battle: AsyncBattleDefaults; streak: StreakLengths; team: TeamTargets },
+  d: RematchDefaults,
+): NewChallengeForm {
+  return {
+    kind: d.kind,
+    durationS: d.kind === 'best_set' ? (d.durationS ?? null) : (s.battle.timedDurationsS[0] ?? null),
+    deadlineHours: d.deadlineHours ?? s.battle.deadlineHours,
+    durationDays: d.durationDays ?? 7,
+    streakDays: d.streakDays ?? s.streak.optionsDays[0] ?? s.streak.minDays,
+    targetReps: d.targetReps ?? s.team.defaultTarget,
+    friendIds: [...d.friendIds],
+  };
+}
+
+/** Switching kind keeps friends; most reps and team keep the current length. */
 export function withKind(form: NewChallengeForm, kind: ChallengeKind, team: TeamTargets): NewChallengeForm {
   if (kind === form.kind) return form;
   return { ...form, kind, durationDays: kind === 'team' || kind === 'total' ? form.durationDays || 7 : form.durationDays };

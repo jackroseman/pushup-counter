@@ -1,5 +1,6 @@
 // Database tests: loads Supabase stubs + every migration into PGlite (in-process Postgres),
-// then runs the scenario steps in cases.mjs in order. Run: npm run test:db
+// then runs the scenario steps in cases.mjs in order, and checks that every
+// public function and view has a behavioral test (see coverage.mjs). Run: npm run test:db
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { steps, checks } from './cases.mjs';
+import { assertPublicApiCoverage } from './coverage.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(here, '..', 'migrations');
@@ -41,3 +43,7 @@ for (const [title, sql] of steps) {
     checks[title]?.(rows);
   });
 }
+
+test('public RPCs and views have behavioral coverage', async () => {
+  await assertPublicApiCoverage(db, { steps, checks, assert });
+});

@@ -83,7 +83,7 @@ failed and saves `zz-failed.png` beside that flow's other screenshots.
 | `you-settings` | You tab, You > Challenges (including the period picker), and Settings |
 | `onboarding` | Fresh install, signed out: Welcome → Pick a daily goal → How it works → Today |
 | `empty` | Today, Compete, Challenges and You with no data |
-| `challenges-tour` | Dedicated challenges flow (`flows/challenges.js`): Your turn on Today and Compete (including See all), an invite to accept or decline, a playable detail, a team goal, Waiting, New challenge for each type and length, You > Challenges with the period picker, a friend's head-to-head record and period picker, and a finished result. This is the flow to record for a PR. |
+| `challenges-tour` | Dedicated challenges flow (`flows/challenges.js`): Your turn on Today and Compete (including See all), an invite to accept or decline, a playable detail, a team goal, Waiting, New challenge for each type and length, You > Challenges with the period picker, a friend's head-to-head record and period picker, a finished result, and Rematch opening the prefilled New challenge sheet. This is the flow to record for a PR. |
 | `challenges-empty` | Challenge empty states: Today, Compete with no friends (E11), You Sets and You > Challenges (with the period picker) |
 | `challenges-none` | Compete > Challenges with friends but no open challenges yet (E10) |
 | `challenges-busy` | Today and Compete > Challenges with more than three action rows (See all, scrolled list) |

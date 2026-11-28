@@ -2,6 +2,7 @@ import { DEFAULT_APP_SETTINGS } from '../src/backend/appSettings';
 import {
   KIND_TILES,
   canSend,
+  formFromRematch,
   hoursLabel,
   initialForm,
   lengthKey,
@@ -31,10 +32,39 @@ describe('new challenge sheet (frame 21)', () => {
     expect(initialForm(s, undefined, [], 120).durationS).toBe(120);
   });
 
-  it('prefills a rematch', () => {
-    expect(initialForm(s, { kind: 'total', durationDays: 1 })).toMatchObject({ kind: 'total', durationDays: 1 });
-    expect(initialForm(s, { kind: 'total', window: 'day' })).toMatchObject({ kind: 'total', durationDays: 1 });
-    expect(initialForm(s, { kind: 'best_set', durationS: null }).durationS).toBeNull();
+  it('prefills a rematch from the RPC fields', () => {
+    expect(
+      formFromRematch(s, {
+        kind: 'total',
+        durationDays: 1,
+        friendIds: ['jack'],
+        kindLabel: 'Most reps',
+        lengthLabel: '1 day',
+      }),
+    ).toMatchObject({ kind: 'total', durationDays: 1, friendIds: ['jack'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'best_set',
+        durationS: null,
+        deadlineHours: 72,
+        friendIds: ['jack'],
+      }),
+    ).toMatchObject({ kind: 'best_set', durationS: null, deadlineHours: 72, friendIds: ['jack'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'streak',
+        streakDays: 14,
+        friendIds: ['jack', 'tara'],
+      }),
+    ).toMatchObject({ kind: 'streak', streakDays: 14, friendIds: ['jack', 'tara'] });
+    expect(
+      formFromRematch(s, {
+        kind: 'team',
+        durationDays: 30,
+        targetReps: 1000,
+        friendIds: ['jack'],
+      }),
+    ).toMatchObject({ kind: 'team', durationDays: 30, targetReps: 1000 });
   });
 
   it('has four kind tiles with plain lines', () => {

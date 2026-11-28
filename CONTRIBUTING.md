@@ -103,14 +103,16 @@ release, merges to `main` use the same gate. The full recipe is in
 | file                                 | trigger                     | does |
 |--------------------------------------|-----------------------------|------|
 | `.github/workflows/eas-ship.yml`     | after `checks` pass on a push to `dev` / `main`, or by hand | `scripts/eas-ship.sh`: OTA update if a build has this fingerprint, else start a build workflow |
+| `.github/workflows/release-pr-version.yml` | a `dev` → `main` release PR is opened, updated, or edited | If the head is a native change under a version that already has a store build, bump the patch on `dev` automatically. JS-only heads and already-bumped versions are left alone. |
 | `.eas/workflows/build-dev.yml`       | started by eas-ship, or by hand | dev client build (`development`) |
 | `.eas/workflows/build-production.yml`| started by eas-ship, or by hand | store build + upload to TestFlight (`production`) |
 
 * **JS/asset-only change** → OTA update to the branch's channel, in minutes, no EAS build
   and no EAS queue.
 * **Native change** → one build, plus an OTA update of the same commit for the new runtime
-  (so the build's Updates tab is never empty). On `main` only if `version` was bumped;
-  otherwise the ship fails, tells you to bump it, and publishes nothing.
+  (so the build's Updates tab is never empty). On `main` only if `version` was bumped
+  (the release PR does this automatically); otherwise the ship fails as a safety net
+  and publishes nothing.
 
 Watch ships under GitHub → Actions → EAS ship, builds at expo.dev → project → Workflows.
 Validate an EAS workflow: `eas workflow:validate .eas/workflows/build-dev.yml`.
@@ -146,10 +148,14 @@ Validate an EAS workflow: `eas workflow:validate .eas/workflows/build-dev.yml`.
   native code, Expo SDK upgrades, native config in `app.json`/`app.config.ts`
   (permissions, plugins, bundle id, icons/splash), or `package.json` changes that alter the
   fingerprint.
-* Production `runtimeVersion` follows the app `version` (`policy: appVersion`). **If your PR
-  makes a native change, bump `version` in `app.json` and `package.json` before it is
-  released** (e.g. 1.1.0 → 1.2.0). `eas-ship.sh` refuses to publish an OTA to `production`
-  when the version already has a store build with different native code.
+* Production `runtimeVersion` follows the app `version` (`policy: appVersion`). If a
+  release PR would ship a native change under a version that already has a store
+  build, `.github/workflows/release-pr-version.yml` bumps the patch on `dev`
+  automatically (`app.json`, `package.json`, and the package-lock root version,
+  e.g. 1.3.1 → 1.3.2). You do not bump it by hand. Feature PRs should still say
+  "needs native build" in the description. `eas-ship.sh` refuses to publish an OTA
+  to `production` when the version already has a store build with different native
+  code (a safety net if the bump did not land).
 * The dev client (`APP_VARIANT=development`) uses `policy: fingerprint`, so dev builds need
   no version bump: a native change on `dev` just makes a new Pushup Dev build.
 * Mention "needs native build" in the PR description so the release PR shows it too.
@@ -193,9 +199,10 @@ switches the name/bundle id in `app.config.ts`. Without it you get the normal
 
 ## 8. Releasing (`dev` → `main`)
 
-Follow [docs/RELEASING.md](docs/RELEASING.md): bump `version` if anything native changed,
-run `scripts/release.sh`, wait for `checks`, merge (merge commit), and watch Actions → EAS
-ship. Retry a failed upload without a new build: `eas submit -p ios --id <build id>`.
+Follow [docs/RELEASING.md](docs/RELEASING.md): run `scripts/release.sh`, wait for
+`checks` (and for the automatic patch bump if the release includes a native change),
+merge (merge commit), and watch Actions → EAS ship. Retry a failed upload without a
+new build: `eas submit -p ios --id <build id>`.
 
 One-time setup for the upload (done):
 * App Store Connect app record **"Rep Royale: Push-up Battles"**, bundle id
@@ -227,16 +234,18 @@ One-time setup for the upload (done):
 * **Bad code on `main`/`dev`:** open a revert PR (`git revert <sha>`). Don't force-push.
   Merging the revert runs the normal CD.
 * **Bad native build:** reinstall the previous build from expo.dev → Builds, then revert the
-  change. Bump `version` again when the fixed native build ships.
+  change. The next release PR will bump `version` again when the fixed native build ships.
 
 ## 10. Secrets
 
 Never commit tokens, database passwords, Apple passwords or `.env` files. EAS credentials
 live on EAS.
 
-* **CI (`ci.yml`) needs no secrets** and PR runs never get any.
+* **CI (`ci.yml`) needs no secrets.** Feature-PR runs never get any.
 * **`eas-ship.yml`** uses `EXPO_TOKEN` (repository secret, an Expo access token). Without it
   the job is skipped with a warning.
+* **`release-pr-version.yml`** also uses `EXPO_TOKEN`, and only on a same-repo `dev` →
+  `main` release PR, to fingerprint the production profile and list store builds.
 * **`supabase-deploy.yml`** uses GitHub secrets:
   * `SUPABASE_ACCESS_TOKEN` (repository secret): a personal access token from
     supabase.com/dashboard/account/tokens. Without it the deploy job is skipped with a warning.

@@ -268,11 +268,13 @@ When `eas-ship` does run, `scripts/eas-ship.sh` fingerprints the project with
   launch (`ON_LOAD`), download in the background, and run the update on the next launch.
 * **No build has this fingerprint:** a native change. On `development`, it starts
   `.eas/workflows/build-dev.yml` (install the new Pushup Dev build when it is done). On
-  `production`, it requires a `version` bump in `app.json` and `package.json`; otherwise
-  it publishes nothing. A new version starts `.eas/workflows/build-production.yml` (store
+  `production`, the `dev` → `main` release PR bumps the patch on `dev` automatically
+  when this version already has a store build; otherwise the ship publishes nothing
+  (a safety net). A new version starts `.eas/workflows/build-production.yml` (store
   build + upload to TestFlight). In both cases the same run then publishes an OTA update
   for the new runtime, so the new build's Updates tab is never empty (republish and
-  rollback work from day one). Tests: `node --test scripts/tests/eas-ship-cases.mjs`.
+  rollback work from day one). Tests: `node --test scripts/tests/eas-ship-cases.mjs`
+  and `node --test scripts/tests/release-version-bump-cases.mjs`.
 
 Runtime version (`app.config.ts`): the store app uses `appVersion` (`expo.version` in
 `app.json`). The dev client uses `fingerprint`, so a native change on `dev` gets a new

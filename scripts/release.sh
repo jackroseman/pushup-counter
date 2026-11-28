@@ -21,7 +21,7 @@ if [ "$AHEAD" = 0 ]; then echo "dev has nothing that main lacks; no release PR n
 PR="$(gh pr list -R "$REPO" --base main --head dev --state open --json number --jq '.[0].number // empty')"
 if [ -z "$PR" ]; then
   TITLE="Release ${VERSION:-dev}: dev -> main"
-  BODY="$(printf 'Release dev into main (%s commits).\n\nMerging ships production: an OTA update for JS-only changes, or one store build + TestFlight upload when the version was bumped. See docs/RELEASING.md.\n\nCommits:\n%s\n' "$AHEAD" "$(git log --oneline --no-merges origin/main..origin/dev | head -50)")"
+  BODY="$(printf 'Release dev into main (%s commits).\n\nMerging ships production: an OTA update for JS-only changes, or one store build + TestFlight upload for a native change (the patch version is bumped automatically on this PR if needed). See docs/RELEASING.md.\n\nCommits:\n%s\n' "$AHEAD" "$(git log --oneline --no-merges origin/main..origin/dev | head -50)")"
   PR="$(gh pr create -R "$REPO" --base main --head dev --title "$TITLE" --body "$BODY" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
   echo "opened release PR #$PR"
 fi

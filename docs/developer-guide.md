@@ -253,6 +253,10 @@ A docs-only or tests-only merge, or a merge whose `checks` job failed, does not 
 a ship and does not cancel one that is already running. A started ship skips if its
 commit is no longer the branch tip, so a superseded run cannot publish stale code.
 
+The `checks` job also runs `node --test scripts/tests/eas-ship-cases.mjs` and
+`node --test scripts/tests/release-version-bump-cases.mjs` (ship and release-version
+decisions against a fake `eas`, no network).
+
 ### OTA update vs a native build
 
 `scripts/eas-ship.sh` fingerprints the project with `eas fingerprint:generate` (the
@@ -264,10 +268,16 @@ same hash EAS builds record):
   launch, download in the background, and apply the update on the next launch.
 * **No build has this fingerprint:** a native change. On `development`, start
   `.eas/workflows/build-dev.yml`. On `production`, the app `version` in `app.json`
-  and `package.json` must have been bumped; otherwise the job fails and publishes
-  nothing. A new version starts `.eas/workflows/build-production.yml` (store build
-  plus upload to TestFlight). The same run then publishes an OTA of this commit for
-  the new runtime, so the new build's Updates tab is never empty.
+  and `package.json` must already have been bumped; otherwise the job fails and
+  publishes nothing. That is a safety net: when you open the `dev` → `main` release
+  PR, `.github/workflows/release-pr-version.yml` fingerprints the head and, if this
+  is a native change under a version that already has a store build, bumps the
+  patch on `dev` automatically (a PR into `dev` that squash-merges once `checks`
+  pass). JS-only heads are left alone, and a version with no store build is not
+  bumped again. You do not bump the version by hand. A new version starts
+  `.eas/workflows/build-production.yml` (store build plus upload to TestFlight).
+  The same run then publishes an OTA of this commit for the new runtime, so the
+  new build's Updates tab is never empty.
 
 Runtime version (`app.config.ts`): the store app uses `appVersion` (`expo.version`).
 The dev client uses `fingerprint`, so a native change on `dev` gets a new Pushup Dev

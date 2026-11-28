@@ -11,6 +11,8 @@ export { Card } from './Card';
 export { ListGroup, ListRow, SectionHeader, ICON_ROW_INSET } from './ListGroup';
 export { Segmented } from './Segmented';
 export type { SegmentedOption } from './Segmented';
+export { MenuPicker } from './MenuPicker';
+export type { MenuPickerOption } from './MenuPicker';
 export { Pill, QualityPill, StreakChip, QUALITY_LABEL } from './Pill';
 export type { PillTone, PillSize } from './Pill';
 export { Avatar, AvatarStack, initialOf } from './Avatar';

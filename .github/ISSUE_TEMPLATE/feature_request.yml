@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a change or new capability.
+title: "Feature: "
+labels: [feature-request]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or missing today, and why it matters.
+    validations:
+      required: true
+  - type: input
+    id: who
+    attributes:
+      label: Who it is for
+      description: Who feels this problem (everyone, new users, a specific person).
+      placeholder: People in a 30-day most-reps challenge
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed idea
+      description: A starting point, not a design. An RFC comes later if this is worth building.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways to solve it, including doing nothing. Optional.
+    validations:
+      required: false

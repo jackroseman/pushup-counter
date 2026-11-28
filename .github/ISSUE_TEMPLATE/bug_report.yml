@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in the app is wrong or broken.
+title: "Bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, in order.
+      placeholder: |
+        1. Open You
+        2. Switch to Challenges
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What should have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What happened instead.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Device, iOS, and app version
+      placeholder: iPhone 16, iOS 26.1, 1.2.0
+    validations:
+      required: false

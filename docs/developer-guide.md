@@ -372,12 +372,18 @@ when a PR touches UI.
 ```bash
 npm ci
 npm --prefix tools/preview run setup     # once
-npm --prefix tools/preview run screens   # Today, Compete, You, empty and busy challenge states
+npm --prefix tools/preview run screens   # Today, Compete, You, empty states, and the challenges flow
+npm --prefix tools/preview run capture -- challenges-tour   # same tour, with an .mp4 recording
 ```
 
-Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). Other flows (a full set with
-simulated push-ups, onboarding, invite links) and `.mp4` recordings are covered in
-[docs/ui-preview.md](ui-preview.md), which is also the place for flows, fixtures and adding your own.
+Screenshots go to `tools/preview/out/captures/<flow>/` (git-ignored). The dedicated challenges
+flow (`tools/preview/flows/challenges.js`) walks Your turn on Today and Compete, an invite,
+Waiting, challenge detail, New challenge for each type and length, You > Challenges with the
+period picker, a friend's head-to-head record, a finished result, and the empty states
+(`challenges-empty`, `challenges-none`, `challenges-busy`). Record the tour with
+`capture -- challenges-tour` (omit `--no-video`); the `.mp4` lands next to the screenshots.
+Other flows (a full set with simulated push-ups, onboarding, invite links) are covered in
+[docs/ui-preview.md](ui-preview.md), which is also the place for fixtures and adding your own.
 
 Things to know:
 
@@ -452,27 +458,27 @@ These helpers implement product rules in TypeScript that should move into views 
 RPCs, so the app can just display what the database returns. Tracked here so new
 work does not add to them.
 
-* **Challenge list sections.** `groupBattles` in `src/battles/model.ts` and
-  `challengeList` / `challengeRow` in `src/battles/challengeView.ts` split challenges
-  into "your move", "in progress", and "finished", and decide the row's type and
-  subtitle. Today also uses `groupBattles` to pick the first "your move" card
-  (`src/ui/models/today.ts`). The server should return the section, sort order, and
-  call to action.
-* **Result wording.** `resultOf` and `finishedTitle` in `src/battles/challengeView.ts`
-  turn ranks and `isWinner` flags into "You won", "Draw", "Lost", or "Finished".
-  Ties can currently show as "Finished" instead of a draw, because that wording is
-  assembled on the client. The database should return a stable outcome key and the
-  display fields that go with it.
-* **Rematch defaults.** `rematchParams` in `src/battles/challengeView.ts` (and
-  `initialForm` in `src/battles/newChallenge.ts`) picks the next challenge's kind,
-  length, and window from the finished one. A rematch RPC should return the
-  `create_challenge` payload.
-* **Head-to-head card.** `headToHead` and `headScore` in `src/battles/challengeView.ts`,
-  and `recentOutcome` / `headToHeadRecord` in `src/battles/friendsView.ts`, decide
-  when a two-person card appears and compute the record from `friend_challenge_record`
-  rows. The RPC should return the card and the record ready to render.
+Resolved in the open-challenge work (`my_open_challenges`, `challenge_record_periods`,
+`my_challenge_record`, and the upgraded `friend_challenge_record` / `my_challenges`):
 
-Related display rules in the same files (`canPlay`, `canRespond`, `canAddReps`,
-`leaderLine`, `lengthLabel`, and the "Today" / "This week" / "This month" window
-labels in `src/battles/newChallenge.ts`) should move with them, so a time window or
-turn rule cannot drift between the database and the phone.
+* Challenge list sections, sort order, `can_do_push_ups`, and call to action — the
+  app lays out `my_open_challenges` (`YourTurnList` on Today and Compete). Today's
+  leftover "your move" card is gone; without action rows, only "Challenge a friend"
+  remains when the person has friends.
+* Period picker options and ranges come from `challenge_record_periods`. The app
+  passes the chosen `from` / `to` into the record RPCs. W-T-L, forfeits as a
+  footnote, and declined invites omitted are computed in the record RPCs.
+  `friend_challenge_record` also returns `bestSet`.
+* Result wording, whether to crown a winner, whose score to showcase, and whether
+  the detail is a head-to-head card, standings, or a team goal come from
+  `my_challenges` (`resultTitle`, `resultCrowned`, `resultShowcaseUserId`,
+  `detailLayout`, `needsResponse`, `myOutcome`, `myOutcomeLabel`).
+* New most-reps and team challenges use `durationDays` (1 / 7 / 14 / 30) starting
+  at the creator's local midnight, so the "Today" / "This week" / "This month"
+  labels are gone from the New challenge sheet.
+
+Still open:
+
+* **Rematch defaults.** `rematchParams` maps a stored `durationDays` or leftover
+  calendar window onto the create form. A rematch RPC should return the
+  `create_challenge` payload directly.

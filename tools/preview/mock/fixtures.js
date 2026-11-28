@@ -178,9 +178,105 @@ function build(now = FIXED_NOW) {
       participants: [MEP, P(1), P(0), P(2)].map((p, i) => part(p, { validReps: [168, 212, 131, 100][i], teamTotal: 611, teamTarget: 1000 })) },
     { ...base, id: 'c-invite', kind: 'total', windowUnit: 'day', status: 'pending', startsAt: null, endsAt: null, createdBy: people[1][0],
       participants: [part(P(1), {}), part(MEP, { status: 'invited', attemptsUsed: 0 })] },
+    { ...base, id: 'c-wait', kind: 'best_set', windowUnit: null, durationS: 60, attemptsAllowed: 1, status: 'active', startsAt: isoTime(now - DAY), endsAt: isoTime(now + 2 * DAY), createdBy: ME,
+      participants: [part(MEP, { validReps: 34, rank: 1, attemptsUsed: 1 }), part(P(2), { validReps: null, rank: null, attemptsUsed: 0 })] },
     { ...base, id: 'c-done', kind: 'total', windowUnit: 'day', status: 'completed', startsAt: isoTime(now - 4 * DAY), endsAt: isoTime(now - 3 * DAY), finishedAt: isoTime(now - 3 * DAY),
       participants: [part(MEP, { validReps: 74, rank: 1, isWinner: true }), part(P(0), { validReps: 61, rank: 2 })] },
+  ].map((c) => {
+    const accepted = c.participants.filter((p) => ['accepted', 'invited', 'forfeited'].includes(p.status));
+    const layout = c.kind === 'team' ? 'team' : (c.kind === 'best_set' || c.kind === 'total') && accepted.length === 2 ? 'head_to_head' : 'standings';
+    const done = c.status === 'completed';
+    return {
+      ...c,
+      needsResponse: c.participants.some((p) => p.isMe && p.status === 'invited'),
+      detailLayout: layout,
+      myOutcome: done ? 'win' : null,
+      myOutcomeLabel: done ? 'Won' : null,
+      resultTitle: done ? 'You won' : null,
+      resultCrowned: done,
+      resultShowcaseUserId: done ? ME : null,
+    };
+  });
+
+
+  const left = (ends) => {
+    if (!ends) return { timeLeftS: null, timeLeftAmount: null, timeLeftUnit: null };
+    const s = Math.max(0, Math.floor((Date.parse(ends) - now) / 1000));
+    if (s >= 86400) return { timeLeftS: s, timeLeftAmount: Math.floor(s / 86400), timeLeftUnit: 'day' };
+    if (s >= 3600) return { timeLeftS: s, timeLeftAmount: Math.floor(s / 3600), timeLeftUnit: 'hour' };
+    return { timeLeftS: s, timeLeftAmount: Math.max(Math.floor(s / 60), 1), timeLeftUnit: 'minute' };
+  };
+  const person = (who, status = 'accepted') => ({
+    userId: who.userId, username: who.username, displayName: who.displayName, status, isMe: who.userId === ME,
+  });
+  const openBase = (c, extra) => ({
+    challengeId: c.id, kind: c.kind, status: c.status, myParticipantStatus: 'accepted',
+    startsAt: c.startsAt, endsAt: c.endsAt, ...left(c.endsAt),
+    waitingOn: [], people: c.participants.map((p) => person({ userId: p.userId, username: p.username, displayName: p.displayName }, p.status)),
+    teamTotal: null, teamTarget: null, streakDay: null, streakLength: null, progressFrac: null,
+    primaryOpponentUserId: null, primaryOpponentDisplayName: null, awaitingResult: false,
+    durationDays: c.durationDays ?? null, windowUnit: c.windowUnit, targetReps: c.targetReps, ...extra,
+  });
+  const openChallenges = [
+    openBase(challenges[4], { // c-invite first: needs a response
+      title: 'Jack invited you', myParticipantStatus: 'invited', canDoPushUps: false, needsResponse: true, isMyTurn: true,
+      turnReason: 'invite', ctaType: 'accept_decline', ctaLabel: null, statusKey: 'invited_you', statusLabel: 'Most reps today',
+      sortRank: 0, myValidReps: null, leaderUserId: people[1][0], leaderDisplayName: 'Jack', leaderReps: null,
+      primaryOpponentUserId: people[1][0], primaryOpponentDisplayName: 'Jack',
+    }),
+    openBase(challenges[1], { // c-best: attempts left
+      title: 'Best set vs Brett', canDoPushUps: true, needsResponse: false, isMyTurn: true,
+      turnReason: 'play', ctaType: 'play', ctaLabel: 'Play', statusKey: 'play', statusLabel: '28 to beat',
+      sortRank: 0, myValidReps: 31, leaderUserId: ME, leaderDisplayName: 'Sunny', leaderReps: 31,
+      primaryOpponentUserId: people[0][0], primaryOpponentDisplayName: 'Brett',
+    }),
+    openBase(challenges[0], { // c-week: Jack leads, still actionable
+      title: 'Most reps this week', canDoPushUps: true, needsResponse: false, isMyTurn: true,
+      turnReason: 'behind', ctaType: 'start_set', ctaLabel: 'Start a set', statusKey: 'behind', statusLabel: 'Jack leads',
+      sortRank: 0, myValidReps: 168, leaderUserId: people[1][0], leaderDisplayName: 'Jack', leaderReps: 212,
+      primaryOpponentUserId: people[1][0], primaryOpponentDisplayName: 'Jack',
+    }),
+    openBase(challenges[2], {
+      title: '7-day streak', canDoPushUps: true, needsResponse: false, isMyTurn: true,
+      turnReason: 'streak_today', ctaType: 'start_set', ctaLabel: 'Start a set', statusKey: 'streak_today', statusLabel: 'Day 4 of 7',
+      sortRank: 0, myValidReps: null, leaderUserId: null, leaderDisplayName: null, leaderReps: null,
+      primaryOpponentUserId: people[2][0], primaryOpponentDisplayName: 'Maya R',
+      streakDay: 4, streakLength: 7, progressFrac: 4 / 7,
+    }),
+    openBase(challenges[3], { // team goal belongs in Your turn
+      title: 'Team week', canDoPushUps: true, needsResponse: false, isMyTurn: true,
+      turnReason: 'contribute', ctaType: 'start_set', ctaLabel: 'Start a set', statusKey: 'contribute', statusLabel: '611 of 1,000',
+      sortRank: 0, myValidReps: 168, leaderUserId: null, leaderDisplayName: null, leaderReps: null,
+      teamTotal: 611, teamTarget: 1000, progressFrac: 611 / 1000,
+      primaryOpponentUserId: people[1][0], primaryOpponentDisplayName: 'Jack',
+    }),
+    openBase(challenges[5], { // c-wait: already played, waiting on Maya
+      title: 'Best set vs Maya R', canDoPushUps: false, needsResponse: false, isMyTurn: false,
+      turnReason: 'waiting', ctaType: 'none', ctaLabel: null, statusKey: 'waiting_on', statusLabel: 'Waiting on Maya R',
+      sortRank: 1, myValidReps: 34, leaderUserId: ME, leaderDisplayName: 'Sunny', leaderReps: 34,
+      primaryOpponentUserId: people[2][0], primaryOpponentDisplayName: 'Maya R',
+      waitingOn: [{ userId: people[2][0], displayName: 'Maya R' }],
+    }),
   ];
+  const startToday = Date.parse('2026-11-25T00:00:00-05:00');
+  const recordPeriods = [
+    { key: 'last_30_days', label: 'Last 30 days', from: isoTime(startToday - 30 * DAY), to: isoTime(now), isDefault: true },
+    { key: 'last_month', label: 'Last month', from: '2026-10-01T04:00:00.000Z', to: '2026-11-01T04:00:00.000Z', isDefault: false },
+    { key: 'this_month', label: 'This month', from: '2026-11-01T04:00:00.000Z', to: isoTime(now), isDefault: false },
+    { key: 'last_3_months', label: 'Last 3 months', from: isoTime(startToday - 90 * DAY), to: isoTime(now), isDefault: false },
+    { key: 'this_year', label: 'This year', from: '2026-01-01T05:00:00.000Z', to: isoTime(now), isDefault: false },
+    { key: 'last_year', label: 'Last year', from: '2025-01-01T05:00:00.000Z', to: '2026-01-01T05:00:00.000Z', isDefault: false },
+    { key: 'all_time', label: 'All time', from: '1970-01-01T00:00:00.000Z', to: isoTime(now), isDefault: false },
+  ];
+  const challengeRecord = {
+    periodFrom: isoTime(now - 30 * DAY), periodTo: isoTime(now),
+    wins: 3, ties: 1, losses: 2, forfeits: 1, cancelled: 0, expired: 0, declined: 0,
+    friends: [
+      { userId: people[0][0], username: 'brett', displayName: 'Brett', wins: 2, ties: 0, losses: 1, forfeits: 0, lastFinishedAt: isoTime(now - 3 * DAY), lastOutcome: 'win', sortRank: 1 },
+      { userId: people[1][0], username: 'jack', displayName: 'Jack', wins: 1, ties: 1, losses: 1, forfeits: 0, lastFinishedAt: isoTime(now - 5 * DAY), lastOutcome: 'tie', sortRank: 2 },
+    ],
+    otherEvents: [],
+  };
 
   // RPC my_friends.
   const friends = [
@@ -189,6 +285,10 @@ function build(now = FIXED_NOW) {
   ];
   const friendRecord = {
     played: 5, won: 3, drawn: 0, lost: 2,
+    wins: 3, ties: 0, losses: 2, forfeits: 0, cancelled: 0, expired: 0,
+    periodFrom: isoTime(now - 30 * DAY), periodTo: isoTime(now),
+    bestSet: 48,
+    finished: [{ challengeId: 'c-done', kind: 'total', title: 'Most reps today', outcome: 'win', outcomeLabel: 'Won', finishedAt: isoTime(now - 3 * DAY), myReps: 74, theirReps: 61, sortRank: 1 }],
     recent: [{ challengeId: 'c-done', finishedAt: isoTime(now - 3 * DAY), kind: 'total', windowUnit: 'day', metric: 'rep_count', durationS: null, players: 2,
       me: { rank: 1, validReps: 74, metricValue: null, isWinner: true }, them: { rank: 2, validReps: 61, metricValue: null, isWinner: false } }],
   };
@@ -202,7 +302,7 @@ function build(now = FIXED_NOW) {
   const maya = { id: '77777777-7777-4777-8777-777777777777', username: 'maya', display_name: 'Maya', time_zone: TZ };
   return {
     now, ME, history, enrollment, progress, emptyProgress, league, challenges, friends, friendRecord, profile,
-    inviteCode, inviteCodeAfterReset, inviter, maya,
+    inviteCode, inviteCodeAfterReset, inviter, maya, openChallenges, challengeRecord, recordPeriods,
   };
 }
 

@@ -37,9 +37,21 @@ function createBackend(options = {}) {
     my_progress: () => (empty ? F.emptyProgress : F.progress),
     my_league: () => (empty ? { ...F.league, total: [], improvement: [] } : F.league),
     my_challenges: (args) => (args && args.p_battle ? F.challenges.filter((c) => c.id === args.p_battle) : empty ? [] : F.challenges),
+    my_open_challenges: () => (empty ? [] : F.openChallenges),
+    challenge_record_periods: () => F.recordPeriods,
+    my_challenge_record: (args) => {
+      const rec = empty
+        ? { periodFrom: F.now, periodTo: F.now, wins: 0, ties: 0, losses: 0, forfeits: 0, cancelled: 0, expired: 0, declined: 0, friends: [], otherEvents: [] }
+        : F.challengeRecord;
+      return { ...rec, periodFrom: (args && args.p_from) || rec.periodFrom, periodTo: (args && args.p_to) || rec.periodTo };
+    },
     my_friends: () => (empty ? [] : F.friends),
     search_users: () => F.friends.slice(0, 2),
-    friend_challenge_record: () => F.friendRecord,
+    friend_challenge_record: (args) => ({
+      ...F.friendRecord,
+      periodFrom: (args && args.p_from) || F.friendRecord.periodFrom,
+      periodTo: (args && args.p_to) || F.friendRecord.periodTo,
+    }),
     my_recap_ranks: () => null,
     register_device: () => 'preview-device',
     username_available: () => true,

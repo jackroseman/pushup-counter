@@ -12,7 +12,7 @@ export type CompeteSegment = 'league' | 'challenges';
 export type TabParamList = {
   Today: undefined;
   Compete: { segment?: CompeteSegment } | undefined;
-  You: undefined;
+  You: { segment?: 'sets' | 'challenges' } | undefined;
 };
 
 export type RootStackParamList = {

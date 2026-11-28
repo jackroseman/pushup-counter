@@ -1,12 +1,10 @@
 /**
- * Challenges in the rebrand (frames 20, 23–25, E10, E11), as pure rules over `my_challenges`.
- * Scores, ranks and winners come from the server; nothing here recomputes a result.
+ * Challenge labels, standings formatting, rematch defaults, and empty states.
+ * Turn state, results, and whether to show a head-to-head card come from the RPCs.
  */
-import { calendarDaysBetween, localDate, weekdayName } from '../progress/calendar';
-import { formatCount, formatFriendlyDay, formatShortDate } from '../progress';
-import { ordinal } from '../progress/leagueView';
+import { formatCount, formatFriendlyDay } from '../progress';
 import type { ChallengeOffer } from './challengeFromSet';
-import { Battle, BattleGroups, canPlay, canRespond, groupBattles, isOpen, me, Participant, personName, streakDayCount } from './model';
+import { Battle, isOpen, Participant, personName, streakDayCount } from './model';
 
 const DAY = 86_400_000;
 const time = (iso: string | null | undefined) => (iso ? new Date(iso).getTime() : Number.NaN);
@@ -61,18 +59,6 @@ export function shortTimeLeft(iso: string | null | undefined, now: number): stri
   return `${days} day${days === 1 ? '' : 's'} left`;
 }
 
-/** "Today", "Yesterday", "Sun" within the week, else "Nov 9". */
-export function shortDay(iso: string | null | undefined, now: number, timeZone: string): string {
-  const ms = time(iso);
-  if (!Number.isFinite(ms)) return '';
-  const day = localDate(ms, timeZone);
-  const diff = calendarDaysBetween(day, localDate(now, timeZone));
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Yesterday';
-  if (diff >= 2 && diff <= 6) return weekdayName(day).slice(0, 3);
-  return formatShortDate(day, timeZone, now);
-}
-
 /** People still in it (not declined, not an expired invite). */
 const inIt = (p: Participant) => p.status === 'accepted' || p.status === 'invited' || p.status === 'forfeited';
 const nameOf = (p: Participant) => (p.isMe ? 'You' : personName(p));
@@ -93,13 +79,6 @@ export function playersLine(b: Pick<Battle, 'participants'>): string {
   return [...mine, ...people.filter((p) => !p.isMe)].map(nameOf).join(', ');
 }
 
-/** Best score among the other players who have gone. */
-function bestOther(b: Battle): Participant | null {
-  const played = b.participants.filter((p) => !p.isMe && p.attemptsUsed > 0 && p.validReps != null);
-  if (played.length === 0) return null;
-  return played.reduce((top, p) => ((p.validReps ?? 0) > (top.validReps ?? 0) ? p : top));
-}
-
 /** Shared total and target on a team goal. */
 export function teamProgress(b: Battle): { total: number; target: number } {
   const total = b.participants.find((p) => p.teamTotal != null)?.teamTotal ?? 0;
@@ -116,126 +95,13 @@ export function streakDay(b: Battle, now: number): { day: number; of: number } |
 }
 
 /** Who is ahead on a most-reps or best-set challenge: "Brett leads", "You lead", "Tied". */
-export function leaderLine(b: Battle): string | null {
-  const scored = b.participants.filter((p) => inIt(p) && (b.kind === 'total' || p.attemptsUsed > 0) && p.validReps != null);
-  if (scored.length === 0) return null;
-  const top = Math.max(...scored.map((p) => p.validReps ?? 0));
-  if (top === 0) return null;
-  const leaders = scored.filter((p) => (p.validReps ?? 0) === top);
-  if (leaders.length > 1) return 'Tied';
-  return leaders[0].isMe ? 'You lead' : `${personName(leaders[0])} leads`;
-}
-
-/** Waiting on people to accept or (best set) to play. */
-function waitingOn(b: Battle): Participant[] {
-  const cap = b.attemptsAllowed ?? 1;
-  return b.participants.filter(
-    (p) => !p.isMe && (p.status === 'invited' || (b.kind === 'best_set' && p.status === 'accepted' && p.attemptsUsed < cap)),
-  );
-}
-
-export type ChallengeRow =
-  | { type: 'play'; battle: Battle; avatar: string; title: string; subtitle: string }
-  | { type: 'invite'; battle: Battle; avatar: string; title: string; subtitle: string }
-  | { type: 'progress'; battle: Battle; title: string; right: string; subtitle: string; progress: number | null }
-  | { type: 'finished'; battle: Battle; won: boolean; title: string; day: string };
-
-/** The list in sections (frame 20): your move (play or answer), in progress, finished. */
-export interface ChallengeList {
-  yourMove: ChallengeRow[];
-  inProgress: ChallengeRow[];
-  finished: ChallengeRow[];
-}
-
-export function challengeRow(b: Battle, now: number, timeZone: string): ChallengeRow {
-  if (canRespond(b, now)) {
-    const from = b.participants.find((p) => p.userId === b.createdBy) ?? b.participants.find((p) => !p.isMe) ?? null;
-    const who = from ? personName(from) : 'A friend';
-    return { type: 'invite', battle: b, avatar: who, title: `${who} invited you`, subtitle: challengeName(b) };
-  }
-  if (canPlay(b, now)) {
-    const best = bestOther(b);
-    const left = shortTimeLeft(b.endsAt, now);
-    const parts = [best ? `${formatCount(best.validReps ?? 0)} to beat` : 'Your turn', left].filter(Boolean);
-    const others = b.participants.filter((p) => !p.isMe && inIt(p));
-    return {
-      type: 'play',
-      battle: b,
-      avatar: others[0] ? personName(others[0]) : 'You',
-      title: `${challengeName(b)} vs ${opponents(b)}`,
-      subtitle: parts.join(' · '),
-    };
-  }
-  if (isOpen(b)) {
-    const waiting = waitingOn(b);
-    let right = '';
-    let progress: number | null = null;
-    if (b.kind === 'team') {
-      const { total, target } = teamProgress(b);
-      right = target > 0 ? `${formatCount(total)} of ${formatCount(target)}` : formatCount(total);
-      progress = target > 0 ? Math.min(1, total / target) : null;
-    } else if (b.kind === 'streak') {
-      const d = b.status === 'active' ? streakDay(b, now) : null;
-      if (d) {
-        right = `Day ${d.day} of ${d.of}`;
-        progress = d.day / d.of;
-      }
-    } else {
-      right = leaderLine(b) ?? '';
-    }
-    if (waiting.length > 0 && (b.status === 'pending' || b.kind === 'best_set')) {
-      right = waiting.length === 1 ? `Waiting on ${personName(waiting[0])}` : `Waiting on ${waiting.length}`;
-    }
-    if (!right) right = shortTimeLeft(b.endsAt, now);
-    const title = b.kind === 'best_set' ? `${challengeName(b)} vs ${opponents(b)}` : challengeName(b);
-    return { type: 'progress', battle: b, title, right, subtitle: playersLine(b), progress };
-  }
-  return {
-    type: 'finished',
-    battle: b,
-    won: !!me(b)?.isWinner && b.status === 'completed',
-    title: finishedTitle(b),
-    day: shortDay(endedAt(b), now, timeZone),
-  };
-}
-
-/** "Won vs Jack · Best set", "Lost vs Jack · Most reps", "2nd of 4 · Most reps", "Goal reached · Team week". */
+/** "Won · Most reps", "Goal reached · Team week". Labels come from the RPC. */
 export function finishedTitle(b: Battle): string {
   const name = b.kind === 'team' || b.kind === 'streak' ? challengeName(b) : kindLabel(b);
+  if (b.myOutcomeLabel) return `${b.myOutcomeLabel} · ${name}`;
   if (b.status === 'cancelled') return `Cancelled · ${name}`;
-  if (b.status === 'expired') return `Ended early · ${name}`;
-  const result = resultOf(b);
-  return `${result.short} · ${name}`;
-}
-
-export type ResultKind = 'won' | 'lost' | 'draw' | 'goal' | 'missed' | 'finished';
-
-/** How it ended for the user. Team goals succeed or miss together. */
-export function resultOf(b: Battle): { kind: ResultKind; short: string; title: string; winner: Participant | null } {
-  const mine = me(b);
-  if (b.kind === 'team') {
-    const reached = b.participants.some((p) => p.isWinner);
-    return reached
-      ? { kind: 'goal', short: 'Goal reached', title: 'Goal reached', winner: null }
-      : { kind: 'missed', short: 'Missed the goal', title: 'Missed the goal', winner: null };
-  }
-  const winners = b.participants.filter((p) => p.isWinner);
-  const ranked = b.participants.filter((p) => p.rank != null);
-  const two = b.participants.filter((p) => p.status === 'accepted' || p.status === 'forfeited').length <= 2;
-  const vs = `vs ${opponents(b)}`;
-  if (winners.length > 1 && winners.some((p) => p.isMe)) return { kind: 'draw', short: `Draw ${vs}`, title: 'Draw', winner: null };
-  if (mine?.isWinner) return { kind: 'won', short: `Won ${vs}`, title: 'You won', winner: mine };
-  const winner = winners[0] ?? null;
-  if (mine && mine.rank != null && !two) {
-    return {
-      kind: 'lost',
-      short: `${ordinal(mine.rank)} of ${ranked.length}`,
-      title: winner ? `${personName(winner)} won` : 'Finished',
-      winner,
-    };
-  }
-  if (winner) return { kind: 'lost', short: `Lost ${vs}`, title: `${personName(winner)} won`, winner };
-  return { kind: 'finished', short: 'Finished', title: 'Finished', winner: null };
+  if (b.status === 'expired') return `Expired · ${name}`;
+  return name;
 }
 
 /** When it ended, a hair before: a window closing at local midnight ended the day before (Sunday, not Monday). */
@@ -250,12 +116,6 @@ export function resultSubtitle(b: Battle, now: number, timeZone: string): string
   if (!at) return challengeName(b);
   const day = formatFriendlyDay(at, now, timeZone);
   return `${challengeName(b)} · ended ${day === 'Today' || day === 'Yesterday' ? day.toLowerCase() : day}`;
-}
-
-export function challengeList(battles: readonly Battle[], now: number, timeZone: string): ChallengeList {
-  const g: BattleGroups = groupBattles(battles, now);
-  const row = (b: Battle) => challengeRow(b, now, timeZone);
-  return { yourMove: g.yourMove.map(row), inProgress: g.waiting.map(row), finished: g.finished.map(row) };
 }
 
 /** E10 / E11: which empty state, if any. Friends unknown (still loading) shows none. */
@@ -296,35 +156,11 @@ export function standings(b: Battle): StandingRow[] {
   });
 }
 
-/** Two people on a best set or most reps: the head-to-head card (frame 23). */
-export function headToHead(b: Battle): { you: Participant; them: Participant } | null {
-  if (b.kind !== 'best_set' && b.kind !== 'total') return null;
-  const people = b.participants.filter(inIt);
-  if (people.length !== 2) return null;
-  const you = people.find((p) => p.isMe);
-  const them = people.find((p) => !p.isMe);
-  return you && them ? { you, them } : null;
-}
-
-/** Score shown on the head-to-head card: "–" until they've played. */
+/** Score shown on the head-to-head card: "–" until they have played. */
 export function headScore(b: Battle, p: Participant): string {
   if (p.status === 'invited') return '–';
   if (b.kind === 'best_set' && p.attemptsUsed === 0) return '–';
   return formatCount(p.validReps ?? 0);
-}
-
-/** "Brett leads · 1 day left", "Waiting on Brett · 2 days left". */
-export function detailLine(b: Battle, now: number): string {
-  const waiting = waitingOn(b);
-  const lead =
-    b.kind === 'team'
-      ? null
-      : b.kind === 'streak'
-        ? null
-        : (leaderLine(b) ??
-          (waiting.length === 1 ? `Waiting on ${personName(waiting[0])}` : waiting.length > 1 ? `Waiting on ${waiting.length}` : null));
-  const left = b.status === 'pending' && !b.endsAt ? null : shortTimeLeft(b.endsAt, now);
-  return [lead, left].filter(Boolean).join(' · ');
 }
 
 /** Rematch: same people, same kind and length (create_challenge with the same settings). */
@@ -332,25 +168,9 @@ export function rematchParams(b: Battle): { friendIds: string[]; offer: Challeng
   const friendIds = b.participants.filter((p) => !p.isMe && p.status !== 'declined' && p.status !== 'expired').map((p) => p.userId);
   let offer: ChallengeOffer;
   if (b.kind === 'best_set') offer = { kind: 'best_set', durationS: b.durationS };
-  else if (b.kind === 'total')
-    offer = { kind: 'total', window: b.windowUnit === 'day' || b.windowUnit === 'month' ? b.windowUnit : 'week' };
-  else offer = { kind: b.kind };
+  else if (b.kind === 'total' || b.kind === 'team') {
+    const days = (b.durationDays ?? (b.windowUnit === 'day' ? 1 : b.windowUnit === 'month' ? 30 : 7)) as 1 | 7 | 14 | 30;
+    offer = { kind: b.kind, durationDays: days };
+  } else offer = { kind: b.kind };
   return { friendIds, offer };
-}
-
-/**
- * Can an ordinary set still add reps to this challenge? Most reps, team and streak count every set done
- * inside their window, for anyone who has joined, whether or not the others have accepted yet (a challenge
- * is "pending" until a second person accepts, e.g. while the opponent hasn't answered or is a bot).
- * A best set is not here: it has its own Play attempt (`canPlay`).
- */
-export function canAddReps(b: Battle, now: number): boolean {
-  if (b.kind === 'best_set' || !isOpen(b)) return false;
-  const mine = me(b);
-  if (!mine || mine.status !== 'accepted') return false;
-  const ends = time(b.endsAt);
-  if (Number.isFinite(ends) && ends <= now) return false;
-  const starts = time(b.startsAt);
-  if (Number.isFinite(starts) && starts > now) return false;
-  return true;
 }

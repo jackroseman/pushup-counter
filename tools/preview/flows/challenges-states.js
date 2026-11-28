@@ -41,13 +41,38 @@ function busyChallenges(F) {
   ];
 }
 
+function busyOpen(F) {
+  const extra = [
+    { id: 'c-turn-2', title: 'Best set vs Jack', name: 'Jack', reps: 33 },
+    { id: 'c-turn-3', title: 'Best set vs Maya R', name: 'Maya R', reps: 25 },
+    { id: 'c-turn-4', title: 'Best set vs Brett', name: 'Brett', reps: 41 },
+  ];
+  return [
+    ...F.openChallenges,
+    ...extra.map((x) => ({
+      ...F.openChallenges[1],
+      challengeId: x.id,
+      title: x.title,
+      statusLabel: `${x.reps} to beat`,
+      primaryOpponentDisplayName: x.name,
+      endsAt: F.challenges[1].endsAt,
+      timeLeftAmount: 3 + (x.reps % 20),
+      timeLeftUnit: 'hour',
+      sortRank: 0,
+    })),
+  ];
+}
+
 module.exports = {
   order: 5.5,
   variants: [
     {
       id: 'busy',
       description: 'Today and Compete > Challenges with four moves waiting on you and a long Finished list',
-      options: { user: 'regular', rpc: { my_challenges: (args, F) => (args && args.p_battle ? F.challenges.filter((c) => c.id === args.p_battle) : busyChallenges(F)) } },
+      options: { user: 'regular', rpc: {
+        my_challenges: (args, F) => (args && args.p_battle ? F.challenges.filter((c) => c.id === args.p_battle) : busyChallenges(F)),
+        my_open_challenges: (_args, F) => busyOpen(F),
+      } },
       run: async ({ shot, tap, page }) => {
         await shot('today');
         await tap('Compete', { last: true, wait: 2000 });
@@ -62,7 +87,7 @@ module.exports = {
     {
       id: 'none',
       description: 'Compete > Challenges with friends but no challenges yet',
-      options: { user: 'regular', rpc: { my_challenges: () => [] } },
+      options: { user: 'regular', rpc: { my_challenges: () => [], my_open_challenges: () => [] } },
       run: async ({ shot, tap }) => {
         await tap('Compete', { last: true, wait: 2000 });
         await tap('Challenges', { last: true, wait: 1800 });
@@ -79,6 +104,8 @@ module.exports = {
         await shot('friends');
         await tap('Brett', { last: true, wait: 2000 });
         await shot('friend');
+        await tap('Period: Last 30 days', { label: true, last: true, wait: 800 });
+        await shot('friend-period');
       },
     },
     {
@@ -87,10 +114,14 @@ module.exports = {
       options: { user: 'regular' },
       run: async ({ shot, tap }) => {
         await tap('Compete', { last: true, wait: 2000 });
-        await tap('Challenges', { last: true, wait: 1800 });
-        await tap(/Won vs Brett/, { last: true, wait: 2000 });
+        await tap('Friends', { label: true, last: true, wait: 2000 });
+        await tap('Brett', { last: true, wait: 2000 });
+        await tap('Most reps today', { last: true, wait: 2000 });
         await shot('finished');
       },
     },
   ],
 };
+
+module.exports.busyChallenges = busyChallenges;
+module.exports.busyOpen = busyOpen;

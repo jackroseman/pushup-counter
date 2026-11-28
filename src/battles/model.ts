@@ -44,6 +44,7 @@ export interface Battle {
   mode: 'async' | 'live';
   kind: ChallengeKind;
   windowUnit: ChallengeWindow | null;
+  durationDays?: number | null;
   metric: BattleMetric | null;
   status: BattleStatus;
   durationS: number | null;
@@ -58,6 +59,13 @@ export interface Battle {
   finishedAt: string | null;
   createdBy: string | null;
   locked: boolean;
+  myOutcome?: string | null;
+  myOutcomeLabel?: string | null;
+  resultTitle?: string | null;
+  resultCrowned?: boolean;
+  resultShowcaseUserId?: string | null;
+  detailLayout?: 'head_to_head' | 'standings' | 'team';
+  needsResponse?: boolean;
   participants: Participant[];
   inviteLinks: InviteLink[];
 }
@@ -76,6 +84,27 @@ export interface FriendRecord {
   won: number;
   drawn: number;
   lost: number;
+  wins?: number;
+  ties?: number;
+  losses?: number;
+  forfeits?: number;
+  cancelled?: number;
+  expired?: number;
+  periodFrom?: string;
+  periodTo?: string;
+  /** Their best counted set in a best-set challenge with you, in the period. */
+  bestSet?: number | null;
+  finished?: {
+    challengeId: string;
+    kind: ChallengeKind;
+    title: string;
+    outcome: string;
+    outcomeLabel: string;
+    finishedAt: string;
+    myReps: number | null;
+    theirReps: number | null;
+    sortRank: number;
+  }[];
   recent: {
     challengeId: string;
     finishedAt: string;
@@ -120,9 +149,14 @@ export function streakDayCount(b: { startsAt?: string | null; endsAt?: string | 
   return Math.max(1, Math.round(ms / 86_400_000));
 }
 
+export function durationLabel(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
 export function battleTitle(b: {
   kind: ChallengeKind;
   windowUnit?: ChallengeWindow | null;
+  durationDays?: number | null;
   durationS: number | null;
   targetReps?: number | null;
   startsAt?: string | null;
@@ -130,6 +164,7 @@ export function battleTitle(b: {
 }): string {
   if (b.kind === 'best_set') return b.durationS ? `Best set · ${b.durationS} s` : 'Best set';
   if (b.kind === 'total') {
+    if (b.durationDays) return `Most reps · ${durationLabel(b.durationDays)}`;
     if (b.windowUnit === 'day') return 'Most reps today';
     if (b.windowUnit === 'week') return 'Most reps this week';
     if (b.windowUnit === 'month') return 'Most reps this month';
@@ -139,7 +174,13 @@ export function battleTitle(b: {
     const days = streakDayCount(b);
     return days ? `Streak · ${days} day${days === 1 ? '' : 's'}` : 'Streak face-off';
   }
-  if (b.kind === 'team') return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
+  if (b.kind === 'team') {
+    if (b.durationDays) return `Team · ${durationLabel(b.durationDays)}`;
+    if (b.windowUnit === 'day') return 'Team today';
+    if (b.windowUnit === 'week') return 'Team week';
+    if (b.windowUnit === 'month') return 'Team month';
+    return b.targetReps ? `Team · ${b.targetReps}` : 'Team goal';
+  }
   return 'Challenge';
 }
 
@@ -147,48 +188,10 @@ export const me = (b: Battle) => b.participants.find((p) => p.isMe) ?? null;
 
 const time = (iso: string | null | undefined) => (iso ? new Date(iso).getTime() : NaN);
 
-/** Can I still answer the invite? */
-export function canRespond(b: Battle, now: number = Date.now()): boolean {
-  const m = me(b);
-  return !!m && m.status === 'invited' && (b.status === 'pending' || b.status === 'active') && time(b.inviteExpiresAt) > now;
-}
-
-/** Can I start a best-set attempt now? Window kinds have no special session. */
-export function canPlay(b: Battle, now: number = Date.now()): boolean {
-  const m = me(b);
-  if (!m || m.status !== 'accepted') return false;
-  if (b.kind !== 'best_set') return false;
-  if (m.attemptsUsed >= (b.attemptsAllowed ?? 1)) return false;
-  if (b.endsAt && time(b.endsAt) <= now) return false;
-  if (b.status === 'active') return true;
-  return b.status === 'pending' && m.userId === b.createdBy;
-}
-
 export function isOpen(b: Battle) {
   return b.status === 'pending' || b.status === 'active';
 }
 
-export interface BattleGroups {
-  /** Waiting on me: an invite to answer or an attempt to record. */
-  yourMove: Battle[];
-  /** Open, waiting on others. */
-  waiting: Battle[];
-  finished: Battle[];
-}
-
-export function groupBattles(battles: readonly Battle[], now: number = Date.now()): BattleGroups {
-  const g: BattleGroups = { yourMove: [], waiting: [], finished: [] };
-  for (const b of battles) {
-    if (!isOpen(b)) g.finished.push(b);
-    else if (canRespond(b, now) || canPlay(b, now)) g.yourMove.push(b);
-    else g.waiting.push(b);
-  }
-  const byDeadline = (a: Battle, b: Battle) => (time(a.endsAt) || Infinity) - (time(b.endsAt) || Infinity);
-  g.yourMove.sort(byDeadline);
-  g.waiting.sort(byDeadline);
-  g.finished.sort((a, b) => (time(b.finishedAt) || 0) - (time(a.finishedAt) || 0));
-  return g;
-}
 
 /** "3 h 20 m left", "12 m left", "ended". */
 export function timeLeft(iso: string | null | undefined, now: number = Date.now()): string {
@@ -273,6 +276,9 @@ export function friendlyError(message: string | undefined | null): string {
   if (m.includes('cannot use a finished set')) return "A live challenge can't use a set you already finished.";
   if (m.includes('cannot be scored')) return "That set can't be used in a challenge.";
   if (m.includes('was not linked')) return "That set wasn't added to the challenge.";
+  if (m.includes('cannot leave')) return "You can't leave this challenge.";
+  if (m.includes('cannot cancel')) return "This challenge can't be cancelled.";
+  if (m.includes('length must be')) return 'Pick 1, 7, 14, or 30 days.';
   if (m.includes('deadline')) return 'The deadline has passed.';
   if (m.includes('network') || m.includes('fetch')) return "Couldn't reach the server. Check your connection.";
   return message || 'Something went wrong.';
